@@ -1,8 +1,8 @@
-import { Image,Modal } from "antd";
-import { useState,useEffect } from "react";
+import { Image, Modal } from "antd";
+import { useState, useEffect } from "react";
 import React from "react";
 import styles from "./index.module.less";
-import { IChatContentProps,IMessageShowProps,IMediaInfo } from "./type";
+import { IChatContentProps, IMessageShowProps, IMediaInfo } from "./type";
 import ImageLoad from "../ImageLoad";
 import { serverURL } from "@/config";
 import { ChatImage, LoadErrorImage } from "../images";
@@ -17,6 +17,7 @@ import {
 import { userStorage } from '@/utils/storage';
 import { formatChatContentTime } from '@/utils/time';
 
+
 /**
  * 消息展示组件
  * 用于显示聊天消息，支持文本、图片、视频和文件类型
@@ -24,60 +25,60 @@ import { formatChatContentTime } from '@/utils/time';
  * @param props.showTime - 是否显示时间
  * @param props.message - 消息对象，包含发送者ID、内容、头像、类型等信息
  */
-const MessageShow = (props:IMessageShowProps) => {
-    const {showTime,message} = props;
-    const user = JSON.parse(userStorage.getItem());
-    const {sender_id,content,avatar,type,file_size,created_at} = message;
-    
-    /**
-     * 文件过期或被清理时的占位组件
-     */
-    const ChatContentPocket = () => (
-        <div className={`${styles.content_delete} ${styles.content_file}`}>
+const MessageShow = (props: IMessageShowProps) => {
+	const { showTime, message } = props;
+	const user = JSON.parse(userStorage.getItem());
+	const { sender_id, content, avatar, type, file_size, created_at } = message;
+
+	/**
+	 * 文件过期或被清理时的占位组件
+	 */
+	const ChatContentPocket = () => (
+		<div className={`${styles.content_delete} ${styles.content_file}`}>
 			<img src={LoadErrorImage.FILE_DELETE} draggable="false"></img>
 			<span>文件已过期或被清理</span>
 		</div>
-    );
+	);
 
-    /**
-     * 聊天内容渲染组件
-     * 根据消息类型渲染不同的内容（文本、图片、视频、文件）
-     * @param props - 聊天内容属性
-     * @param props.messageType - 消息类型（text/image/video/file）
-     * @param props.messageContent - 消息内容（文本内容或文件路径）
-     * @param props.fileSize - 文件大小
-     * @returns 渲染的消息内容元素或null
-     */
-    const ChatContent = (props:IChatContentProps): React.ReactElement|null => {
-        const { messageType, messageContent, fileSize } = props;
+	/**
+	 * 聊天内容渲染组件
+	 * 根据消息类型渲染不同的内容（文本、图片、视频、文件）
+	 * @param props - 聊天内容属性
+	 * @param props.messageType - 消息类型（text/image/video/file）
+	 * @param props.messageContent - 消息内容（文本内容或文件路径）
+	 * @param props.fileSize - 文件大小
+	 * @returns 渲染的消息内容元素或null
+	 */
+	const ChatContent = (props: IChatContentProps): React.ReactElement | null => {
+		const { messageType, messageContent, fileSize } = props;
 		const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
 		const [isVideoPlay, setIsVideoPlay] = useState<boolean>(false);
 		const [isFileExist, setIsFileExist] = useState<boolean>(true);
 
-        // 检查媒体文件是否存在，并获取图片/视频尺寸信息
-        useEffect(() => {
-            if (messageType !== 'text'){
-                urlExists(`${serverURL}${messageContent}`).then(res => {
-                    if(!res){
-                        setIsFileExist(false);
-                    }
-                });
-            }
-            if(messageType === 'image'||messageType === 'video'){
-                const mediaURL = serverURL + messageContent;
-                getMediaSize(mediaURL, messageType)
-                .then(size => {
-                    setCurMediaInfo({type: messageType, url: mediaURL,size})
-                })
-                .catch(() => {
-                setIsFileExist(false);
-                });
-            }
-        },[messageType, messageContent]);
+		// 检查媒体文件是否存在，并获取图片/视频尺寸信息
+		useEffect(() => {
+			if (messageType !== 'text') {
+				urlExists(`${serverURL}${messageContent}`).then(res => {
+					if (!res) {
+						setIsFileExist(false);
+					}
+				});
+			}
+			if (messageType === 'image' || messageType === 'video') {
+				const mediaURL = serverURL + messageContent;
+				getMediaSize(mediaURL, messageType)
+					.then(size => {
+						setCurMediaInfo({ type: messageType, url: mediaURL, size })
+					})
+					.catch(() => {
+						setIsFileExist(false);
+					});
+			}
+		}, [messageType, messageContent]);
 
-        const handleOpenVideo = () => {
-            setIsVideoPlay(true);
-        }
+		const handleOpenVideo = () => {
+			setIsVideoPlay(true);
+		}
 
 		if (!isFileExist) return <ChatContentPocket />;
 		switch (messageType) {

@@ -7,12 +7,32 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "nodemon src/index.js",
+    "eslint": "eslint --fix --max-warnings=0",
+    "prettier": "prettier --write **/*.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "crypto": "^1.0.1",
+    "express": "^4.18.2",
+    "express-ws": "^5.0.2",
+    "fs": "0.0.1-security",
+    "fs-extra": "^11.2.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.0",
+    "multer": "1.4.5-lts.1",
+    "mysql": "^2.18.1",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "@types/ioredis": "^4.28.10",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/mysql": "^2.15.27",
-    "ts-node": "^10.9.2"
+    "eslint": "8.38.0",
+    "lint-staged": "^15.2.2",
+    "nodemon": "^3.1.7",
+    "prettier": "^3.2.5"
+  },
+  "lint-staged": {
+    "**/*.js": [
+      "npm run eslint"
+    ]
   }
 }
