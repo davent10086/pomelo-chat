@@ -1,0 +1,35 @@
+@import '@/assets/styles/variables.less';
+@cur-primary-color: #b8b5b5;
+.searchContainer {
+	height: 100%;
+	background-color: @deeply-border_bg-color;
+	padding: 0.1rem;
+	display: flex;
+	justify-content: center;
+	align-items: flex-end;
+	.searchBox {
+		flex: 6;
+	}
+	.addBox {
+		flex: 1;
+		display: flex;
+		justify-content: center;
+		padding-bottom: 0.05rem;
+		cursor: pointer;
+	}
+	.addBox:hover {
+		color: @cur-primary-color;
+	}
+}
+
+:global {
+	.addContent {
+		.ant-tooltip-inner {
+			border-radius: 0.02rem !important;
+			li:hover {
+				cursor: pointer;
+				color: @cur-primary-color;
+			}
+		}
+	}
+}

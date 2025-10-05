@@ -1,0 +1,127 @@
+@import '@/assets/styles/variables.less';
+
+/**
+ * 样式类：信息展示与修改弹窗容器
+ * 描述：定义整个信息弹窗的布局结构，采用垂直方向的弹性盒子模型，
+ *       包含信息展示区域和信息修改区域两个主要部分。
+ */
+.infoModal {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    /**
+	 * 样式类：信息展示容器
+	 * 描述：用于展示用户头像和基本信息的区域，占据上半部分空间。
+	 */
+    .infoContainer {
+        flex: 1;
+        padding-bottom: 0.2rem;
+        display: flex;
+
+        /**
+		 * 样式类：用户头像区域
+		 * 描述：居中显示用户头像图片，设置图片尺寸为 0.8rem × 0.8rem。
+		 */
+        .avatar {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            margin-top: 0.1rem;
+
+            img {
+                width: 0.8rem;
+                height: 0.8rem;
+            }
+        }
+
+        /**
+		 * 样式类：用户信息文本区域
+		 * 描述：显示用户名及其他信息，使用浅色字体并设置固定宽度以保持布局稳定。
+		 */
+        .info {
+            padding-left: 0.2rem;
+            color: @font-color-lightest;
+            font-size: 0.12rem;
+            width: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            white-space: nowrap;
+
+            /**
+			 * 样式类：用户名显示区域
+			 * 描述：突出显示用户名，使用较大字号和较深颜色提升可读性。
+			 */
+            .name {
+                font-size: 0.3rem;
+                color: @font-color-light;
+            }
+        }
+    }
+
+    /**
+	 * 样式类：信息修改表单容器
+	 * 描述：提供用户信息修改功能的区域，包含表单元素并设置顶部边框线以区分上下区域。
+	 */
+    .changeContainer {
+        flex: 1;
+        display: flex;
+        border-top: 0.01rem solid @shadow-border_bg-color;
+        padding-top: 0.1rem;
+        justify-content: center;
+
+        form {
+            width: 100%;
+
+            /**
+			 * 全局样式覆盖：针对 ant-design 表单项的特殊样式调整
+			 * 描述：对第三个表单项添加左侧外边距，优化表单布局。
+			 */
+            :global {
+                .ant-form-item:nth-child(3) {
+                    margin-left: 0.12rem;
+                }
+            }
+
+            /**
+			 * 表单输入框样式定制
+			 * 描述：去除默认边框，仅保留底部线条，并在聚焦时取消阴影效果。
+			 */
+            input {
+                border: none;
+                border-radius: 0;
+                border-bottom: 0.01rem solid @shadow-border_bg-color;
+            }
+
+            input:focus {
+                box-shadow: none;
+            }
+        }
+    }
+}
+
+/**
+ * 样式类：信息修改弹窗全局样式定制
+ * 描述：针对 ant-design 弹窗组件的内容区域进行样式覆盖，
+ *       设置弹窗内容宽度、页脚按钮布局等，以适配当前设计需求。
+ */
+.infoChangeModal {
+    :global {
+        .ant-modal-content {
+            width: 4rem;
+            margin: 0 auto;
+
+            .ant-modal-footer {
+                padding: 0 0.4rem;
+                display: flex;
+                justify-content: space-between;
+
+                button {
+                    padding: 0 0.2rem;
+                }
+            }
+        }
+    }
+}

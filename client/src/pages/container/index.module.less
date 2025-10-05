@@ -1,0 +1,220 @@
+@import '@/assets/styles/variables.less';
+
+/**
+ * 样式类：parentContainer
+ * 功能：作为页面根容器，使用 flex 布局将内容居中显示
+ * 特性：
+ *   - 最小宽度为视口宽度（100vw）
+ *   - 最小高度为视口高度（100vh）
+ *   - 使用 flex 布局实现水平和垂直居中
+ */
+.parentContainer {
+	min-width: 100vw;
+	min-height: 100vh;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+/**
+ * 样式类：container
+ * 功能：主内容容器，用于组织左右两个子区域的布局
+ * 子元素：
+ *   - .leftContainer：左侧功能区
+ *   - .rightContainer：右侧主内容区
+ */
+.container {
+	z-index: 10;
+	width: 9rem;
+	height: 6rem;
+	display: flex;
+	margin: 0.5rem;
+	overflow: hidden;
+
+	/**
+	 * 样式类：leftContainer
+	 * 功能：左侧功能区域，包含头像和图标列表
+	 * 布局方式：使用 flex 布局纵向排列
+	 */
+	.leftContainer {
+		flex: 1;
+		background-color: #2e2e2e;
+		display: flex;
+		align-items: center;
+		flex-direction: column;
+
+		/**
+		 * 样式类：avatar
+		 * 功能：展示用户头像的小图区域
+		 * 特性：
+		 *   - 固定尺寸 0.4rem x 0.4rem
+		 *   - 设置上下外边距
+		 *   - 内部 img 元素支持点击交互
+		 */
+		.avatar {
+			width: 0.4rem;
+			height: 0.4rem;
+			margin-top: 0.3rem;
+			margin-bottom: 0.2rem;
+			img {
+				width: 100%;
+				height: 100%;
+				cursor: pointer;
+			}
+		}
+
+		/**
+		 * 样式类：iconList
+		 * 功能：图标列表容器，纵向排列多个图标项
+		 * 布局方式：使用 flex 布局纵向排列，并在主轴上均匀分布空间
+		 */
+		.iconList {
+			width: 100%;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			justify-content: space-between;
+			ul {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				li {
+					margin: 0.1rem 0;
+					font-size: 0.2rem;
+					cursor: pointer;
+				}
+			}
+		}
+	}
+
+	/**
+	 * 样式类：rightContainer
+	 * 功能：右侧主内容区域，占据大部分空间（flex 比例为 17）
+	 */
+	.rightContainer {
+		flex: 17;
+	}
+}
+
+/**
+ * 样式类：infoContent
+ * 功能：信息展示区域，包含用户信息和按钮操作区
+ * 布局结构：
+ *   - infoContainer：用户头像与基本信息展示区
+ *   - btnContainer：底部按钮操作区
+ */
+.infoContent {
+	display: flex;
+	flex-direction: column;
+	letter-spacing: 0;
+
+	/**
+	 * 样式类：infoContainer
+	 * 功能：展示用户头像和基本信息的容器
+	 * 布局方式：横向排列头像和信息文本
+	 */
+	.infoContainer {
+		flex: 1;
+		padding-bottom: 0.2rem;
+		display: flex;
+
+		/**
+		 * 样式类：avatar
+		 * 功能：展示用户头像的大图区域
+		 * 特性：
+		 *   - 尺寸为 0.8rem x 0.8rem
+		 *   - 使用 flex 居中对齐
+		 */
+		.avatar {
+			display: flex;
+			justify-content: center;
+			align-items: flex-end;
+			margin-top: 0.1rem;
+			img {
+				width: 0.8rem;
+				height: 0.8rem;
+			}
+		}
+
+		/**
+		 * 样式类：info
+		 * 功能：展示用户详细信息的文本区域
+		 * 特性：
+		 *   - 使用变量 @font-color-lightest 设置字体颜色
+		 *   - 包含用户名（.name）等信息
+		 */
+		.info {
+			padding-left: 0.2rem;
+			color: @font-color-lightest;
+			font-size: 0.12rem;
+			display: flex;
+			flex-direction: column;
+			white-space: nowrap;
+
+			/**
+			 * 样式类：name
+			 * 功能：展示用户名的样式
+			 * 特性：
+			 *   - 字体较大（0.3rem）
+			 *   - 使用变量 @font-color-light 设置字体颜色
+			 */
+			.name {
+				font-size: 0.3rem;
+				color: @font-color-light;
+			}
+		}
+	}
+
+	/**
+	 * 样式类：btnContainer
+	 * 功能：底部按钮操作区域
+	 * 特性：
+	 *   - 上边框使用变量 @primary-border_bg-color
+	 *   - 使用 flex 布局实现按钮水平分布
+	 *   - 按钮具有圆角和居中对齐样式
+	 */
+	.btnContainer {
+		flex: 1;
+		display: flex;
+		justify-content: center;
+		align-items: flex-end;
+		border-top: 0.001rem solid @primary-border_bg-color;
+		padding: 0.12rem 0.1rem 0 0.1rem;
+		justify-content: space-between;
+		font-size: 0.12rem;
+		button {
+			display: flex;
+			border-radius: 0.05rem;
+			font-size: 0.12rem;
+			justify-content: center;
+			align-items: center;
+		}
+	}
+}
+
+/**
+ * 全局样式块：:global
+ * 功能：覆盖 ant-design 的 tooltip 组件默认样式
+ * 应用范围：所有使用 ant-tooltip 的组件
+ * 特性：
+ *   - 背景色使用变量 @primary-color
+ *   - 文字颜色使用变量 @font-color-light
+ *   - 字体大小为 0.12rem，间距为 0.02rem
+ *   - 移除最小宽高限制
+ */
+:global {
+	.ant-tooltip {
+		.ant-tooltip-content {
+			.ant-tooltip-inner {
+				background-color: @primary-color;
+				color: @font-color-light;
+				font-size: 0.12rem;
+				border-radius: 0;
+				letter-spacing: 0.02rem;
+				padding: 0.02rem 0.04rem;
+				min-width: 0;
+				min-height: 0;
+			}
+		}
+	}
+}
