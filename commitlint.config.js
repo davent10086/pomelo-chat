@@ -1,3 +1,5 @@
+// Commitlint 配置文件，用于规范 Git 提交信息的格式
+// 该配置基于 conventional changelog 标准，定义了提交信息的类型和规则
 module.exports = {
 	// 继承的规则
 	extends: ['@commitlint/config-conventional'],
@@ -19,7 +21,8 @@ module.exports = {
 				'revert', // 回退
 				'build' // 打包
 			]
-		], // subject 大小写不做校验
+		],
+		// subject 大小写不做校验
 		'subject-case': [0]
 	}
 };

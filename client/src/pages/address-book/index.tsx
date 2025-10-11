@@ -23,23 +23,16 @@ import {
 import type { DirectoryTreeProps } from 'antd/es/tree';
 
 import { StatusIconList } from '@/assets/icons';
-import CreateGroupChatModal from '@/componments/CreateGroupChatModal';
-import { IFriendGroupItem, IGroupChatInfo } from '@/componments/CreateGroupChatModal/type';
-import ImageLoad from '@/componments/ImageLoad';
-import SearchContainer from '@/componments/SearchContainer';
+import CreateGroupChatModal from '@/components/CreateGroupChatModal';
+import { IFriendGroupItem, IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
+import ImageLoad from '@/components/ImageLoad';
+import SearchContainer from '@/components/SearchContainer';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
 
-const {DirectoryTree} = Tree;
+const { DirectoryTree } = Tree;
 
-
-/**
- * 通讯录组件
- * 展示用户的好友列表和群聊列表，支持查看详细信息、修改好友信息和创建群聊等功能
- * @param props - 组件属性，包含处理选择聊天的方法
- * @param ref - 转发的ref引用，用于暴露组件内部方法
- */
 const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 	const { handleChooseChat } = props;
 	const user = JSON.parse(userStorage.getItem());
@@ -99,125 +92,152 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 			}))
 		};
 	});
-
-    /**
-     * 根据ID获取好友信息
-     * @param id 好友ID
-     */
-    const getNodeInfoById = async (id: number) => {
-        try {
-            const res = await getFriendInfoById(id);
-            if (res.code === HttpStatus.SUCCESS && res.data) {
-                setCurFriendInfo(res.data);
-                friendInfoFormInstance.setFieldsValue({
+	// 根据节点的 key 获取节点的信息
+	/**
+	 * 根据节点ID获取节点信息
+	 * 
+	 * 通过好友ID从服务器获取详细的好友信息，并设置到当前选中的好友信息状态中
+	 * 同时更新好友信息表单的数据
+	 * 
+	 * @param id - 好友ID
+	 */
+	const getNodeInfoById = async (id: number) => {
+		try {
+			const res = await getFriendInfoById(id);
+			if (res.code === HttpStatus.SUCCESS && res.data) {
+				setCurFriendInfo(res.data);
+				friendInfoFormInstance.setFieldsValue({
 					username: res.data.username,
 					name: res.data.name,
 					remark: res.data.remark,
 					group: res.data.group_id
-                    });
-        }else{
-            showMessage('error', '获取好友信息失败');
-        }
-        } catch {
-            showMessage('error', '获取好友信息失败');
-        }
-    };
-    
-    /**
-     * 处理树节点选择事件
-     */
-    const onSelect : DirectoryTreeProps['onSelect'] = (selectedKeys, info) => {
-        getNodeInfoById(Number(info.node.key));
-    };
-    
-    /**
-     * 刷新好友列表
-     */
-    const refreshFriendList = async () => {
-        try {
-            const res = await getFriendList();
-            if (res.code === HttpStatus.SUCCESS && res.data) {
-                setFriendList(res.data);
-                }else {
-                    showMessage('error', '获取好友列表失败');
-                }
-        } catch {
-            showMessage('error', '获取好友列表失败');
-            }
-        };
-        
-        /**
-         * 获取好友分组列表
-         */
-        const getFriendGroupList = async () => {
-            try {
-                const res = await getFriendGroup();
-                if (res.code === HttpStatus.SUCCESS && res.data){
-                    setGroupList(res.data);
-                }else{
-                    showMessage('error', '获取好友分组失败');
-                }
-            } catch {
-                showMessage('error', '获取好友分组失败');
-            }
-        };
-        
-        /**
-         * 更新好友信息
-         */
-        const updateFriend = () => {
-            friendInfoFormInstance.validateFields().then(async values => {
-                try {
-                    const params = {
-                        friend_id: curFriendInfo!.friend_id,
-                        remark: values.remark ? values.remark : curFriendInfo!.username,
-                        group_id: values.group,
-                    };
-                    const res = await updateFriendInfo(params);
-                    if (res.code === HttpStatus.SUCCESS) {
-                        showMessage('success', '修改好友信息成功');
-                        refreshFriendList();
-                    } else {
-                        showMessage('error', '修改好友信息失败');
-                    }
-                } catch {
-                    showMessage('error', '修改好友信息失败');
-                }
-            });
-        };
-        
-        /**
-         * 创建好友分组
-         */
-        const createGroup = async () => { 
-            if(!newGroupName){
-                showMessage('error', '请输入分组名称');
-                return;
-            }
-            try {
-                const params = {
-                    user_id: user.id,
-                    username: user.username,
-                    name: newGroupName,
-                };
-                const res = await createFriendGroup(params);
-                if (res.code === HttpStatus.SUCCESS){
-                    showMessage('success', '创建分组成功');
-                    refreshFriendList();
-                    getFriendGroupList();
-                    setOpenCreateGroupModal(false);
-                }else {
-                    showMessage('error', '创建分组失败');
-                }
-            } catch {
-                showMessage('error', '创建分组失败');
-            }
-        };
-        
-        /**
-         * 刷新群聊列表
-         */
-    const refreshGroupChatList = async () => {
+				});
+			} else {
+				showMessage('error', '获取好友信息失败');
+			}
+		} catch {
+			showMessage('error', '获取好友信息失败');
+		}
+	};
+	/**
+	 * 处理树形结构节点选择事件
+	 * 
+	 * 当用户在好友树中选择一个好友节点时，触发此函数
+	 * 获取被选中节点的好友信息并显示
+	 * 
+	 * @param selectedKeys - 被选中的节点key数组
+	 * @param info - 节点相关信息对象
+	 */
+	const onSelect: DirectoryTreeProps['onSelect'] = (selectedKeys, info) => {
+		// 获取节点信息
+		getNodeInfoById(Number(info.node.key));
+	};
+
+	/**
+	 * 刷新好友列表
+	 * 
+	 * 从服务器获取最新的好友列表数据并更新状态
+	 * 如果请求成功，更新friendList状态；如果失败，显示错误消息
+	 */
+	const refreshFriendList = async () => {
+		try {
+			const res = await getFriendList();
+			if (res.code === HttpStatus.SUCCESS && res.data) {
+				setFriendList(res.data);
+			} else {
+				showMessage('error', '获取好友列表失败');
+			}
+		} catch {
+			showMessage('error', '获取好友列表失败');
+		}
+	};
+
+	/**
+	 * 获取好友分组列表
+	 * 
+	 * 从服务器获取好友分组列表数据并更新状态
+	 * 如果请求成功，更新groupList状态；如果失败，显示错误消息
+	 */
+	const getFriendGroupList = async () => {
+		try {
+			const res = await getFriendGroup();
+			if (res.code === HttpStatus.SUCCESS && res.data) {
+				setGroupList(res.data);
+			} else {
+				showMessage('error', '获取好友分组列表失败');
+			}
+		} catch {
+			showMessage('error', '获取好友分组列表失败');
+		}
+	};
+
+	/**
+	 * 更新好友信息
+	 * 
+	 * 验证表单数据后，向服务器发送请求更新好友的备注和分组信息
+	 * 更新成功后刷新好友列表并显示成功消息，失败则显示错误消息
+	 */
+	const updateFriend = () => {
+		friendInfoFormInstance.validateFields().then(async values => {
+			try {
+				const params = {
+					friend_id: curFriendInfo!.friend_id,
+					remark: values.remark ? values.remark : curFriendInfo!.username, // 备注为空时默认为好友的用户名
+					group_id: values.group
+				};
+				const res = await updateFriendInfo(params);
+				if (res.code === HttpStatus.SUCCESS) {
+					showMessage('success', '修改成功');
+					refreshFriendList();
+				} else {
+					showMessage('error', '修改失败，请重试');
+				}
+			} catch {
+				showMessage('error', '修改失败，请重试');
+			}
+		});
+	};
+
+	/**
+	 * 创建新的好友分组
+	 * 
+	 * 验证分组名称后，向服务器发送请求创建新的好友分组
+	 * 创建成功后刷新好友列表和分组列表，关闭模态框并显示成功消息
+	 * 如果分组名称为空或请求失败，则显示相应的错误消息
+	 */
+	const createGroup = async () => {
+		if (!newGroupName) {
+			showMessage('error', '请输入分组名称');
+			return;
+		}
+
+		try {
+			const params = {
+				user_id: user.id,
+				username: user.username,
+				name: newGroupName
+			};
+			const res = await createFriendGroup(params);
+			if (res.code === HttpStatus.SUCCESS) {
+				showMessage('success', '新建成功');
+				refreshFriendList();
+				getFriendGroupList();
+				setOpenCreateGroupModal(false);
+			} else {
+				showMessage('error', '新建失败，请重试');
+			}
+		} catch {
+			showMessage('error', '新建失败，请重试');
+		}
+	};
+
+	/**
+	 * 刷新群聊列表
+	 * 
+	 * 从服务器获取最新的群聊列表数据并更新状态
+	 * 如果请求成功，更新groupChatList状态；如果失败，显示错误消息
+	 */
+	const refreshGroupChatList = async () => {
 		try {
 			const res = await getGroupChatList();
 			if (res.code === HttpStatus.SUCCESS) {
@@ -229,12 +249,15 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 			showMessage('error', '获取群聊列表失败');
 		}
 	};
-	
+
 	/**
 	 * 处理选择群聊事件
-	 * @param item 群聊项目
+	 * 
+	 * 当用户点击某个群聊时，获取该群聊的详细信息并设置为当前选中的群聊
+	 * 
+	 * @param item - 被选中的群聊项
 	 */
-const handleSelectGroupChat = async (item: IGroupChatItem) => {
+	const handleSelectGroupChat = async (item: IGroupChatItem) => {
 		try {
 			const res = await getGroupChatInfo(item.id);
 			if (res.code === HttpStatus.SUCCESS) {
@@ -298,8 +321,11 @@ const handleSelectGroupChat = async (item: IGroupChatItem) => {
 	];
 
 	/**
-	 * 控制创建群聊弹窗的显示与隐藏
-	 * @param visible 是否显示弹窗
+	 * 控制创建群聊模态框的显示与隐藏
+	 * 
+	 * 用于打开或关闭邀请好友加入群聊的模态框
+	 * 
+	 * @param visible - 是否显示模态框
 	 */
 	const handleCreateModal = (visible: boolean) => {
 		setCreateModal(visible);
@@ -335,7 +361,15 @@ const handleSelectGroupChat = async (item: IGroupChatItem) => {
 		}
 	};
 
-	// tabs 标签切换
+	/**
+	 * 生成标签标题元素
+	 * 
+	 * 为Tabs组件生成带有右键菜单功能的标题元素
+	 * 根据传入的key值确定是好友标签还是群聊标签，并添加相应的右键菜单
+	 * 
+	 * @param key - 标签类型标识符 (1表示好友，2表示群聊)
+	 * @returns 带有Tooltip的JSX元素
+	 */
 	const titleLabel = (key: number) => {
 		const title = key === 1 ? '好友' : '群聊';
 		return (
@@ -343,7 +377,7 @@ const handleSelectGroupChat = async (item: IGroupChatItem) => {
 				placement="bottomLeft"
 				title={addContent(key)}
 				arrow={false}
-				classNames={{ root: "addContent" }}
+				overlayClassName="addContent"
 				trigger={'contextMenu'}
 			>
 				{title}
@@ -389,11 +423,6 @@ const handleSelectGroupChat = async (item: IGroupChatItem) => {
 				)
 		}
 	];
-	
-	/**
-	 * 处理标签页切换
-	 * @param key 标签页的key值
-	 */
 	const onChange = (key: string) => {
 		setCurTab(key);
 	};
@@ -414,13 +443,17 @@ const handleSelectGroupChat = async (item: IGroupChatItem) => {
 		);
 	}, [friendList, groupChatList, curGroupChatInfo]);
 
-	// 暴露方法出去
+	/**
+	 * 暴露组件内部方法给父组件使用
+	 * 
+	 * 通过ref将组件内部的方法暴露给父组件，使父组件可以调用这些方法
+	 * 主要暴露刷新好友列表和刷新群聊列表的方法
+	 */
 	useImperativeHandle(ref, () => ({
 		refreshFriendList,
 		refreshGroupChatList
 	}));
-
-return (
+	return (
 		<>
 			<div className={styles.addressBook}>
 				{LeftContainer}

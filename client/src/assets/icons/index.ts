@@ -1,7 +1,3 @@
-/**
- * 菜单图标列表
- * 包含主菜单页面中各个功能项的图标和文本描述
- */
 export const MenuIconList = [
 	{
 		icon: 'icon-message',
@@ -36,11 +32,6 @@ export const MenuIconList = [
 		text: '退出登录'
 	}
 ];
-
-/**
- * 状态图标列表
- * 包含用户状态和消息状态相关的图标和文本描述
- */
 export const StatusIconList = [
 	{
 		icon: 'icon-zaixianzhuangtai-zaixian',
@@ -55,11 +46,6 @@ export const StatusIconList = [
 		text: '未读消息'
 	}
 ];
-
-/**
- * 聊天图标列表
- * 包含聊天界面中功能按钮的图标和文本描述
- */
 export const ChatIconList = [
 	{
 		icon: 'icon-biaoqing',

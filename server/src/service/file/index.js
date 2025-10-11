@@ -8,6 +8,9 @@ const { getFileSuffixByName } = require('../../utils/file');
 
 /**
  * 检验文件的上传状态：是否已上传、已上传的文件块
+ * @param {Object} req - 请求对象，包含body属性，其中包含fileHash(文件哈希值)、totalCount(文件块总数)、extname(文件扩展名)
+ * @param {Object} res - 响应对象，用于返回结果
+ * @returns {Object} 响应数据，包含neededFileList(需要上传的文件块列表)、message(提示信息)、filePath(文件路径)
  */
 const verifyFile = async (req, res) => {
 	const { fileHash, totalCount, extname } = req.body;
@@ -58,6 +61,9 @@ const verifyFile = async (req, res) => {
 
 /**
  * 上传文件块
+ * @param {Object} req - 请求对象，包含file.buffer(文件块数据)、body.chunkIndex(文件块索引)、body.fileHash(文件哈希值)、body.extname(文件扩展名)
+ * @param {Object} res - 响应对象，用于返回结果
+ * @returns {Object} 响应结果，成功或失败状态
  */
 const uploadChunk = async (req, res) => {
 	const chunk = req.file.buffer;
@@ -89,6 +95,9 @@ const uploadChunk = async (req, res) => {
 
 /**
  * 合并文件
+ * @param {Object} req - 请求对象，包含body.fileHash(文件哈希值)、body.extname(文件扩展名)
+ * @param {Object} res - 响应对象，用于返回结果
+ * @returns {Object} 响应数据，包含message(提示信息)、filePath(文件路径)
  */
 const mergeFile = async (req, res) => {
 	const { fileHash, extname } = req.body;
@@ -154,7 +163,11 @@ const mergeFile = async (req, res) => {
 	return RespData(res, data);
 };
 
-// 合并文件后要删除暂存的文件块
+/**
+ * 删除目录及其内容
+ * @param {string} dirPath - 需要删除的目录路径
+ * @returns {Promise<void>}
+ */
 const removeDir = async dirPath => {
 	try {
 		const files = await fs.promises.readdir(dirPath);

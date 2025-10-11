@@ -1,16 +1,6 @@
 @import '@/assets/styles/variables.less';
-
-/**
- * 通讯录页面根容器样式
- * 使用flex布局将页面分为左右两个部分
- */
 .addressBook {
 	display: flex;
-
-	/**
-	 * 左侧容器样式
-	 * 包含搜索框和联系人/群聊列表
-	 */
 	.leftContainer {
 		flex: 5;
 		background-color: @primary-border_bg-color;
@@ -18,50 +8,30 @@
 		flex-direction: column;
 		border-right: @primary-border_bg-color 0.002rem solid;
 		height: 6rem;
-
-		/**
-		 * 搜索区域样式
-		 */
 		.search {
 			height: 0.6rem;
 		}
-
-		/**
-		 * 列表区域样式
-		 * 包含联系人和群聊标签页
-		 */
 		.list {
 			height: 5.4rem;
-
-			/**
-			 * 通讯录标签页样式
-			 * 定义了联系人树和群聊列表的通用样式
-			 */
 			.addressBookTabs {
 				width: 100%;
 				height: 100%;
-
 				:global {
 					.ant-tree {
 						background-color: @primary-border_bg-color;
-
 						.ant-tree-treenode {
 							width: 100%;
 							padding: 0.03rem 0;
 						}
-
 						.ant-tree-treenode-selected::before {
 							display: none;
 						}
-
 						.ant-tree-treenode-selected {
 							background-color: @item-selected-bg-color;
 						}
-
 						.ant-tree-switcher-noop {
 							display: none;
 						}
-
 						.ant-tree-treenode-switcher-close,
 						.ant-tree-treenode-switcher-open {
 							.ant-tree-switcher-noop {
@@ -70,32 +40,20 @@
 						}
 					}
 				}
-
-				/**
-				 * 好友树列表样式
-				 * 显示好友列表，支持滚动
-				 */
 				.friendTree {
 					width: 100%;
 					height: 4.93rem;
 					overflow: scroll;
-
-					/**
-					 * 节点内容样式
-					 * 定义每个好友项的布局和样式
-					 */
 					.nodeContent {
 						display: flex;
 						align-items: center;
 						justify-content: space-between;
 						padding-right: 0.1rem;
-
 						img {
 							width: 0.35rem;
 							height: 0.35rem;
 							margin-right: 0.2rem;
 						}
-
 						span {
 							max-width: 1.2rem;
 							font-size: 0.15rem;
@@ -104,37 +62,28 @@
 							text-overflow: ellipsis;
 							white-space: nowrap;
 						}
-
 						.friendStatus {
 							margin-left: auto;
 						}
 					}
 				}
-
-				/**
-				 * 群聊列表样式
-				 * 显示群聊列表，支持滚动
-				 */
 				.groupChatList {
 					width: 100%;
 					height: 4.93rem;
 					display: flex;
 					flex-direction: column;
 					overflow: scroll;
-
 					.groupChat {
 						display: flex;
 						align-items: center;
 						border-bottom: 0.003rem solid @item-border-color;
 						cursor: pointer;
 						padding: 0.1rem;
-
 						img {
 							width: 0.4rem;
 							height: 0.4rem;
 							margin-right: 0.2rem;
 						}
-
 						span {
 							max-width: 1.2rem;
 							font-size: 0.15rem;
@@ -144,35 +93,25 @@
 							white-space: nowrap;
 						}
 					}
-
 					.curGroupChatInfo {
 						background-color: @item-selected-bg-color;
 					}
-
 					.groupChat:hover {
 						background-color: @item-hover-bg-color;
 					}
-
 					.groupChat:nth-child(1) {
 						border-top: 0.003rem solid @item-border-color;
 					}
 				}
-
-				/**
-				 * 自定义滚动条样式
-				 * 为好友列表和群聊列表设置滚动条样式
-				 */
 				.friendTree::-webkit-scrollbar,
 				.groupChatList::-webkit-scrollbar {
 					width: 0.01rem;
 				}
-
 				.friendTree::-webkit-scrollbar-thumb,
 				.groupChatList::-webkit-scrollbar-thumb {
 					border-radius: 0.05rem;
 					background-color: transparent;
 				}
-
 				.friendTree:hover::-webkit-scrollbar-thumb,
 				.groupChatList:hover::-webkit-scrollbar-thumb {
 					background-color: @scrollbar-thumb-color;
@@ -180,22 +119,12 @@
 			}
 		}
 	}
-
-	/**
-	 * 右侧容器样式
-	 * 显示选中联系人或群聊的详细信息
-	 */
 	.rightContainer {
 		flex: 12;
 		background-color: @deeply-border_bg-color;
 		display: flex;
 		justify-content: center;
 		align-items: center;
-
-		/**
-		 * 信息模态框样式
-		 * 展示详细信息的主容器
-		 */
 		.infoModal {
 			background-color: rgba(229, 229, 229, 0.3);
 			display: flex;
@@ -203,27 +132,19 @@
 			width: 60%;
 			height: 70%;
 			padding: 0.2rem;
-
-			/**
-			 * 信息容器头部样式
-			 * 显示头像和基本信息
-			 */
 			.infoContainerHead {
 				flex: 2.2;
 				display: flex;
-
 				.avatar {
 					display: flex;
 					justify-content: center;
 					align-items: flex-start;
 					margin-top: 0.1rem;
-
 					img {
 						width: 0.8rem;
 						height: 0.8rem;
 					}
 				}
-
 				.info {
 					padding-left: 0.2rem;
 					padding-top: 0.1rem;
@@ -231,12 +152,10 @@
 					font-size: 0.12rem;
 					display: flex;
 					flex-direction: column;
-
 					.username {
 						font-size: 0.3rem;
 						color: @font-color-light;
 					}
-
 					.signature {
 						width: 2rem;
 						overflow: hidden;
@@ -245,23 +164,19 @@
 						-webkit-box-orient: vertical;
 						-webkit-line-clamp: 2;
 					}
-
 					.signature::before {
 						margin-right: 0.03rem;
 					}
 				}
 			}
-
 			.changeContainer {
 				flex: 5;
 				display: flex;
 				border-top: 0.01rem solid @primary-border_bg-color;
 				justify-content: center;
 				padding: 0.1rem 0 0 0;
-
 				form {
 					width: 100%;
-
 					input {
 						border: none;
 						box-shadow: none;
@@ -269,27 +184,22 @@
 						background-color: transparent;
 						box-shadow: none;
 					}
-
 					:global {
 						.ant-form-item {
 							margin-bottom: 0;
-
 							label {
 								font-size: 0.12rem;
 								letter-spacing: 0.05rem;
 							}
-
 							input {
 								line-height: 1;
 								padding: none;
 							}
-
 							.ant-select-selector {
 								background-color: transparent;
 								box-shadow: none;
 							}
 						}
-
 						.ant-form-item:nth-child(3) {
 							input {
 								border-bottom: 0.01rem solid @primary-border_bg-color;
@@ -298,99 +208,71 @@
 					}
 				}
 			}
-
-			/**
-			 * 信息容器主体样式
-			 * 显示详细信息内容
-			 */
 			.infoContainerBody {
 				flex: 5;
 				display: flex;
 				border-top: 0.01rem solid @primary-border_bg-color;
 				justify-content: center;
 				padding: 0.1rem 0 0 0;
-
 				.homePage {
 					display: flex;
 					flex-direction: column;
-
 					span {
 						padding: 0.1rem;
 					}
 				}
-
-				/**
-				 * 成员表格样式
-				 * 显示群成员列表
-				 */
 				.memberTable {
 					width: 100%;
 					height: 1.6rem;
-
 					.tableTitle,
 					.tableItem {
 						display: flex;
 						justify-content: space-between;
 						color: @font-color-lightest;
 						border-bottom: @primary-color solid 0.01rem;
-
 						li {
 							overflow: hidden;
 							text-overflow: ellipsis;
 							white-space: nowrap;
 							text-align: center;
 						}
-
 						li:nth-child(1) {
 							width: 0.6rem;
 						}
-
 						li:nth-child(2) {
 							width: 0.6rem;
 						}
-
 						li:nth-child(3) {
 							width: 1rem;
 						}
-
 						li:nth-child(4) {
 							width: 1rem;
 						}
 					}
-
 					.tableTitle {
 						color: @font-color-lighter;
 					}
-
 					.tableContent {
 						width: 100%;
 						height: 1.4rem;
 						overflow-y: scroll;
 					}
-
 					.tableContent::-webkit-scrollbar {
 						width: 0.01rem;
 					}
-
 					.tableContent::-webkit-scrollbar-thumb {
 						border-radius: 0.05rem;
 						background-color: transparent;
 					}
-
 					.tableContent:hover::-webkit-scrollbar-thumb {
 						background-color: @scrollbar-thumb-color;
 					}
 				}
 			}
-
-			/**
-			 * 按钮区域样式
-			 */
 			.btns {
 				display: flex;
 				justify-content: space-between;
 				padding: 0 0.2rem;
-
 				button {
 					font-size: 0.12rem;
 				}
@@ -398,53 +280,39 @@
 		}
 	}
 }
-
-/**
- * 全局样式定义
- * 覆盖Ant Design组件的默认样式
- */
 :global {
 	.anticon-wechat {
 		color: @font-color-lightest;
 		font-size: 0.8rem;
 	}
-
 	.ant-select-dropdown {
 		font-size: 0.12rem;
 	}
-
 	.ant-tabs {
 		width: 100%;
 		height: 100%;
-
 		.ant-tabs-content {
 			width: 100%;
 			height: 100%;
-
 			.ant-tabs-tabpane {
 				width: 100%;
 				height: 100%;
 			}
 		}
 	}
-
 	.ant-tabs-nav-list {
 		width: 100%;
-
 		.ant-tabs-tab {
 			flex: 1;
 			justify-content: center;
 		}
 	}
-
 	.ant-tabs-nav-list::before {
 		width: 50%;
 	}
-
 	.ant-tabs-nav-list::after {
 		width: 50%;
 	}
-
 	.ant-modal-footer {
 		display: flex;
 		justify-content: space-between;

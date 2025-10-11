@@ -1,43 +1,34 @@
-import { HttpStatus } from "./constant";
-import { mergeFile, uploadChunk, vertifyFile } from "./file-api";
-
+import { HttpStatus } from '@/utils/constant';
+import { mergeFile, uploadChunk, vertifyFile } from '@/utils/file-api';
 
 // 文件上传方法返回参数
 interface IUploadFileRes {
-	/** 上传是否成功 */
 	success: boolean;
-	/** 文件上传成功后的路径（可选） */
 	filePath?: string;
-	/** 返回的消息信息 */
 	message: string | '';
 }
 
 // 文件分片上传接口请求参数
 interface IUploadChunkParams {
-	/** 分片数据 */
 	chunk: ArrayBuffer;
-	/** 当前分片索引 */
 	chunkIndex: number;
-	/** 文件的哈希值 */
 	fileHash: string;
-	/** 文件扩展名 */
 	extname: string;
 }
 
 /**
- * 分片上传主函数：
+ * 分片上传：
  * 1. 将文件进行分片并计算Hash值：得到 allChunkList---所有分片，fileHash---文件的hash值
  * 2. 通过fileHash请求服务端，判断文件上传状态，得到 neededFileList---待上传文件分片
  * 3. 同步上传进度，针对不同文件上传状态调用 progress_cb
  * 4. 发送上传请求
  * 5. 发送文件合并请求
- *
- * @param file 目标上传文件
- * @param baseChunkSize 上传分片大小，单位Mb
- * @param maxRetries 最大重试次数，默认为3次
- * @param retryDelay 重试延迟时间，默认为1000ms
- * @param progress_cb 更新上传进度的回调函数
- * @returns Promise<IUploadFileRes> 上传结果对象
+ * @param {File} file 目标上传文件
+ * @param {number} baseChunkSize 上传分片大小，单位Mb
+ * @param {number} maxRetries 最大重试次数
+ * @param {number} retryDelay 重试延迟时间
+ * @param {Function} progress_cb 更新上传进度的回调函数
+ * @returns {Promise}
  */
 export async function uploadFile(
 	file: File,
@@ -94,17 +85,7 @@ export async function uploadFile(
 	});
 }
 
-/**
- * 处理文件上传逻辑：包括验证文件状态、断点续传、分片上传和文件合并
- *
- * @param file 原始文件对象
- * @param chunkList 所有分片数据列表
- * @param fileHash 文件哈希值
- * @param maxRetries 最大重试次数
- * @param retryDelay 重试延迟时间
- * @param progress_cb 进度更新回调函数
- * @returns Promise<IUploadFileRes> 上传结果
- */
+// 将文件分片及Hash值进行处理
 async function handleFile(
 	file: File,
 	chunkList: ArrayBuffer[],
@@ -121,7 +102,6 @@ async function handleFile(
 	let neededChunkList: number[] = [];
 	// 上传进度
 	let progress = 0;
-
 	// 获取文件上传状态
 	try {
 		const params = {
@@ -204,7 +184,6 @@ async function handleFile(
 			}
 		}
 	});
-
 	// 如果有失败的分片，抛出错误，并停止后面的合并操作
 	try {
 		await Promise.all(requestList);
@@ -233,14 +212,7 @@ async function handleFile(
 	}
 }
 
-/**
- * 带重试机制的分片上传函数
- *
- * @param params 分片上传参数
- * @param maxRetries 最大重试次数，默认为3次
- * @param retryDelay 重试延迟时间，默认为1000ms
- * @returns Promise<any> 上传响应结果
- */
+// 分片上传重试
 const uploadChunkWithRetry = async (
 	params: IUploadChunkParams,
 	maxRetries = 3,

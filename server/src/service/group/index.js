@@ -10,6 +10,10 @@ const { Query } = require('../../utils/query');
  * 1. 根据 group_id 查询 group_numbers 表获取群成员的 用户IDuser_id、群昵称nickname和加群时间created_at,
  * 2. 并查询 user 表获取成员 用户名username、用户昵称name和头像avatar
  * 3. 使用 left join 根据 sender_id 和 room 查询 message 表获取用户的最后一次发消息时间
+ * 
+ * @param {string} group_id - 群组ID
+ * @param {string} room - 聊天室标识
+ * @returns {Promise<Array>} 群成员信息列表
  */
 const getGroupMembers = async (group_id, room) => {
 	try {
@@ -49,6 +53,10 @@ const getGroupMembers = async (group_id, room) => {
  * 创建群聊的基本逻辑：
  * 1. 服务端拿到创建群聊所需要的信息后在群聊表 (group_chat) 新建一个群聊
  * 2. 在群聊成员表 (group_numbers) 中循环插入所有群聊成员记录并通知刷新群聊列表
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 响应结果
  */
 const createGroupChat = async (req, res) => {
 	const groupInfo = req.body;
@@ -111,10 +119,15 @@ const createGroupChat = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 获取当前用户加入的所有群聊的基本逻辑：
  * 1. 获取当前用户 id
  * 2. 根据 group_members 获取所有 group_id, 再根据 left join 获取 group_chat 对应的 id 下的群聊信息
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 群聊列表
  */
 const getGroupChatList = async (req, res) => {
 	const id = req.user.id;
@@ -144,10 +157,15 @@ const getGroupChatList = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 模糊查询群聊的基本逻辑：
  * 1. 根据 name 查询 group_chat 获取相似的所有群聊
  * 2. 根据 user_id 和 id 查询 group_members 判断当前用户是否加入群聊
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 查询结果列表
  */
 const searchGroupChat = async (req, res) => {
 	const { name } = req.query;
@@ -184,12 +202,17 @@ const searchGroupChat = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 获取群聊信息的基本逻辑：
  * 1. 需要获取群介绍, 群主, 所有群成员 (头像, 群昵称, name, 加入群聊时间, 最后发言时间)
  * 2. 根据 group_id 查询 group_chat 表获取群主的 id, 房间 room, 群介绍, 群头像
  * 3. 根据 group_id 查询 group_numbers 表获取群成员的 user_id,nickname,created_at, 并查询 user 表获取成员 username 和头像
  * 4. 使用 left join 根据 user_id 和 room 查询 message 表获取用户的最后一次发消息时间
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 群聊详细信息
  */
 const getGroupChatInfo = async (req, res) => {
 	const group_id = req.query.group_id;
@@ -233,11 +256,16 @@ const getGroupChatInfo = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 邀请新的好友进入群聊的基本逻辑：
  * 1. 获取邀请名单和 group_id
  * 2. 根据 group_id 查询 group_numbers 表去筛选邀请名单, 过滤掉已经存在群里的用户
  * 3. 在 group_members 表插入新的数据（包含 group_id、user_id、nickname 三个字段，其中 nickname 直接为 username 即可）
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 响应结果
  */
 const inviteFriendToGroupChat = async (req, res) => {
 	const { groupId, invitationList } = req.body;
@@ -282,10 +310,15 @@ const inviteFriendToGroupChat = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 加入新的群聊的基本逻辑：
  * 1. 先判断是否已经加入了该群聊
  * 2. 如果没有加入，则插入新的数据到 group_members、group_chat 表即可
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 响应结果和群聊信息
  */
 const joinGroupChat = async (req, res) => {
 	const sender = req.user;
@@ -325,8 +358,13 @@ const joinGroupChat = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 获取群聊成员信息
+ * 
+ * @param {Object} req - 请求对象
+ * @param {Object} res - 响应对象
+ * @returns {Object} 群成员列表
  */
 const getGroupMemberList = async (req, res) => {
 	const { group_id, room } = req.query;

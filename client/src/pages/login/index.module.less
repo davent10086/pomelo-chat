@@ -1,9 +1,5 @@
 @import '@/assets/styles/variables.less';
 
-/**
- * 背景容器样式定义
- * 用于设置页面背景图的展示方式和基本布局属性
- */
 .bgContainer {
 	background: no-repeat center center fixed;
 	background-size: cover;
@@ -12,13 +8,13 @@
 	position: absolute;
 	top: 0;
 	left: 0;
+	
+	&.dark-theme {
+		background-image: url('https://images.unsplash.com/photo-1493246507139-91e8fad9978e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80');
+	}
 
-	/**
-	 * 登录表单容器样式定义
-	 * 设置登录框的位置、尺寸、背景及模糊效果
-	 */
 	.loginContainer {
-		background-color: @bg-filter-color;
+		background-color: var(--bg-filter-color);
 		overflow: hidden;
 		z-index: 10;
 		width: 4.5rem;
@@ -28,36 +24,28 @@
 		margin-left: -2.25rem;
 		transform: translateY(-50%);
 		backdrop-filter: blur(0.05rem);
-
-		/**
-		 * 文本样式定义
-		 * 设置登录框内标题文字的样式，包括颜色、大小、阴影等
-		 */
+		
 		.text {
 			margin-bottom: 0.2rem;
 			line-height: 0.5rem;
 			text-align: center;
 			font-size: 0.3rem;
 			font-weight: bolder;
-			color: @primary-color;
-			text-shadow: 0.02rem 0.02rem 0.04rem @font-color;
+			color: var(--primary-color);
+			text-shadow: 0.02rem 0.02rem 0.04rem var(--font-color);
+			
+			.dark-theme & {
+				text-shadow: 0.02rem 0.02rem 0.04rem rgba(0, 0, 0, 0.5);
+			}
 		}
-
-		/**
-		 * 表单样式定义
-		 * 控制表单元素的布局和样式，包括输入框、按钮等
-		 */
+		
 		form {
 			width: 100%;
 			display: flex;
 			flex-direction: column;
 			justify-content: center;
 			align-items: center;
-
-			/**
-			 * 全局样式覆盖
-			 * 针对 ant-design 表单项进行样式调整
-			 */
+			
 			:global {
 				.ant-form-item {
 					width: 80%;
@@ -67,63 +55,55 @@
 					}
 				}
 			}
-
-			/**
-			 * 输入框样式定义
-			 * 设置输入框的尺寸、边距、圆角和字体大小
-			 */
+			
 			input {
 				width: 100%;
 				height: 0.3rem;
 				padding: 0.04rem 0.1rem;
 				border-radius: 0.02rem;
 				font-size: 0.14rem;
+				background-color: var(--primary-color);
+				border: 1px solid var(--primary-border-bg-color);
+				color: var(--font-color);
+				
+				&::placeholder {
+					color: var(--font-color-lightest);
+				}
+				
+				.dark-theme & {
+					background-color: var(--deeply-border-bg-color);
+					border: 1px solid var(--item-border-color);
+				}
 			}
-
-			/**
-			 * 登录工具栏样式定义
-			 * 包含记住密码和忘记密码链接的布局与样式
-			 */
+			
 			.login_tools {
 				width: 100%;
 				display: flex;
 				flex-direction: row;
-				color: @primary-color;
+				color: var(--primary-color);
 				font-size: 0.14rem;
-
-				/**
-				 * 记住密码选项样式定义
-				 * 设置选项的布局、光标样式和文字颜色
-				 */
+				
 				.remenberTool {
 					flex: 1;
 					text-align: center;
 					cursor: pointer;
 					span {
-						color: @primary-color;
+						color: var(--primary-color);
 						font-size: 0.14rem;
 					}
 				}
-
-				/**
-				 * 忘记密码选项样式定义
-				 * 设置选项的布局和光标样式
-				 */
+				
 				.forgetpasTool {
 					flex: 1;
 					text-align: center;
 					cursor: pointer;
 				}
 			}
-
-			/**
-			 * 登录按钮样式定义
-			 * 设置按钮的尺寸、背景、阴影、过渡动画等效果
-			 */
+			
 			.login_button {
 				line-height: 0.3rem;
 				background: #17b98d;
-				box-shadow: 0 0.04rem 0.08rem 0 @btn-shadow-color;
+				box-shadow: 0 0.04rem 0.08rem 0 var(--btn-shadow-color);
 				border-radius: 0.04rem;
 				width: 1.5rem;
 				height: 0.3rem;
@@ -133,36 +113,30 @@
 				letter-spacing: 0.15rem;
 				text-indent: 0.15rem;
 				transition: all 0.3s ease-in-out;
-
-				/**
-				 * 登录按钮悬停效果
-				 * 改变按钮背景色
-				 */
+				
 				&:hover {
-					background: @primary-antd-color;
+					background: var(--primary-antd-color);
 				}
-
+				
 				span {
-					color: @primary-color;
+					color: var(--primary-color);
 					font-size: 0.16rem;
 				}
 			}
 		}
-
-		/**
-		 * 链接样式定义
-		 * 设置页面底部链接的样式和悬停效果
-		 */
+		
 		.link {
 			text-align: center;
 			cursor: pointer;
 			margin-bottom: 0.1rem;
+			
 			a {
-				color: @a-link-color;
+				color: var(--a-link-color);
 				font-size: 0.14rem;
 			}
+			
 			a:hover {
-				border-bottom: 0.01rem solid @a-link-color;
+				border-bottom: 0.01rem solid var(--a-link-color);
 			}
 		}
 	}

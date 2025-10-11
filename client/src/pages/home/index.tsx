@@ -1,16 +1,16 @@
 /**
- * Home 页面组件
+ * Home页面组件
  * 
- * 这是应用程序的主页组件，提供背景容器并渲染 Container 组件
+ * 该组件是应用的主页，渲染背景容器并包含Container子组件。
+ * 
+ * @returns 返回Home页面的JSX元素
  */
 import styles from './index.module.less';
 import Container from '../container';
-import React from'react';
 
 const Home = () => {
 	return (
 		<>
-			{/* 背景容器 */}
 			<div className={styles.bgContainer}>
 				<Container />
 			</div>

@@ -1,4 +1,4 @@
-import { IGroupChatInfo } from '@/componments/CreateGroupChatModal/type';
+import { IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
 import { IFriendInfo } from '@/pages/address-book/type';
 /**
  * 接口参数类型定义

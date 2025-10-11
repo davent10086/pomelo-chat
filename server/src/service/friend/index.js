@@ -6,7 +6,11 @@ const { RespData, RespSuccess, RespError } = require('../../utils/resp');
 const { NotificationUser } = require('../../utils/notification');
 const { Query } = require('../../utils/query');
 
-// 查询分组下的好友信息
+/**
+ * 根据分组ID查询好友信息
+ * @param {number} group_id - 好友分组ID
+ * @returns {Promise<Array>} 好友信息数组
+ */
 const getFriendByGroup = async group_id => {
 	try {
 		const sql = `SELECT * FROM friend WHERE group_id = ?`;
@@ -16,7 +20,12 @@ const getFriendByGroup = async group_id => {
 		throw new Error('查询失败');
 	}
 };
-// 查询某个用户下的所有好友（数组平铺）
+
+/**
+ * 查询某个用户下的所有好友（数组平铺）
+ * @param {number} user_id - 用户ID
+ * @returns {Promise<Array>} 好友信息数组
+ */
 const getFriendByUser = async user_id => {
 	try {
 		const friends = [];
@@ -32,7 +41,12 @@ const getFriendByUser = async user_id => {
 		throw new Error('查询失败');
 	}
 };
-// 添加好友
+
+/**
+ * 添加好友记录
+ * @param {Object} friend_info - 好友信息对象
+ * @returns {Promise<string>} 添加结果信息
+ */
 const addFriendRecord = async friend_info => {
 	try {
 		const sql = `INSERT INTO friend SET ?`;
@@ -48,10 +62,14 @@ const addFriendRecord = async friend_info => {
 };
 
 /**
+ * 搜索用户
  * 查询用户的基本逻辑：
  * 1. 查询用户表, 模糊查询
  * 2. 判断查询出来的数据中, 判断是否存在已经好友的现象
  * 3. 筛选出已经是好友的和不是好友的，非好友的才能添加
+ * @param {Object} req - 请求对象，包含用户信息和查询参数
+ * @param {Object} res - 响应对象
+ * @returns {Object} 包含搜索结果的响应对象
  */
 const searchUser = async (req, res) => {
 	// 获取当前登录的用户信息、模糊查询关键字
@@ -95,10 +113,15 @@ const searchUser = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
+ * 添加好友
  * 添加好友的基本逻辑：
  * 1. 首先将好友添加到自己的好友列表中
  * 2. 然后将自己也插入到别人的好友列表中
+ * @param {Object} req - 请求对象，包含用户信息和好友信息
+ * @param {Object} res - 响应对象
+ * @returns {Object} 操作结果响应对象
  */
 const addFriend = async (req, res) => {
 	// 获取发送方信息、好友 id、好友用户名、好友头像（注意：好友备注及好友分组是默认值）
@@ -142,10 +165,15 @@ const addFriend = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
+ * 获取好友列表
  * 获取好友列表的基本逻辑：
  * 1. 根据当前用户的 id 获取其所有好友分组的 id 和 name
  * 2. 然后查询各个分组下的好友，最后拼接在一起返回
+ * @param {Object} req - 请求对象，包含用户信息
+ * @param {Object} res - 响应对象
+ * @returns {Object} 包含好友列表的响应对象
  */
 const getFriendList = async (req, res) => {
 	try {
@@ -174,10 +202,15 @@ const getFriendList = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
+ * 根据好友ID获取好友信息
  * 根据好友 id 获取好友信息的基本逻辑：
  * 1. 由于前端传给后端的只是一个friend表的id，若一个接口既要获取到完整的好友个人信息、又要获取到好友所在的分组，
  * 2. 则需要联表查询（friend表与user表通过user_id可进行关联，friend表与friend_group表通过group_id可进行关联）
+ * @param {Object} req - 请求对象，包含查询参数
+ * @param {Object} res - 响应对象
+ * @returns {Object} 包含好友信息的响应对象
  */
 const getFriendById = async (req, res) => {
 	const { id } = req.query;
@@ -217,8 +250,12 @@ const getFriendById = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 获取当前用户的分组列表
+ * @param {Object} req - 请求对象，包含用户信息
+ * @param {Object} res - 响应对象
+ * @returns {Object} 包含分组列表的响应对象
  */
 const getFriendGroupList = async (req, res) => {
 	const user_id = req.user.id;
@@ -233,8 +270,12 @@ const getFriendGroupList = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 添加好友分组
+ * @param {Object} req - 请求对象，包含分组信息
+ * @param {Object} res - 响应对象
+ * @returns {Object} 操作结果响应对象
  */
 const createFriendGroup = async (req, res) => {
 	const friend_group = req.body;
@@ -251,8 +292,12 @@ const createFriendGroup = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 修改好友信息（备注、分组）
+ * @param {Object} req - 请求对象，包含好友信息
+ * @param {Object} res - 响应对象
+ * @returns {Object} 操作结果响应对象
  */
 const updateFriend = async (req, res) => {
 	const { friend_id, remark, group_id } = req.body;

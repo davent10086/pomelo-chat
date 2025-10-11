@@ -1,0 +1,32 @@
+@import '@/assets/styles/variables.less';
+
+.chat_container {
+	height: 100%;
+	overflow: auto;
+	overflow-y: scroll;
+
+	.chat_item {
+		margin-bottom: 0.16rem;
+	}
+}
+
+.chat_container::-webkit-scrollbar {
+	width: 0.05rem;
+}
+
+.chat_container::-webkit-scrollbar-thumb {
+	border-radius: 0.05rem;
+	background-color: transparent;
+}
+
+.chat_container:hover::-webkit-scrollbar-thumb {
+	background-color: @primary-border_bg-color;
+}
+
+:global {
+	.ant-image-preview-img-wrapper {
+		img {
+			width: auto;
+		}
+	}
+}

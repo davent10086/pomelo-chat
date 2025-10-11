@@ -1,113 +1,86 @@
-// 注册页面样式模块
-// 定义背景容器样式，设置全屏背景
 @import '@/assets/styles/variables.less';
 .bgContainer {
-  // 设置背景图片属性：不重复、居中、固定定位并覆盖整个容器
-  background: no-repeat center center fixed;
-  background-size: cover;
-  height: 100%;
-  width: 100%;
-  position: absolute;
-  top: 0;
-  left: 0;
-  
-  // 注册表单容器样式
-  .registerContainer {
-    // 设置背景色、溢出隐藏和层级
-    background-color: @bg-filter-color;
-    overflow: hidden;
-    z-index: 10;
-    // 固定容器宽度并居中定位
-    width: 4.5rem;
-    position: absolute;
-    top: 40%;
-    left: 50%;
-    margin-left: -2.25rem;
-    transform: translateY(-50%);
-    // 添加背景模糊效果
-    backdrop-filter: blur(0.05rem);
-    
-    // 页面标题文本样式
-    .text {
-      margin-bottom: 0.2rem;
-      line-height: 0.5rem;
-      text-align: center;
-      font-size: 0.3rem;
-      font-weight: bolder;
-      color: @primary-color;
-      text-shadow: 0.02rem 0.02rem 0.04rem @font-color;
-    }
-    
-    // 表单容器样式
-    form {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      
-      // 全局样式覆盖，用于 antd 表单项
-      :global {
-        .ant-form-item {
-          width: 80%;
-          .ant-form-item-control-input-content {
-            display: flex;
-            justify-content: center;
-          }
-        }
-      }
-      
-      // 输入框样式
-      input {
-        height: 0.3rem;
-        width: 100%;
-        padding: 0.04rem 0.1rem;
-        border-radius: 0.02rem;
-        font-size: 0.14rem;
-      }
-      
-      // 注册按钮样式
-      .register_button {
-        background: #17b98d;
-        box-shadow: 0 0.04rem 0.08rem 0 @btn-shadow-color;
-        border-radius: 0.04rem;
-        width: 1.5rem;
-        height: 0.3rem;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        letter-spacing: 0.15rem;
-        text-indent: 0.15rem;
-        transition: all 0.3s ease-in-out;
-        
-        // 按钮悬停效果
-        &:hover {
-          background: @primary-antd-color;
-        }
-        
-        // 按钮文字样式
-        span {
-          color: @primary-color;
-          font-size: 0.16rem;
-        }
-      }
-    }
-    
-    // 链接样式
-    .link {
-      text-align: center;
-      cursor: pointer;
-      margin-bottom: 0.1rem;
-      
-      a {
-        color: @a-link-color;
-        font-size: 0.14rem;
-      }
-      
-      // 链接悬停效果
-      a:hover {
-        border-bottom: 0.01rem solid @a-link-color;
-      }
-    }
-  }
+	background: no-repeat center center fixed;
+	background-size: cover;
+	height: 100%;
+	width: 100%;
+	position: absolute;
+	top: 0;
+	left: 0;
+	.registerContainer {
+		background-color: @bg-filter-color;
+		overflow: hidden;
+		z-index: 10;
+		width: 4.5rem;
+		position: absolute;
+		top: 40%;
+		left: 50%;
+		margin-left: -2.25rem;
+		transform: translateY(-50%);
+		backdrop-filter: blur(0.05rem);
+		.text {
+			margin-bottom: 0.2rem;
+			line-height: 0.5rem;
+			text-align: center;
+			font-size: 0.3rem;
+			font-weight: bolder;
+			color: @primary-color;
+			text-shadow: 0.02rem 0.02rem 0.04rem @font-color;
+		}
+		form {
+			width: 100%;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			:global {
+				.ant-form-item {
+					width: 80%;
+					.ant-form-item-control-input-content {
+						display: flex;
+						justify-content: center;
+					}
+				}
+			}
+			input {
+				height: 0.3rem;
+				width: 100%;
+				padding: 0.04rem 0.1rem;
+				border-radius: 0.02rem;
+				font-size: 0.14rem;
+			}
+			.register_button {
+				background: #17b98d;
+				box-shadow: 0 0.04rem 0.08rem 0 @btn-shadow-color;
+				border-radius: 0.04rem;
+				width: 1.5rem;
+				height: 0.3rem;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				letter-spacing: 0.15rem;
+				text-indent: 0.15rem;
+				transition: all 0.3s ease-in-out;
+				&:hover {
+					background: @primary-antd-color;
+				}
+				span {
+					color: @primary-color;
+					font-size: 0.16rem;
+				}
+			}
+		}
+		.link {
+			text-align: center;
+			cursor: pointer;
+			margin-bottom: 0.1rem;
+			a {
+				color: @a-link-color;
+				font-size: 0.14rem;
+			}
+			a:hover {
+				border-bottom: 0.01rem solid @a-link-color;
+			}
+		}
+	}
 }

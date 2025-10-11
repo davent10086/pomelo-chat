@@ -5,7 +5,13 @@ const { Query } = require('../../utils/query');
 
 const ChatRTCRooms = {}; // 全局变量存储聊天室房间，每个房间是一个对象，对象的键是用户名 username，值是 WebSocket 实例
 
-// 发送给房间内其它人
+/**
+ * 向房间内除指定用户外的其他用户广播消息
+ * @param {string} username - 发送消息的用户名
+ * @param {string} room - 房间名
+ * @param {object} msg - 要发送的消息对象
+ * @param {boolean} isNeedCalling - 是否需要接收方正在通话状态才发送消息
+ */
 const broadcastSocket = (username, room, msg, isNeedCalling = true) => {
 	for (const key in ChatRTCRooms[room]) {
 		if (key === username) {
@@ -22,7 +28,12 @@ const broadcastSocket = (username, room, msg, isNeedCalling = true) => {
 	}
 };
 
-// 根据好友 username 获取好友相关信息
+/**
+ * 根据好友用户名获取好友相关信息
+ * @param {string} friend_username - 好友用户名
+ * @param {string} self_username - 自己的用户名
+ * @returns {Promise<object>} 好友信息对象
+ */
 const getFriendByUsername = async (friend_username, self_username) => {
 	try {
 		const sql = `
@@ -253,6 +264,9 @@ const connectRTC = async (ws, req) => {
 
 /**
  * 获取当前房间内正在通话的所有人
+ * @param {object} req - 请求对象
+ * @param {object} res - 响应对象
+ * @returns 响应结果
  */
 const getRoomMembers = async (req, res) => {
 	const url = req.url.split('?')[1];

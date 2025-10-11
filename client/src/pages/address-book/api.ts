@@ -6,7 +6,7 @@ import {
 	IGroupChatItem
 } from './type';
 
-import { IFriendGroupItem, IGroupChatInfo } from '@/componments/CreateGroupChatModal/type';
+import { IFriendGroupItem, IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
 import Request from '@/utils/request';
 
 // 获取好友列表

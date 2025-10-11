@@ -6,13 +6,13 @@ import styles from './index.module.less';
 import { IChatRef, IAddressBookRef } from './type';
 
 import { MenuIconList } from '@/assets/icons';
-import AudioModal from '@/componments/AudioModal';
-import { ICallReceiverInfo } from '@/componments/AudioModal/type';
-import ChangePerInfoModal from '@/componments/ChangePerInfoModal';
-import ChangePwdModal from '@/componments/ChangePwdModal';
-import { IGroupChatInfo } from '@/componments/CreateGroupChatModal/type';
-import ImageLoad from '@/componments/ImageLoad';
-import VideoModal from '@/componments/VideoModal';
+import AudioModal from '@/components/AudioModal';
+import { ICallReceiverInfo } from '@/components/AudioModal/type';
+import ChangePerInfoModal from '@/components/ChangePerInfoModal';
+import ChangePwdModal from '@/components/ChangePwdModal';
+import { IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
+import ImageLoad from '@/components/ImageLoad';
+import VideoModal from '@/components/VideoModal';
 import { wsBaseURL } from '@/config';
 import useShowMessage from '@/hooks/useShowMessage';
 import AddressBook from '@/pages/address-book';
@@ -22,10 +22,6 @@ import { HttpStatus } from '@/utils/constant';
 import { handleLogout } from '@/utils/logout';
 import { clearSessionStorage, userStorage } from '@/utils/storage';
 
-/**
- * 应用主容器组件
- * 负责管理整个应用的布局、状态和主要功能模块
- */
 const Container = () => {
 	const showMessage = useShowMessage();
 	const navigate = useNavigate();
@@ -45,42 +41,27 @@ const Container = () => {
 	const [curMode, setCurMode] = useState<string>(''); // 当前音视频通话模式
 	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]); // 音视频通话对象列表
 
-	/**
-	 * 控制修改密码弹窗的显示和隐藏
-	 * @param visible - true显示弹窗，false隐藏弹窗
-	 */
+	// 控制修改密码的弹窗显隐
 	const handleForgetModal = (visible: boolean) => {
 		setForgetModal(visible);
 	};
 
-	/**
-	 * 控制修改用户信息弹窗的显示和隐藏
-	 * @param visible - true显示弹窗，false隐藏弹窗
-	 */
+	// 控制修改信息的弹窗显隐
 	const handleInfoModal = (visible: boolean) => {
 		setInfoModal(visible);
 	};
 
-	/**
-	 * 控制音频通话弹窗的显示和隐藏
-	 * @param visible - true显示弹窗，false隐藏弹窗
-	 */
+	// 控制音频通话弹窗的显隐
 	const handleAudioModal = (visible: boolean) => {
 		setAudioModal(visible);
 	};
 
-	/**
-	 * 控制视频通话弹窗的显示和隐藏
-	 * @param visible - true显示弹窗，false隐藏弹窗
-	 */
+	// 控制视频通话弹窗的显隐
 	const handleVideoModal = (visible: boolean) => {
 		setVideoModal(visible);
 	};
 
-	/**
-	 * 处理用户退出登录逻辑
-	 * 包括调用退出接口、清理本地存储、关闭websocket连接并跳转到登录页
-	 */
+	// 退出登录
 	const confirmLogout = async () => {
 		try {
 			const res = await handleLogout(user);
@@ -137,10 +118,7 @@ const Container = () => {
 		</div>
 	);
 
-	/**
-	 * 初始化WebSocket连接
-	 * 建立与服务器的实时通信连接，并处理接收到的各种消息类型
-	 */
+	// 进入到主页面时建立一个 websocket 连接
 	const initSocket = () => {
 		const ws = new WebSocket(`${wsBaseURL}/auth/user_channel?username=${user.username}`);
 		ws.onmessage = e => {
@@ -183,10 +161,7 @@ const Container = () => {
 		initSocket();
 	}, []);
 
-	/**
-	 * 处理从通讯录选择聊天对象的事件
-	 * @param item - 选中的好友或群聊信息
-	 */
+	// 在通讯录页面选择一个好友或群聊进行发送信息时跳转到聊天页面
 	const handleChooseChat = (item: IFriendInfo | IGroupChatInfo) => {
 		setCurrentIcon('icon-message');
 		navigate('/chat');

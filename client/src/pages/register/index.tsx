@@ -10,11 +10,14 @@ import { BgImage } from '@/assets/images';
 import { generateAvatarAPI } from '@/assets/images';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import React from 'react';
 
 /**
  * 用户注册页面组件
- * 提供用户注册功能，包括表单验证、提交处理和结果反馈
+ * 
+ * 提供新用户注册功能，收集用户名、手机号、密码等信息，
+ * 并向服务器发送注册请求。注册成功后会跳转到登录页面。
+ * 
+ * @returns 注册页面组件
  */
 const Register = () => {
 	const showMessage = useShowMessage();
@@ -23,12 +26,18 @@ const Register = () => {
 
 	/**
 	 * 处理注册表单提交
-	 * @param values - 注册表单数据，包含用户名、手机号、密码和确认密码
-	 * @returns 无返回值的Promise
+	 * 
+	 * 验证两次输入的密码是否一致，然后向服务器发送注册请求。
+	 * 注册成功后跳转到登录页面，失败则显示错误信息。
+	 * 
+	 * @param values - 注册表单数据
+	 * @param values.username - 用户名
+	 * @param values.phone - 手机号
+	 * @param values.password - 密码
+	 * @param values.confirm - 确认密码
 	 */
 	const handleSubmit = async (values: IRegisterForm) => {
 		const { username, phone, password, confirm } = values;
-		// 验证两次输入的密码是否一致
 		if (password !== confirm) {
 			showMessage('error', '两次密码不一致');
 			return;
@@ -44,7 +53,6 @@ const Register = () => {
 				avatar: `${generateAvatarAPI}${username}`
 			};
 			const res = await handleRegister(params);
-			// 根据API响应结果处理注册成功或失败的情况
 			if (res.code === HttpStatus.SUCCESS) {
 				showMessage('success', '注册成功');
 				setLoading(false);
@@ -58,6 +66,7 @@ const Register = () => {
 			setLoading(false);
 		}
 	};
+
 	return (
 		<>
 			<div className={styles.bgContainer} style={{ backgroundImage: `url(${BgImage})` }}>

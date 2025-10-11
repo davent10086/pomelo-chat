@@ -1,15 +1,11 @@
-import { ChatImage } from "@/assets/images";
+import { ChatImage } from '@/assets/images';
 
-/**
- * 根据文件路径获取文件后缀并返回对应的文件类型
- * @param path - 包含文件信息的路径字符串
- * @returns 返回文件类型：'video'(视频), 'image'(图片) 或 'default'(默认)
- */
+// 根据文件路径获取文件类型（用于消息记录）
 export const getFileSuffixByPath = (path: string) => {
 	const filename = new URLSearchParams(path.split('?')[1]).get('filename');
-    const fileSuffix = filename!.substring(filename!.lastIndexOf('.') + 1).toLowerCase();
-    switch (fileSuffix) {
-       case 'avi':
+	const fileSuffix = filename!.substring(filename!.lastIndexOf('.') + 1).toLowerCase();
+	switch (fileSuffix) {
+		case 'avi':
 		case 'mpeg':
 		case 'wmv':
 		case 'mov':
@@ -24,19 +20,14 @@ export const getFileSuffixByPath = (path: string) => {
 		case 'svg':
 			return 'image';
 		default:
-			return 'default';
-    }
-}
-
-/**
- * 根据文件名获取文件后缀并返回对应的文件类型
- * @param fileName - 文件名字符串
- * @returns 返回文件类型：'video'(视频), 'image'(图片) 或 'file'(文件)
- */
-export const getChatSuffixByPath = (fileName :string) => {
-    const fileSuffix = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-    switch (fileSuffix) {
-        case 'avi':
+			return fileSuffix;
+	}
+};
+// 根据文件名获取文件类型（用于发送消息）
+export const getFileSuffixByName = (filename: string) => {
+	const fileSuffix = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+	switch (fileSuffix) {
+		case 'avi':
 		case 'mpeg':
 		case 'wmv':
 		case 'mov':
@@ -52,16 +43,11 @@ export const getChatSuffixByPath = (fileName :string) => {
 			return 'image';
 		default:
 			return 'file';
-    }
+	}
 };
-
-/**
- * 根据文件路径获取对应的文件图标
- * @param path - 文件路径字符串
- * @returns 返回对应文件类型的图标
- */
-export const getFileIcon = (path: string) => {
-    const fileSuffix = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
+// 获取各类文件图标
+export const getFileIcons = (path: string) => {
+	const fileSuffix = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
 	switch (fileSuffix) {
 		case 'docx':
 		case 'doc':
@@ -97,23 +83,12 @@ export const getFileIcon = (path: string) => {
 			return ChatImage.DEFAULT;
 	}
 };
-
-/**
- * 从路径中提取文件名
- * @param path - 完整文件路径
- * @returns 返回文件名
- */
+// 获取文件名
 export const getFileName = (path: string) => {
 	const fileName = path.split('/').pop();
 	return fileName;
 };
-
-/**
- * 根据图片/视频链接获得图片/视频宽高
- * @param mediaUrl - 媒体文件的URL地址
- * @param mediaType - 媒体类型 ('image' 或 'video')
- * @returns 返回包含宽度和高度的Promise对象
- */
+// 根据图片/视频链接获得图片/视频宽高
 export const getMediaSize = (
 	mediaUrl: string,
 	mediaType: string
@@ -137,13 +112,7 @@ export const getMediaSize = (
 		}
 	});
 };
-
-/**
- * 根据实际宽高计算展示的合理宽高
- * @param size - 包含原始宽度和高度的对象
- * @param mediaType - 媒体类型 ('image' 或 'video')
- * @returns 返回适合展示的宽度样式对象
- */
+// 根据实际宽高计算展示的合理宽高 (图片是按照一定算法缩小，视频是存在横屏和竖屏两种情况)
 export const getMediaShowSize = (
 	size: { width: number; height: number },
 	mediaType: 'image' | 'video'
@@ -166,11 +135,7 @@ export const getMediaShowSize = (
 		}
 	}
 };
-
-/**
- * 文件下载功能
- * @param url - 要下载的文件URL
- */
+// 文件下载
 export const downloadFile = (url: string) => {
 	try {
 		const link = document.createElement('a');
@@ -184,12 +149,7 @@ export const downloadFile = (url: string) => {
 		return;
 	}
 };
-
-/**
- * 判断某个文件是否存在
- * @param url - 要检查的文件URL
- * @returns 返回文件是否存在的布尔值
- */
+// 判断某个文件是否存在（浏览器会发起一个预检请求）
 export const urlExists = async (url: string) => {
 	try {
 		const response = await fetch(url, { method: 'HEAD' });

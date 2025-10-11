@@ -12,10 +12,10 @@ const { Query } = require('../../utils/query');
 const better_chat = new Redis();
 
 /**
- * 登录的基本逻辑：
- * 1. 获取到前端传来的 username 和 password
- * 2. 查询数据库, 判断用户名和密码是否正确
- * 3. 正确后生成 jwt, 判断 redis 中是否有该用户的 token，没有则返回想要 token 给前端去保存
+ * 用户登录处理函数
+ * @param {Object} req - 请求对象，包含用户名和密码
+ * @param {Object} res - 响应对象，用于返回登录结果
+ * @returns {Object} 登录结果，包括token和用户信息或错误信息
  */
 const login = async (req, res) => {
 	const { username, password } = req.body;
@@ -77,11 +77,12 @@ const login = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
- * 退出登录的基本逻辑：
- * 1. 获取到前端传来的 username
- * 2. 删除 redis 中的 token 并更新好友表中的状态
- * 3. 返回成功
+ * 用户登出处理函数
+ * @param {Object} req - 请求对象，包含用户名
+ * @param {Object} res - 响应对象，用于返回操作结果
+ * @returns {Object} 操作结果，成功或错误信息
  */
 const logout = async (req, res) => {
 	const { username } = req.body;
@@ -99,13 +100,12 @@ const logout = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
- * 注册的基本逻辑：
- * 1. 获取到前端传来的注册信息
- * 2. 先判断用户名或手机号是否已经注册
- * 3. 未注册则插入 user 表中
- * 4. 给新用户添加一个好友分组
- * 5. 生成 jwt, 把 token 和用户信息返回给前端
+ * 用户注册处理函数
+ * @param {Object} req - 请求对象，包含用户名、密码、手机号和头像
+ * @param {Object} res - 响应对象，用于返回注册结果
+ * @returns {Object} 注册结果，包括token和用户信息或错误信息
  */
 const register = async (req, res) => {
 	const { username, password, phone, avatar } = req.body;
@@ -169,11 +169,12 @@ const register = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
- * 忘记密码/修改密码的基本逻辑：
- * 1. 判断用户手机号和用户名是否存在
- * 2. 如果数据符合则修改 user 表的数据（密码重新加盐哈希）
- * 3. 前端重新登录
+ * 忘记密码/修改密码处理函数
+ * @param {Object} req - 请求对象，包含用户名、手机号和新密码
+ * @param {Object} res - 响应对象，用于返回操作结果
+ * @returns {Object} 操作结果，成功或错误信息
  */
 const forgetPassword = async (req, res) => {
 	const { username, phone, password } = req.body;
@@ -200,11 +201,12 @@ const forgetPassword = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
- * 修改用户信息的基本逻辑：
- * 1. 获取到前端传来的更新信息，判断新手机号是否已被注册，若未被注册则直接更新 user 表中的数据
- * 2. 生成 jwt, 更新 redis 中的 token，返回新的用户信息和 token 给前端
- * 3. 前端重新刷新相关信息
+ * 更新用户信息处理函数
+ * @param {Object} req - 请求对象，包含用户名、头像、姓名、手机号和签名
+ * @param {Object} res - 响应对象，用于返回更新结果
+ * @returns {Object} 更新结果，包括新的token和用户信息或错误信息
  */
 const updateInfo = async (req, res) => {
 	const { username, avatar, name, phone, signature } = req.body;
@@ -265,8 +267,11 @@ const updateInfo = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
- * 登录成功后初始化用户的通知管道（websocket连接信息全局存储）, 用于通知用户好友列表的更新
+ * 初始化用户通知管道(websocket连接)
+ * @param {Object} ws - WebSocket连接对象
+ * @param {Object} req - 请求对象，包含用户名参数
  */
 const initUserNotification = async (ws, req) => {
 	const url = req.url.split('?')[1];

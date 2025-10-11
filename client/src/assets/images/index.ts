@@ -1,11 +1,6 @@
-/**
- * 背景图片资源地址
- */
-export const BgImage = '/broken-arraw.png';
+export const BgImage = 'https://images.pexels.com/photos/256490/pexels-photo-256490.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260';
+// ... existing code ...
 
-/**
- * 聊天界面中各类文件类型的图标资源地址枚举
- */
 export enum ChatImage {
 	WORD = 'https://p0.meituan.net/travelcube/70a78a21ad504e9f47ecc7fce96b7b094029.png',
 	EXCEL = 'https://p0.meituan.net/travelcube/14500ad698da0ac54627c890367286133826.png',
@@ -19,10 +14,6 @@ export enum ChatImage {
 	DEFAULT = 'https://p0.meituan.net/travelcube/0ee749fa3a864afbd368c664c42b60793531.png',
 	PLAY = 'https://p1.meituan.net/travelcube/1b3d123f2451076b7e5add742cbdf6c53946.png'
 }
-
-/**
- * 通话相关操作的图标资源地址枚举
- */
 export enum CallIcons {
 	ACCEPT = 'https://p1.meituan.net/travelcube/afbf83c4b1c06ceb2e20d46df81ad69f12824.png',
 	REJECT = 'https://p1.meituan.net/travelcube/91080d4a2adc2834094892d98b129b2510890.png',
@@ -30,15 +21,10 @@ export enum CallIcons {
 	VIDEO = 'https://img.qovv.cn/2024/04/24/662908024fc84.png'
 }
 
-/**
- * 加载错误时显示的默认图片资源地址枚举
- */
 export enum LoadErrorImage {
 	AVATAR = 'https://img.qovv.cn/2024/04/05/660f7fbd1f33f.png',
 	FILE_DELETE = 'https://img.qovv.cn/2024/04/05/660f98edbc2d6.png'
 }
 
-/**
- * 用于生成默认头像的API地址
- */
+// 生成默认头像的API
 export const generateAvatarAPI = 'https://ui-avatars.com/api/?name=';

@@ -5,9 +5,17 @@ const { formatBytes } = require('../../utils/format');
 const { NotificationUser } = require('../../utils/notification');
 const { Query } = require('../../utils/query');
 
-const ChatRooms = {}; // 全局变量存储聊天室房间，每个房间是一个对象，对象的键是用户 id / 群聊 id，值是 WebSocket 实例
+/**
+ * 全局变量存储聊天室房间
+ * 每个房间是一个对象，对象的键是用户 id / 群聊 id，值是 WebSocket 实例
+ */
+const ChatRooms = {};
 
-// 检查 message_statistics 是否存在某条记录，如果不存在则创建后才修改，如果存在则直接修改
+/**
+ * 检查 message_statistics 是否存在某条记录，如果不存在则创建后才修改，如果存在则直接修改
+ * @param {string} room - 房间号
+ * @returns {Promise<void>}
+ */
 const checkAndModifyStatistics = async room => {
 	const sql_check = `SELECT * FROM message_statistics WHERE room = ?`;
 	const results_check = await Query(sql_check, [room]);
@@ -19,7 +27,14 @@ const checkAndModifyStatistics = async room => {
 	await Query(sql_update, [room]);
 };
 
-// 将处理后的消息写入数据库和发送给房间内的所有人(type 表示私聊或者群聊，room 表示房间号，msg 为写入数据库的消息，message 为发送出去的消息)
+/**
+ * 将处理后的消息写入数据库和发送给房间内的所有人
+ * @param {string} type - 消息类型，'group'表示群聊，'private'表示私聊
+ * @param {string} room - 房间号
+ * @param {Object} msg - 写入数据库的消息对象
+ * @param {Object} message - 发送出去的消息对象
+ * @returns {Promise<void>}
+ */
 const writeAndSend = async (type, room, msg, message) => {
 	// 将处理后的消息写入数据库和发送给房间内的所有人
 	// 这里的处理存在纰漏，因为群聊时，message.receiver_id 是群聊 id，不是用户 id，所以无法判断对方是否在房间，且群聊信息存在很多个接收者，但消息表的结构设计导致一条消息只能有一个接收者，所以这里的处理是不完善的
@@ -71,6 +86,10 @@ const writeAndSend = async (type, room, msg, message) => {
  * 1. 根据用户 id 去查询加入的所有群聊 id（gm 查询子表）
  * 2. 再根据群聊 id 去查询群聊的信息，群聊 room（联合查询，gc 查询子表）
  * 3. 再根据群聊 room 去查询群聊的最后一条消息（联合查询，msg_sta 查询子表）
+ * 
+ * @param {Object} req - 请求对象，包含用户信息
+ * @param {Object} res - 响应对象
+ * @returns {Promise<Object>} 返回聊天列表数据或错误信息
  */
 const getChatList = async (req, res) => {
 	try {
@@ -181,6 +200,7 @@ const getChatList = async (req, res) => {
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
+
 /**
  * 建立聊天的基本逻辑：
  * 需要获取信息: 发送人 ID, 接收人 ID, 聊天内容, 房间号, 头像, 内容的类型, 文件大小, 创建时间
@@ -194,6 +214,10 @@ const getChatList = async (req, res) => {
  * 8. 插入数据到 message 表中
  * 9. 并修改当前房间的最早一次的聊天时间
  * 10. 并将消息发送给对方
+ * 
+ * @param {WebSocket} ws - WebSocket连接实例
+ * @param {Object} req - 请求对象，包含URL参数
+ * @returns {Promise<void>}
  */
 const connectChat = async (ws, req) => {
 	const url = req.url.split('?')[1];
@@ -261,6 +285,10 @@ const connectChat = async (ws, req) => {
 		`;
 			results_msg = await Query(sql_private, [room, type]);
 		}
+		
+		/**
+		 * 映射历史消息格式
+		 */
 		const historyMsg = results_msg.map(item => {
 			return {
 				sender_id: item.sender_id, // 发送者 id

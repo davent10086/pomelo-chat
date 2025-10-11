@@ -7,19 +7,19 @@ import styles from './index.module.less';
 import { IConnectParams, IChatListProps } from './type';
 
 import { StatusIconList } from '@/assets/icons';
-import ChatContainer from '@/componments/ChatContainer';
-import ChatTool from '@/componments/ChatTool';
-import { ISendMessage, IMessageListItem } from '@/componments/ChatTool/type';
-import { IGroupChatInfo } from '@/componments/CreateGroupChatModal/type';
-import ImageLoad from '@/componments/ImageLoad';
-import { IMessageItem } from '@/componments/MessageShow/type';
-import SearchContainer from '@/componments/SearchContainer';
+import ChatContainer from '@/components/ChatContainer';
+import ChatTool from '@/components/ChatTool';
+import { ISendMessage, IMessageListItem } from '@/components/ChatTool/type';
+import { IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
+import ImageLoad from '@/components/ImageLoad';
+import { IMessageItem } from '@/components/MessageShow/type';
+import SearchContainer from '@/components/SearchContainer';
 import { wsBaseURL } from '@/config';
 import useShowMessage from '@/hooks/useShowMessage';
 import { IFriendInfo } from '@/pages/address-book/type';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
-import {formatChatListTime} from '@/utils/time';
+import { formatChatListTime } from '@/utils/time';
 
 // 自定义的类型保护，用于判断是否为 IFriendInfo 类型 / IGroupChatInfo 类型
 const isFriendInfo = (chatInfo: IFriendInfo | IGroupChatInfo): chatInfo is IFriendInfo => {

@@ -1,125 +1,92 @@
-/* 
- * 去除 a 标签文本下划线
- * 作用：统一链接样式，避免默认下划线影响视觉效果
- */
+/* 去除 a 标签文本下划线 */
 a {
-    text-decoration: none;
+	text-decoration: none;
 }
 
-/* 
- * 去除 input、textarea 等文本输入框的默认样式
- * 作用：消除浏览器默认边框和聚焦轮廓，便于自定义样式
- */
+/* 去除 input、textarea 等文本输入框的默认样式 */
 input,
 textarea {
-    border: none;
-    outline: none;
+	border: none;
+	outline: none;
 }
 
-/* 
- * 设置所有元素的 box-sizing 属性为 border-box
- * 作用：使元素宽度包含 padding 和 border，便于布局计算
- */
+/* 设置所有元素的 box-sizing 属性为 border-box */
 * {
-    box-sizing: border-box;
+	box-sizing: border-box;
 }
 
-/* 
- * 将 body、html 元素的高度设置为 100%
- * 作用：确保根元素占满视口高度，便于全屏布局
- */
+/* 将 body、html 元素的高度设置为 100% */
 html,
 body {
-    height: 100%;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    font-size: 100px;
+	height: 100%;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	font-size: 100px;
 }
 
-/* 
- * 清空 ul、ol 元素的默认样式
- * 作用：去除列表默认的内边距、外边距和项目符号
- */
+/* 清空 ul、ol 元素的默认样式 */
 ul,
 ol {
-    padding: 0;
-    margin: 0;
-    list-style: none;
+	padding: 0;
+	margin: 0;
+	list-style: none;
 }
 
-/* 
- * 清空 h1~h6 标签的默认样式
- * 作用：去除标题标签默认的外边距和字体加粗，便于统一控制
- */
+/* 清空 h1~h6 标签的默认样式 */
 h1,
 h2,
 h3,
 h4,
 h5,
 h6 {
-    margin: 0;
-    padding: 0;
-    font-weight: normal;
+	margin: 0;
+	padding: 0;
+	font-weight: normal;
 }
 
-/* 
- * 将图片设置为响应式
- * 作用：使图片宽度适应容器，高度自动缩放，防止变形
- */
+/* 将图片设置为响应式 */
 img {
-    width: 100%;
-    height: auto;
+	width: 100%;
+	height: auto;
 }
 
-/* 
- * 取消输入框 placeholder 出现时边框的问题
- * 作用：统一各浏览器 placeholder 文本颜色，提升用户体验
- */
+/* 取消输入框 placeholder 出现时边框的问题 */
 input::-webkit-input-placeholder,
 textarea::-webkit-input-placeholder {
-    color: #999;
+	color: #999;
 }
 
 input:-moz-placeholder,
 textarea:-moz-placeholder {
-    color: #999;
+	color: #999;
 }
 
 input::-moz-placeholder,
 textarea::-moz-placeholder {
-    color: #999;
+	color: #999;
 }
 
 input:-ms-input-placeholder,
 textarea:-ms-input-placeholder {
-    color: #999;
+	color: #999;
 }
 
-/* 
- * 去除按钮的默认边框
- * 作用：消除按钮默认边框和聚焦轮廓，便于自定义样式
- */
+/* 去除按钮的默认边框 */
 button {
-    border: none;
-    outline: none;
+	border: none;
+	outline: none;
 }
 
-/* 
- * 设置全局字体样式
- * 作用：定义基础字体大小、颜色和字体族，确保文本一致性
- */
+/* 设置全局字体样式 */
 body {
-    font-size: 14px;
-    color: #333;
-    font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
-        'Microsoft YaHei', sans-serif;
+	font-size: 14px;
+	color: #333;
+	font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
+		'Microsoft YaHei', sans-serif;
 }
 
-/* 
- * 设置全局背景颜色
- * 作用：定义页面默认背景色，提供统一的视觉基调
- */
+/* 设置全局背景颜色 */
 body {
-    background-color: #fff;
+	background-color: #fff;
 }

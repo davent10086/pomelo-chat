@@ -1,4 +1,4 @@
-import { IMessageListItem } from '@/componments/ChatTool/type';
+import { IMessageListItem } from '@/components/ChatTool/type';
 import Request from '@/utils/request';
 
 // 获取消息列表

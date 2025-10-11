@@ -21,3 +21,47 @@
 @font-color-light: #333;
 @font-color-lighter: #666;
 @font-color-lightest: #999;
+
+// 暗色主题变量
+@import './variables-dark.less';
+
+// 主题类
+.light-theme {
+  --primary-color: @primary-color;
+  --a-link-color: @a-link-color;
+  --primary-antd-color: @primary-antd-color;
+  --shadow-border-bg-color: @shadow-border_bg-color;
+  --primary-border-bg-color: @primary-border_bg-color;
+  --deeply-border-bg-color: @deeply-border_bg-color;
+  --item-border-color: @item-border-color;
+  --item-hover-bg-color: @item-hover-bg-color;
+  --item-selected-bg-color: @item-selected-bg-color;
+  --btn-shadow-color: @btn-shadow-color;
+  --bg-filter-color: @bg-filter-color;
+  --call-modal-bg-color: @call-modal-bg-color;
+  --scrollbar-thumb-color: @scrollbar-thumb-color;
+  --font-color: @font-color;
+  --font-color-light: @font-color-light;
+  --font-color-lighter: @font-color-lighter;
+  --font-color-lightest: @font-color-lightest;
+}
+
+.dark-theme {
+  --primary-color: @primary-color-dark;
+  --a-link-color: @a-link-color-dark;
+  --primary-antd-color: @primary-antd-color-dark;
+  --shadow-border-bg-color: @shadow-border_bg-color-dark;
+  --primary-border-bg-color: @primary-border_bg-color-dark;
+  --deeply-border-bg-color: @deeply-border_bg-color-dark;
+  --item-border-color: @item-border-color-dark;
+  --item-hover-bg-color: @item-hover-bg-color-dark;
+  --item-selected-bg-color: @item-selected-bg-color-dark;
+  --btn-shadow-color: @btn-shadow-color-dark;
+  --bg-filter-color: @bg-filter-color-dark;
+  --call-modal-bg-color: @call-modal-bg-color-dark;
+  --scrollbar-thumb-color: @scrollbar-thumb-color-dark;
+  --font-color: @font-color-dark;
+  --font-color-light: @font-color-light-dark;
+  --font-color-lighter: @font-color-lighter-dark;
+  --font-color-lightest: @font-color-lightest-dark;
+}
