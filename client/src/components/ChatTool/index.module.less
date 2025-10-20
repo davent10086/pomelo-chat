@@ -76,4 +76,65 @@
 		display: flex;
 		justify-content: flex-end;
 	}
+
+	/* Suggestion box for AI Tab completion */
+	.suggestionBox {
+		margin-top: 0.2rem;
+		border: 1px solid @primary-border_bg-color;
+		background: @deeply-border_bg-color;
+		border-radius: 8px;
+		max-height: 180px;
+		overflow: auto;
+		padding: 0.4rem;
+		box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.10);
+		width: 100%;
+		animation: fadeIn 0.25s ease;
+		transition: box-shadow 0.2s;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.suggestionBox ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.suggestionBox li {
+		padding: 8px 12px;
+		border-radius: 4px;
+		cursor: pointer;
+		color: @font-color;
+		font-size: 15px;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.suggestionBox li:hover {
+		background: fade(@primary-color, 12%);
+		color: @primary-antd-color;
+		font-weight: 500;
+	}
+
+	.selected {
+		background: fade(@primary-antd-color, 18%);
+		color: @primary-antd-color;
+		font-weight: 600;
+		box-shadow: 0 2px 8px 0 fade(@primary-antd-color, 10%);
+	}
+
+	.preview {
+		margin-top: 0.4rem;
+		color: fade(@font-color, 60%);
+		font-size: 12px;
+	}
 }

@@ -251,7 +251,13 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 								<ChatContainer historyMsg={historyMsg} newMsg={newMessage} />
 							</div>
 							<div className={styles.chat_input}>
-								<ChatTool curChatInfo={curChatInfo} sendMessage={sendMessage} />
+								{/* 将最近消息与用户画像传递给 ChatTool（前端实现 Tab 补全/选项功能） */}
+								<ChatTool
+									curChatInfo={curChatInfo}
+									sendMessage={sendMessage}
+									recentMessages={[...historyMsg, ...newMessage]}
+									userProfile={user}
+								/>
 							</div>
 						</div>
 					)}

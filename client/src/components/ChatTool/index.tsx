@@ -1,6 +1,5 @@
 import { Button, Spin, Tooltip } from 'antd';
-import { ChangeEvent, useRef, useState } from 'react';
-import React from 'react';
+import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
 
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
@@ -18,8 +17,9 @@ import { uploadFile } from '@/utils/file-upload';
 import { userStorage } from '@/utils/storage';
 
 const ChatTool = (props: IChatToolProps) => {
-	const { curChatInfo, sendMessage } = props;
-	const user = JSON.parse(userStorage.getItem());
+	const { curChatInfo, sendMessage, recentMessages = [], userProfile = {} } = props;
+	// 既有 userStorage 作为当前用户信息备用
+	const user = userProfile && Object.keys(userProfile).length ? userProfile : JSON.parse(userStorage.getItem());
 	const showMessage = useShowMessage();
 	const [inputValue, setInputValue] = useState<string>('');
 	const [loading, setLoading] = useState(false);
@@ -29,14 +29,204 @@ const ChatTool = (props: IChatToolProps) => {
 	const imageRef = useRef<HTMLInputElement>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
 
+	// --- AI Tab 补全 / 建议状态（前端实现，无需修改服务端）
+	const [suggestions, setSuggestions] = useState<string[]>([]);
+	const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+	const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+	const [previewText, setPreviewText] = useState<string>('');
+	const suggestionFetchAbort = useRef<AbortController | null>(null);
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
 	// 改变输入框的值
 	const changeInputValue = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 		setInputValue(e.target.value);
+		// 输入时清理建议
+		if (showSuggestions) {
+			setShowSuggestions(false);
+			setSuggestions([]);
+			setSelectedIndex(-1);
+			setPreviewText('');
+			if (suggestionFetchAbort.current) {
+				suggestionFetchAbort.current.abort();
+				suggestionFetchAbort.current = null;
+			}
+		}
 	};
 
 	// 添加表情
 	const addEmoji = (emoji: string) => {
 		setInputValue(prevValue => prevValue + emoji);
+	};
+
+	// ---- AI suggestion helpers (component scope) ----
+	const buildContextText = (limit = 10) => {
+		const msgs = recentMessages || [];
+		const last = msgs.slice(Math.max(0, msgs.length - limit));
+		return last
+			.map((m: { sender_name?: string; content?: string }) => `${m.sender_name || '用户'}: ${m.content || ''}`)
+			.join('\n');
+	};
+
+	const heuristicSuggestions = (prefix: string, count = 3) => {
+	const lastMsg = recentMessages && recentMessages.length ? (recentMessages[recentMessages.length - 1] as { content?: string }).content || '' : '';
+	const userPref = (user && (user as { pref?: string }).pref) || '';
+		const base = lastMsg || prefix || '关于这个话题';
+		const items = [
+			`${base}，我觉得可以这样说：`,
+			`关于${base}，可以考虑：...`,
+			`${base}，我的建议是：` + (userPref ? `（偏好：${userPref}）` : '')
+		];
+		return items.slice(0, count);
+	};
+
+	const fetchSuggestionsFromDeepSeek = async (prefixText: string) => {
+		const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
+		if (!apiKey) throw new Error('no-deepseek-key');
+		if (suggestionFetchAbort.current) suggestionFetchAbort.current.abort();
+		const controller = new AbortController();
+		suggestionFetchAbort.current = controller;
+
+		const prompt = `基于下面的对话历史，给出最多5条可作为回复或继续对话的短语（简洁，中文，每条不超过50字），并根据用户画像风格适当调整：\n\n对话历史：\n${buildContextText(10)}\n\n当前输入片段：\n${prefixText}\n\n返回格式：用换行分隔列出候选。`;
+
+		const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${apiKey}`
+			},
+			signal: controller.signal,
+			body: JSON.stringify({
+				model: 'deepseek-chat',
+				messages: [
+					{ role: 'system', content: '你是一个用于生成对话回复候选的助手，输出简单的候选列表，每行一项。' },
+					{ role: 'user', content: prompt }
+				],
+				stream: false
+			})
+		});
+
+		if (!resp.ok) {
+			const t = await resp.text();
+			throw new Error(`deepseek error ${resp.status} ${t}`);
+		}
+		const data = await resp.json();
+		const text = data?.choices?.[0]?.message?.content || '';
+		const lines = text.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+		return lines.slice(0, 5);
+	};
+
+	const triggerSuggestions = async (prefixText: string) => {
+		setShowSuggestions(false);
+		setSuggestions([]);
+		setSelectedIndex(-1);
+		setPreviewText('');
+		try {
+			let items: string[] = [];
+			try {
+				items = await fetchSuggestionsFromDeepSeek(prefixText);
+			} catch (err) {
+				items = heuristicSuggestions(prefixText, 5);
+			}
+			if (items && items.length) {
+				setSuggestions(items);
+				setSelectedIndex(0);
+				setShowSuggestions(true);
+				setPreviewText(items[0]);
+			}
+		} catch (err) {
+			showMessage('error', '生成建议失败');
+		}
+	};
+
+	const cancelSuggestions = () => {
+		if (suggestionFetchAbort.current) {
+			suggestionFetchAbort.current.abort();
+			suggestionFetchAbort.current = null;
+		}
+		setShowSuggestions(false);
+		setSuggestions([]);
+		setSelectedIndex(-1);
+		setPreviewText('');
+	};
+
+	// 获取光标位置
+	const getCursor = () => {
+		const el = textareaRef.current!;
+		return { start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 };
+	};
+
+	// 点击建议项插入文本
+	const handleSuggestionClick = (text: string) => {
+		if (!text) return;
+		const el = textareaRef.current!;
+		const { start, end } = getCursor();
+		const newVal = inputValue.slice(0, start) + text + inputValue.slice(end);
+		setInputValue(newVal);
+		setShowSuggestions(false);
+		setSuggestions([]);
+		setSelectedIndex(-1);
+		setPreviewText('');
+		const newPos = start + text.length;
+		requestAnimationFrame(() => {
+			el.focus();
+			el.setSelectionRange(newPos, newPos);
+		});
+	};
+
+	useEffect(() => {
+		return () => {
+			if (suggestionFetchAbort.current) {
+				suggestionFetchAbort.current.abort();
+				suggestionFetchAbort.current = null;
+			}
+		};
+	}, []);
+
+	const acceptSuggestion = () => {
+		if (!previewText) return;
+		const el = textareaRef.current!;
+		const { start, end } = getCursor();
+		const newVal = inputValue.slice(0, start) + previewText + inputValue.slice(end);
+		setInputValue(newVal);
+		// reset
+		setShowSuggestions(false);
+		setSuggestions([]);
+		setSelectedIndex(-1);
+		setPreviewText('');
+		const newPos = start + previewText.length;
+		requestAnimationFrame(() => {
+			el.focus();
+			el.setSelectionRange(newPos, newPos);
+		});
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (e.key === 'Tab') {
+			e.preventDefault();
+			if (showSuggestions && suggestions.length) {
+				const next = (selectedIndex + 1) % suggestions.length;
+				setSelectedIndex(next);
+				return;
+			}
+			const el = textareaRef.current!;
+			const start = el.selectionStart ?? 0;
+			const prefix = inputValue.slice(0, start);
+			triggerSuggestions(prefix);
+		} else if (e.key === 'Escape') {
+			if (showSuggestions) {
+				e.preventDefault();
+				cancelSuggestions();
+			}
+		} else if ((e.key === 'ArrowRight' || e.key === 'Enter') && showSuggestions && previewText) {
+			e.preventDefault();
+			acceptSuggestion();
+		} else if (e.key === 'ArrowDown' && showSuggestions) {
+			e.preventDefault();
+			setSelectedIndex(prev => Math.min(suggestions.length - 1, prev + 1));
+		} else if (e.key === 'ArrowUp' && showSuggestions) {
+			e.preventDefault();
+			setSelectedIndex(prev => Math.max(0, prev - 1));
+		}
 	};
 
 	// 发送编辑的文本消息
@@ -253,9 +443,11 @@ const ChatTool = (props: IChatToolProps) => {
 			<div className={styles.chat_tool_input}>
 				<Spin spinning={loading} tip="正在发送中...">
 					<textarea
+						ref={textareaRef}
 						onChange={e => {
 							changeInputValue(e);
 						}}
+						onKeyDown={handleKeyDown}
 						value={inputValue}
 					></textarea>
 				</Spin>
@@ -265,6 +457,23 @@ const ChatTool = (props: IChatToolProps) => {
 					发送
 				</Button>
 			</div>
+			{/* 建议面板（简易） */}
+			{showSuggestions && suggestions.length > 0 && (
+				<div className={styles.suggestionBox}>
+					<ul>
+						{suggestions.map((s, idx) => (
+							<li
+								key={idx}
+								className={idx === selectedIndex ? styles.selected : ''}
+								onClick={() => handleSuggestionClick(s)}
+							>
+								{s}
+							</li>
+						))}
+					</ul>
+					<div className={styles.preview}>{previewText}</div>
+				</div>
+			)}
 			{
 				// 音频通话弹窗
 				openAudioModal && callReceiverList.length && (
