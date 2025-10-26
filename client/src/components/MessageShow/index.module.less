@@ -142,6 +142,13 @@
 		background-color: @primary-color;
 		cursor: default;
 	}
+
+	/* 占位样式：在图片/视频尺寸信息加载前保留空间，减少虚拟滚动导致的跳动 */
+	.content_media_placeholder {
+		min-height: 0.8rem;
+		width: 100%;
+		background-color: transparent;
+	}
 }
 
 .other {

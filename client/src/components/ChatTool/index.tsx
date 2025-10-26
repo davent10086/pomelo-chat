@@ -12,7 +12,7 @@ import { ICallReceiverInfo } from '@/components/AudioModal/type';
 import VideoModal from '@/components/VideoModal';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import { getFileSuffixByName } from '@/utils/file';
+import { getFileSuffixByName } from '@/utils/File';
 import { uploadFile } from '@/utils/file-upload';
 import { userStorage } from '@/utils/storage';
 
@@ -37,6 +37,30 @@ const ChatTool = (props: IChatToolProps) => {
 	const suggestionFetchAbort = useRef<AbortController | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+	// ---- AI suggestion helpers (component scope) ----
+	const buildContextText = (limit = 10) => {
+		const msgs = recentMessages || [];
+		const last = msgs.slice(Math.max(0, msgs.length - limit));
+		return last
+			.map((m: { sender_name?: string; content?: string }) => `${m.sender_name || '用户'}: ${m.content || ''}`)
+			.join('\n');
+	};
+
+	const heuristicSuggestions = (prefix: string, count = 3) => {
+		const lastMsg =
+			recentMessages && recentMessages.length
+				? ((recentMessages[recentMessages.length - 1] as { content?: string }).content || '')
+				: '';
+		const userPref = (user && (user as { pref?: string }).pref) || '';
+		const base = lastMsg || prefix || '关于这个话题';
+		const items = [
+			`${base}，我觉得可以这样说：`,
+			`关于${base}，可以考虑：...`,
+			`${base}，我的建议是：` + (userPref ? `（偏好：${userPref}）` : '')
+		];
+		return items.slice(0, count);
+	};
+
 	// 改变输入框的值
 	const changeInputValue = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 		setInputValue(e.target.value);
@@ -58,26 +82,28 @@ const ChatTool = (props: IChatToolProps) => {
 		setInputValue(prevValue => prevValue + emoji);
 	};
 
-	// ---- AI suggestion helpers (component scope) ----
-	const buildContextText = (limit = 10) => {
-		const msgs = recentMessages || [];
-		const last = msgs.slice(Math.max(0, msgs.length - limit));
-		return last
-			.map((m: { sender_name?: string; content?: string }) => `${m.sender_name || '用户'}: ${m.content || ''}`)
-			.join('\n');
+	const insertTextAtCursor = (text: string) => {
+		if (!text) return;
+		const el = textareaRef.current!;
+		const { start, end } = getCursor();
+		const newVal = inputValue.slice(0, start) + text + inputValue.slice(end);
+		setInputValue(newVal);
+		const newPos = start + text.length;
+		requestAnimationFrame(() => {
+			el.focus();
+			el.setSelectionRange(newPos, newPos);
+		});
 	};
 
-	const heuristicSuggestions = (prefix: string, count = 3) => {
-	const lastMsg = recentMessages && recentMessages.length ? (recentMessages[recentMessages.length - 1] as { content?: string }).content || '' : '';
-	const userPref = (user && (user as { pref?: string }).pref) || '';
-		const base = lastMsg || prefix || '关于这个话题';
-		const items = [
-			`${base}，我觉得可以这样说：`,
-			`关于${base}，可以考虑：...`,
-			`${base}，我的建议是：` + (userPref ? `（偏好：${userPref}）` : '')
-		];
-		return items.slice(0, count);
-	};
+	// 来自 ChatContainer 的“下一步建议”插入事件
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const detail = (e as CustomEvent<{ text: string }>).detail;
+			if (detail?.text) insertTextAtCursor(detail.text);
+		};
+		window.addEventListener('next-steps-insert', handler as EventListener);
+		return () => window.removeEventListener('next-steps-insert', handler as EventListener);
+	}, [inputValue]);
 
 	const fetchSuggestionsFromDeepSeek = async (prefixText: string) => {
 		const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
@@ -460,6 +486,17 @@ const ChatTool = (props: IChatToolProps) => {
 			{/* 建议面板（简易） */}
 			{showSuggestions && suggestions.length > 0 && (
 				<div className={styles.suggestionBox}>
+					<div className={styles.suggestionHeader}>
+						<span className={styles.suggestionTitle}>候选回复</span>
+						<button
+							type="button"
+							className={styles.closeBtn}
+							onClick={cancelSuggestions}
+							aria-label="关闭候选回复"
+						>
+							×
+						</button>
+					</div>
 					<ul>
 						{suggestions.map((s, idx) => (
 							<li

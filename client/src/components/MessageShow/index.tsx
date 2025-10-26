@@ -14,7 +14,7 @@ import {
 	getFileIcons,
 	downloadFile,
 	urlExists
-} from '@/utils/file';
+} from '@/utils/File';
 import { userStorage } from '@/utils/storage';
 import { formatChatContentTime } from '@/utils/time';
 
@@ -70,14 +70,18 @@ const MessageShow = (props: IMessageShowProps) => {
 			case 'text':
 				return <div className={styles.content_text}>{messageContent}</div>;
 			case 'image':
+				// 如果媒体信息尚未准备好，渲染占位元素以保留空间，避免高度突变
 				return curMediaInfo && curMediaInfo ? (
 					<Image
 						width={getMediaShowSize(curMediaInfo.size, 'image').width}
 						src={curMediaInfo.url}
 						rootClassName="content_image"
 					/>
-				) : null;
+				) : (
+					<div className={styles.content_media_placeholder} />
+				);
 			case 'video':
+				// 视频同样使用占位来减少加载时的高度跳变
 				return curMediaInfo && curMediaInfo ? (
 					<div className={styles.content_video}>
 						<video
@@ -99,7 +103,9 @@ const MessageShow = (props: IMessageShowProps) => {
 							<video src={serverURL + messageContent} muted controls autoPlay width={750} />
 						</Modal>
 					</div>
-				) : null;
+				) : (
+					<div className={styles.content_media_placeholder} />
+				);
 			case 'file':
 				return (
 					<div

@@ -1,5 +1,10 @@
 @import '@/assets/styles/variables.less';
 
+.chat_root {
+	height: 100%;
+	position: relative;
+}
+
 .chat_container {
 	height: 100%;
 	overflow: auto;
@@ -29,4 +34,112 @@
 			width: auto;
 		}
 	}
+}
+
+/* 浮动控制区域（回到底部按钮 + 跟随新消息开关）*/
+.fab_container {
+	position: absolute;
+	right: 0.12rem;
+	bottom: 0.12rem;
+	display: flex;
+	align-items: center;
+	gap: 0.08rem;
+	z-index: 10;
+}
+
+.scroll_fab {
+	background-color: @primary-color;
+	color: @font-color;
+	border: 1px solid @primary-border_bg-color;
+	border-radius: 0.16rem;
+	padding: 0.06rem 0.12rem;
+	cursor: pointer;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.scroll_fab:hover {
+	background-color: @shadow-border_bg-color;
+}
+
+.follow_toggle {
+	background: rgba(0, 0, 0, 0.05);
+	backdrop-filter: blur(2px);
+	border-radius: 0.12rem;
+	padding: 0.04rem 0.08rem;
+	font-size: 0.12rem;
+	color: @font-color-lightest;
+	display: flex;
+	align-items: center;
+	gap: 0.04rem;
+}
+
+/* 下一步建议浮层（位于对话区左下角，不挤占输入区域） */
+.next_steps_container {
+	position: absolute;
+	left: 0.12rem;
+	bottom: 0.12rem;
+	max-width: 60%;
+	background: @deeply-border_bg-color;
+	border: 1px solid @primary-border_bg-color;
+	border-radius: 0.12rem;
+	padding: 0.12rem 0.14rem;
+	box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.12);
+	z-index: 9;
+}
+
+.next_steps_header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.08rem;
+}
+
+.next_steps_title {
+	color: fade(@font-color, 80%);
+	font-size: 0.12rem;
+}
+
+.next_steps_actions {
+	display: flex;
+	gap: 0.06rem;
+}
+
+.next_btn {
+	appearance: none;
+	border: none;
+	background: transparent;
+	color: fade(@font-color, 60%);
+	cursor: pointer;
+	padding: 0.04rem 0.06rem;
+	border-radius: 0.08rem;
+	font-size: 0.12rem;
+	transition: background 0.15s, color 0.15s;
+}
+
+.next_btn:hover {
+	background: fade(@primary-color, 12%);
+	color: @primary-antd-color;
+}
+
+.next_steps_chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.06rem;
+}
+
+.chip {
+	appearance: none;
+	border: 1px solid fade(@primary-antd-color, 35%);
+	background: fade(@primary-antd-color, 10%);
+	color: @primary-antd-color;
+	padding: 0.06rem 0.10rem;
+	border-radius: 999px;
+	cursor: pointer;
+	font-size: 0.12rem;
+	transition: background 0.15s, border-color 0.15s;
+}
+
+.chip:hover {
+	background: fade(@primary-antd-color, 18%);
+	border-color: fade(@primary-antd-color, 55%);
 }

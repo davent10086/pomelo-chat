@@ -37,6 +37,54 @@
 		flex: 5;
 		background-color: @deeply-border_bg-color;
 
+		/* 下一步建议区域 */
+		.nextStepsBox {
+			background: fade(@deeply-border_bg-color, 90%);
+			border: 1px solid @primary-border_bg-color;
+			border-radius: 8px;
+			padding: 0.24rem 0.28rem;
+			margin-bottom: 0.12rem;
+		}
+
+		.nextStepsHeader {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			margin-bottom: 0.12rem;
+		}
+
+		.nextStepsTitle {
+			color: fade(@font-color, 80%);
+			font-size: 12px;
+		}
+
+		.nextStepsActions :global(.ant-btn) {
+			color: fade(@font-color, 60%);
+		}
+
+		.nextStepsChips {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+
+		.chip {
+			appearance: none;
+			border: 1px solid fade(@primary-antd-color, 35%);
+			background: fade(@primary-antd-color, 10%);
+			color: @primary-antd-color;
+			padding: 6px 10px;
+			border-radius: 999px;
+			cursor: pointer;
+			font-size: 12px;
+			transition: background 0.15s, border-color 0.15s;
+		}
+
+		.chip:hover {
+			background: fade(@primary-antd-color, 18%);
+			border-color: fade(@primary-antd-color, 55%);
+		}
+
 		textarea {
 			resize: none;
 			width: 100%;
@@ -79,6 +127,7 @@
 
 	/* Suggestion box for AI Tab completion */
 	.suggestionBox {
+		position: relative;
 		margin-top: 0.2rem;
 		border: 1px solid @primary-border_bg-color;
 		background: @deeply-border_bg-color;
@@ -90,6 +139,37 @@
 		width: 100%;
 		animation: fadeIn 0.25s ease;
 		transition: box-shadow 0.2s;
+	}
+
+	.suggestionHeader {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.2rem;
+	}
+
+	.suggestionTitle {
+		color: fade(@font-color, 80%);
+		font-size: 12px;
+	}
+
+	.closeBtn {
+		appearance: none;
+		border: none;
+		outline: none;
+		background: transparent;
+		color: fade(@font-color, 60%);
+		cursor: pointer;
+		font-size: 16px;
+		line-height: 1;
+		padding: 2px 6px;
+		border-radius: 4px;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.closeBtn:hover {
+		background: fade(@primary-color, 12%);
+		color: @primary-antd-color;
 	}
 
 	@keyframes fadeIn {
