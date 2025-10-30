@@ -30,6 +30,7 @@ import SearchContainer from '@/components/SearchContainer';
 import useShowMessage from '@/hooks/useShowMessage';
 // 朝武芳乃人设（Markdown）作为角色系统提示词，使用 Vite 的 ?raw 导入为字符串
 import yosPersona from '@/prompt/yos.md?raw';
+import { setAiPersona } from '@/utils/ai-persona';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
 
@@ -397,15 +398,8 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 						className={styles.aiAssistant}
 						onClick={() => {
 							// 将人设提示词写入本地存储，供聊天页读取并注入到系统提示中
-							try {
-								if (typeof window !== 'undefined') {
-									localStorage.setItem('AI_PERSONA_PROMPT', yosPersona);
-									localStorage.setItem('AI_PERSONA_NAME', '朝武芳乃');
-								}
-							} catch (e) {
-								// 忽略本地存储异常（隐私/无痕模式等环境）
-								void e;
-							}
+							// 使用工具方法进行封装，保持页面代码简洁
+							setAiPersona('朝武芳乃', yosPersona);
 							// 直接跳转到与智能助手的会话
 							const avatarUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/Tomotake Yoshino.jpg';
 							const aiFriend: IFriendInfo = {
