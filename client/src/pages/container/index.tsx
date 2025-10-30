@@ -179,44 +179,38 @@ const Container = () => {
 					</Popover>
 					<div className={styles.iconList}>
 						<ul className={styles.topIcons}>
-							{MenuIconList.slice(0, 5).map(item => {
-								return (
-									<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-										<li
-											className={`iconfont ${item.icon}`}
-											onClick={() => {
-												if (item.text === '聊天' || item.text === '通讯录') {
-													setCurrentIcon(item.icon);
-													navigate(item.text === '聊天' ? '/chat' : '/address-book');
-												}
-											}}
-											style={{
-												color: currentIcon === item.icon ? '#07c160' : '#979797'
-											}}
-										></li>
-									</Tooltip>
-								);
-							})}
+							{MenuIconList.filter(item => item.text !== '退出登录').map(item => (
+								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
+									<li
+										className={`iconfont ${item.icon}`}
+										onClick={() => {
+											if (item.text === '聊天' || item.text === '通讯录') {
+												setCurrentIcon(item.icon);
+												navigate(item.text === '聊天' ? '/chat' : '/address-book');
+											}
+										}}
+										style={{
+											color: currentIcon === item.icon ? '#07c160' : '#979797'
+										}}
+									></li>
+								</Tooltip>
+							))}
 						</ul>
 						<ul className={styles.bottomIcons}>
-							{MenuIconList.slice(5, 8).map(item => {
-								return (
-									<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-										<li
-											className={`iconfont ${item.icon}`}
-											onClick={() => {
-												if (item.text === '退出登录') {
-													setCurrentIcon(item.icon);
-													confirmLogout();
-												}
-											}}
-											style={{
-												color: currentIcon === item.icon ? '#07c160' : '#979797'
-											}}
-										></li>
-									</Tooltip>
-								);
-							})}
+							{MenuIconList.filter(item => item.text === '退出登录').map(item => (
+								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
+									<li
+										className={`iconfont ${item.icon}`}
+										onClick={() => {
+											setCurrentIcon(item.icon);
+											confirmLogout();
+										}}
+										style={{
+											color: currentIcon === item.icon ? '#07c160' : '#979797'
+										}}
+									></li>
+								</Tooltip>
+							))}
 						</ul>
 					</div>
 					<div className={styles.bottomIcons}></div>

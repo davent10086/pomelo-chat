@@ -11,7 +11,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 		<ConfigProvider
 			theme={{
 				token: {
-					colorPrimary: '#28a770'
+					colorPrimary: '#07C160'
 				}
 			}}
 			locale={zhCN}

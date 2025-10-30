@@ -28,6 +28,8 @@ import { IFriendGroupItem, IGroupChatInfo } from '@/components/CreateGroupChatMo
 import ImageLoad from '@/components/ImageLoad';
 import SearchContainer from '@/components/SearchContainer';
 import useShowMessage from '@/hooks/useShowMessage';
+// 朝武芳乃人设（Markdown）作为角色系统提示词，使用 Vite 的 ?raw 导入为字符串
+import yosPersona from '@/prompt/yos.md?raw';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
 
@@ -388,14 +390,59 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 		{
 			key: TabType.FRIEND,
 			label: titleLabel(1),
-			children:
-				treeData.length === 0 ? (
-					<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
-				) : (
-					<div className={styles.friendTree}>
-						<DirectoryTree onSelect={onSelect} treeData={treeData} icon={null} showIcon={false} />
+			children: (
+				<div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+					{/* 内置智能助手入口（前端虚拟联系人） */}
+					<div
+						className={styles.aiAssistant}
+						onClick={() => {
+							// 将人设提示词写入本地存储，供聊天页读取并注入到系统提示中
+							try {
+								if (typeof window !== 'undefined') {
+									localStorage.setItem('AI_PERSONA_PROMPT', yosPersona);
+									localStorage.setItem('AI_PERSONA_NAME', '朝武芳乃');
+								}
+							} catch (e) {
+								// 忽略本地存储异常（隐私/无痕模式等环境）
+								void e;
+							}
+							// 直接跳转到与智能助手的会话
+							const avatarUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/Tomotake Yoshino.jpg';
+							const aiFriend: IFriendInfo = {
+								friend_id: -1,
+								friend_user_id: -100,
+								online_status: 'online',
+								remark: '朝武芳乃',
+								group_id: 0,
+								group_name: '内置',
+								room: `ai_${user.id}`,
+								unread_msg_count: 0,
+								username: 'ai-assistant',
+								avatar: avatarUrl,
+								phone: '',
+								name: '朝武芳乃',
+								signature: '……请多关照，我是朝武芳乃。'
+							};
+							handleChooseChat(aiFriend);
+						}}
+					>
+						<ImageLoad src={(typeof window !== 'undefined' ? window.location.origin : '') + '/Tomotake Yoshino.jpg'} />
+						<div className={styles.info}>
+							<span className={styles.name}>朝武芳乃</span>
+							<span className={styles.desc}>和我聊聊天吧～</span>
+						</div>
+						<span className={styles.badge}>角色</span>
 					</div>
-				)
+					{/* 好友树 */}
+					{treeData.length === 0 ? (
+						<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+					) : (
+						<div className={styles.friendTree}>
+							<DirectoryTree onSelect={onSelect} treeData={treeData} icon={null} showIcon={false} />
+						</div>
+					)}
+				</div>
+			)
 		},
 		{
 			key: TabType.GROUP_CHAT,

@@ -2,6 +2,38 @@
 
 Pomelo Chat 是一个基于 WebSocket 和 HTTP 的实时聊天应用，支持用户认证、好友管理、群组聊天、文件传输和音视频通信功能。
 
+## 近期外观改造速记（可选）
+
+- 主题与配色
+  - 默认采用微信白色主题风格；主色 `#07C160`、链接蓝 `#576B95`。
+  - 窄侧边栏背景为 `#EDEDED`（变量 `@sider-bg-color`）。
+- 图标与占位
+  - 站点图标从 `vite.svg` 切换为 `yuzu.svg`（文件位于 `client/public/yuzu.svg`，入口在 `client/index.html`）。
+  - 聊天空状态占位图改为 `yuzu.svg`。
+- 侧边栏精简
+  - 移除“收藏 / 朋友圈 / 小程序面板 / 手机”图标，仅保留常用项；“退出登录”固定在底部。
+- 背景展示
+  - 全局背景由渐变改为图片，路径在 `client/src/assets/styles/global.less` 的 `html, body` 选择器：
+    ```less
+    background: url('/Tomotake%20Yoshino.jpg') center center / cover no-repeat fixed !important;
+    ```
+    将图片（如 `bg.jpg`）放入 `client/public/` 后，可直接改为 `url('/bg.jpg')`。
+
+## 主题风格（WeChat 白色主题）
+
+- 默认主题已调整为接近微信的白色风格：
+  - 主色（brand green）：`#07C160`
+  - 链接/轻提示蓝：`#576B95`
+  - 页面与列表背景以纯白为主，聊天区域为浅灰分区
+  - 消息气泡保留“对方白色、自己浅绿（#b2e281）”
+- 主题变量集中在 `client/src/assets/styles/variables.less`，暗色变量在 `variables-dark.less`。
+- 全局基础样式在 `client/src/assets/styles/global.less`；页面/组件均使用变量，便于后续按需微调。
+
+> 快捷自定义：
+> - 背景图：修改 `global.less` 中 `html, body` 的 `background`；建议文件名避免空格，或用 `%20` 编码。
+> - 站点图标：替换 `client/public/yuzu.svg` 并更新 `client/index.html` 中的 `<link rel="icon" ...>`。
+> - 左侧窄栏底色：在 `variables.less` 修改 `@sider-bg-color`。
+
 ## 功能特性
 
 - 用户注册与登录（JWT 认证）
@@ -12,6 +44,7 @@ Pomelo Chat 是一个基于 WebSocket 和 HTTP 的实时聊天应用，支持用
 - 消息持久化存储（MySQL）
 - Redis 缓存会话与通知
  - AI 辅助交互（实验性）：输入补全（Tab 补全）、对话摘要与建议面板（前端优先调用第三方 AI，支持本地回退）
+ - 虚拟角色（前端内置）：通讯录中提供“朝武芳乃”虚拟人物，可由大模型驱动进行拟人化对话（支持无 Key 的本地启发式回退）
 
 ## 技术架构
 
@@ -172,6 +205,34 @@ npm run dev
   - `REDIS_HOST` / `REDIS_PORT`：Redis 地址与端口
 
 ## 文件上传限制
+## 虚拟角色（前端内置）
+
+通讯录“好友”页顶部新增了一个“朝武芳乃”虚拟联系人：
+
+- 仅前端实现，无需后端改动；
+- 点击即可进入与“朝武芳乃”的对话，提供温柔体贴的拟人化回复；
+- 可由大模型驱动（DeepSeek/OpenAI 协议兼容接口），未配置 Key 时会回退到本地启发式；
+- 仍可搭配输入区的 Tab 补全与对话区“下一步建议”使用。
+
+### 可选环境变量（前端）
+
+> 注意：在前端配置 API Key 会暴露给客户端，仅用于开发调试。生产请走后端代理。
+
+- `VITE_ASSISTANT_API_KEY`：优先使用的助手大模型 Key
+- `VITE_ASSISTANT_BASE_URL`：助手大模型的 Base URL（默认使用 DeepSeek: `https://api.deepseek.com`）
+- `VITE_ASSISTANT_MODEL`：模型名（默认 `deepseek-chat`）
+- `VITE_DEEPSEEK_API_KEY`：若未设置 `VITE_ASSISTANT_API_KEY`，会回退使用该 Key
+
+示例（.env.development）：
+
+```
+VITE_ASSISTANT_API_KEY=sk-xxx
+VITE_ASSISTANT_BASE_URL=https://api.deepseek.com
+VITE_ASSISTANT_MODEL=deepseek-chat
+```
+
+> 另外，输入区 Tab 补全与“下一步建议”仍可使用 `VITE_DEEPSEEK_API_KEY`，未设置则使用本地启发式策略。
+
 
 后端已配置对 WebSocket 的最大 payload（在 `server/src/index.js` 中），并在服务端对大文件做了支持（5GB）。在生产部署时，请确保你的反向代理（如 Nginx）和进程管理工具也允许足够的请求体大小与超时设置。
 

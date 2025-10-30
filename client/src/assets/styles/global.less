@@ -16,6 +16,7 @@ textarea {
 }
 
 /* 将 body、html 元素的高度设置为 100% */
+
 html,
 body {
 	height: 100%;
@@ -23,6 +24,10 @@ body {
 	margin: 0;
 	padding: 0;
 	font-size: 100px;
+	/* 使用全局背景图，来自 public 目录，可按需替换（对空格进行 URL 编码） */
+	background: url('/Tomotake%20Yoshino.jpg') center center / cover no-repeat fixed !important;
+	background-color: #f5f5f5 !important;
+	/* 图片加载失败时的兜底色 */
 }
 
 /* 清空 ul、ol 元素的默认样式 */
@@ -81,12 +86,25 @@ button {
 /* 设置全局字体样式 */
 body {
 	font-size: 14px;
-	color: #333;
-	font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
-		'Microsoft YaHei', sans-serif;
+	color: var(--font-color-light);
 }
 
-/* 设置全局背景颜色 */
-body {
-	background-color: #fff;
+/* 链接色与悬停状态（更接近微信轻蓝） */
+a {
+	color: var(--a-link-color);
+}
+
+a:hover {
+	text-decoration: none;
+	filter: brightness(0.9);
+}
+
+/* 全局滚动条统一为更轻的灰色拇指 */
+::-webkit-scrollbar {
+	width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+	background-color: var(--scrollbar-thumb-color);
+	border-radius: 4px;
 }

@@ -28,6 +28,7 @@ const ChatTool = (props: IChatToolProps) => {
 	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]); // 音视频通话对象列表
 	const imageRef = useRef<HTMLInputElement>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
+	// 备注：已移除“分析文件”能力，仅保留对话
 
 	// --- AI Tab 补全 / 建议状态（前端实现，无需修改服务端）
 	const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -312,6 +313,8 @@ const ChatTool = (props: IChatToolProps) => {
 			}
 		}
 	};
+
+	// （已移除文件分析处理函数）
 
 	// 控制音频通话弹窗的显隐
 	const handleAudioModal = (visible: boolean) => {
