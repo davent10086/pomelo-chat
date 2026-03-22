@@ -12,65 +12,48 @@ interface ChatOptions {
   apiKey?: string; // Prefer VITE_ASSISTANT_API_KEY, fallback to VITE_DEEPSEEK_API_KEY
 }
 
+/**
+ * 调用兼容 chat-completions 的 API（如 DeepSeek 或 OpenAI 风格）来获取聊天回复
+ * 
+ * @param messages - 聊天消息列表，每个消息包含角色和内容
+ * @param opts - 可选配置项，包括模型名称、基础 URL 和 API 密钥
+ * @returns 返回模型生成的回复内容字符串
+ * 
+ * @throws 当未提供 API 密钥时抛出 'no-api-key' 错误
+ * @throws 当 API 请求失败时抛出包含状态码和错误信息的错误
+ */
 export async function chatCompletions(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  // 从环境变量中读取配置信息
   const env = ((import.meta as unknown) as { env: Record<string, string | undefined> }).env || {} as Record<string, string | undefined>;
   const apiKey = opts.apiKey || env.VITE_ASSISTANT_API_KEY || env.VITE_DEEPSEEK_API_KEY;
   const baseUrl = (opts.baseUrl || env.VITE_ASSISTANT_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
   const model = opts.model || env.VITE_ASSISTANT_MODEL || 'deepseek-chat';
 
-  // 优先使用前端配置的 Key；如果没有暴露给前端，则通过后端代理调用（避免泄露 Key）
-  if (apiKey) {
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({ model, messages, stream: false })
-    });
-    if (!resp.ok) {
-      const t = await resp.text().catch(() => '');
-      throw new Error(`chat-api ${resp.status} ${t}`);
-    }
-    const data = await resp.json();
-    const text = data?.choices?.[0]?.message?.content || '';
-    return String(text);
+  // 检查是否提供了 API 密钥
+  if (!apiKey) {
+    throw new Error('no-api-key');
   }
 
-  // 无前端 Key：使用后端代理接口（后端负责使用安全的 Key 调用第三方模型并持久化历史）
-  // 后端接口：POST /api/chat/v1/assistant/chat
-  // 请求体：{ room, user_id, content, persona? }
-  // 为兼容现有调用，我们从 messages 中提取最后一条 user 消息作为 content
-  const lastUser = [...messages].reverse().find(m => m.role === 'user');
-  const content = lastUser ? lastUser.content : messages[messages.length - 1].content;
-  // room 和 user_id 需要调用方在 opts 中传入（Chat 页会提供）
-  const proxyBody: any = { content };
-  if ((opts as any).room) proxyBody.room = (opts as any).room;
-  if ((opts as any).user_id) proxyBody.user_id = (opts as any).user_id;
-  if ((opts as any).persona) proxyBody.persona = (opts as any).persona;
-
-  const resp = await fetch('/api/chat/v1/assistant/chat', {
+  // 发起 API 请求
+  const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(proxyBody)
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false
+    })
   });
+
+  // 处理 API 响应结果
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    throw new Error(`assistant-proxy ${resp.status} ${t}`);
+    throw new Error(`chat-api ${resp.status} ${t}`);
   }
   const data = await resp.json();
-  return String(data?.data?.reply || data?.reply || '');
-}
-
-export async function clearAiHistory(room: string) {
-  if (!room) throw new Error('room required');
-  const resp = await fetch(`/api/chat/v1/assistant/history?room=${encodeURIComponent(room)}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' }
-  });
-  if (!resp.ok) {
-    const t = await resp.text().catch(() => '');
-    throw new Error(`clear-history ${resp.status} ${t}`);
-  }
-  return await resp.json();
+  const text = data?.choices?.[0]?.message?.content || '';
+  return String(text);
 }

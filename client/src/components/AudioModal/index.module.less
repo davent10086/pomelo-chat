@@ -1,8 +1,10 @@
+// 音频通话模态框整体容器样式
 @import '@/assets/styles/variables.less';
 .audioModalContent {
 	background-size: cover;
 	height: 100%;
 	width: 100%;
+	// 模态框内容区域
 	.content {
 		position: relative;
 		z-index: 999;
@@ -13,6 +15,7 @@
 		align-items: center;
 		justify-content: center;
 		overflow: hidden;
+		// 头像区域
 		.avatar {
 			width: 0.8rem;
 			height: 0.8rem;
@@ -21,11 +24,13 @@
 				height: 100%;
 			}
 		}
+		// 呼叫状态文字
 		.callWords {
 			margin-top: 0.1rem;
 			font-size: 0.15rem;
 			color: @primary-color;
 		}
+		// 呼叫操作图标区域
 		.callIcons {
 			margin-top: 0.1rem;
 			display: flex;
@@ -38,6 +43,7 @@
 				margin: 0 0.2rem;
 			}
 		}
+		// 全局样式定义 - 成员抽屉
 		:global {
 			.memberDrawer {
 				.ant-drawer-header-title {
@@ -72,6 +78,7 @@
 		}
 	}
 }
+// 模态框背景装饰层
 .audioModalContent::before {
 	content: '';
 	position: absolute;
@@ -83,6 +90,7 @@
 	backdrop-filter: blur(0.01rem);
 }
 
+// 全局样式定义 - 音频模态框
 :global {
 	.audioModal {
 		.ant-modal-content {

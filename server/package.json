@@ -1,13 +1,12 @@
 {
-	"name": "better-chat-server",
+	"name": "pomelo-chat-server",
 	"private": true,
 	"version": "1.0.0",
-	"description": "better-chat项目的后端部分",
+	"description": "pomelo-chat 项目的后端部分",
 	"main": "index.js",
 	"author": {
-		"name": "明远湖之鱼",
-		"email": "488548816@qq.com",
-		"url": "https://github.com/XC0703"
+		"name": "daventLee"
+		
 	},
 	"scripts": {
 		"start": "nodemon src/index.js",

@@ -16,7 +16,7 @@ import SearchContainer from '@/components/SearchContainer';
 import { wsBaseURL } from '@/config';
 import useShowMessage from '@/hooks/useShowMessage';
 import { IFriendInfo } from '@/pages/address-book/type';
-import { chatCompletions, clearAiHistory } from '@/utils/assistant';
+import { chatCompletions } from '@/utils/assistant';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
 import { formatChatListTime } from '@/utils/time';
@@ -363,23 +363,6 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 						<div className={styles.chat_window}>
 							<div className={styles.chat_receiver}>
 								<span>{curChatInfo.name}</span>
-								{isAssistantListItem(curChatInfo) && (
-									<button
-										className={styles.clear_ai_btn}
-										onClick={async () => {
-											try {
-												await clearAiHistory(curChatInfo.room as string);
-												setHistoryMsg([]);
-												setAiHistory([]);
-												showMessage('success', '已清空 AI 聊天记录');
-											} catch (e) {
-												showMessage('error', '清空记录失败');
-											}
-										}}
-									>
-										清空记录
-									</button>
-								)}
 								{isGroupChat(curChatInfo) && (
 									<span className={`icon iconfont icon-jinqunliaoliao ${styles.group_icon}`}></span>
 								)}

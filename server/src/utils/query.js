@@ -4,7 +4,8 @@ const db = require('../model/db');
 const Query = (sql, info) => {
 	return new Promise((resolve, reject) => {
 		db.query(sql, info, async (err, results) => {
-			if (err) return reject(err);
+			if (err) 
+				return reject(err);
 			resolve(results);
 		});
 	});

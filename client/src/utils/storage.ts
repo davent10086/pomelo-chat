@@ -1,4 +1,4 @@
-export const sessionStorageKey = 'better-chat.';
+export const sessionStorageKey = 'pomelo-chat.';
 
 interface ISessionStorage<T> {
 	key: string;
