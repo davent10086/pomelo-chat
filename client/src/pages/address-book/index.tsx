@@ -37,7 +37,7 @@ const { DirectoryTree } = Tree;
 
 const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 	const { handleChooseChat } = props;
-	const user = JSON.parse(userStorage.getItem());
+	const user = userStorage.getItem();
 	const showMessage = useShowMessage();
 
 	const [curTab, setCurTab] = useState<string>(TabType.FRIEND); // 当前 tab 是好友还是群聊

@@ -9,20 +9,12 @@ export interface IChangePerInfoParams {
 	avatar: string;
 	signature: string;
 }
-// 用户信息接口 —— 在client\src\pages\login\index.tsx、client\src\utils\logout.ts中也被引用到
-export interface IUserInfo {
-	id: number;
-	avatar: string;
-	username: string;
-	name: string;
-	phone: string;
-	created_at: string;
-	signature: string;
-}
+// 用户信息接口 —— 统一从 @/utils/storage 复用，避免类型重复定义
+export type { IUserInfo } from '@/utils/storage';
 // 修改信息接口返回的 data 类型 —— 在client\src\pages\login\index.tsx中也被引用到
 export interface ILoginResponseData {
 	token: string;
-	info: IUserInfo;
+	info: import('@/utils/storage').IUserInfo;
 }
 
 /**

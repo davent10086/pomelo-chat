@@ -115,7 +115,8 @@ const createGroupChat = async (req, res) => {
 			}
 			return RespSuccess(res);
 		}
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -153,7 +154,8 @@ const getGroupChatList = async (req, res) => {
 		`;
 		const results = await Query(sql, [id]);
 		return RespData(res, results);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -198,7 +200,8 @@ const searchGroupChat = async (req, res) => {
 			}
 		}
 		return RespData(res, searchList);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -252,7 +255,8 @@ const getGroupChatInfo = async (req, res) => {
 			info.members.push({ ...member });
 		}
 		return RespData(res, info);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -306,7 +310,8 @@ const inviteFriendToGroupChat = async (req, res) => {
 			});
 		}
 		return RespSuccess(res);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -354,7 +359,8 @@ const joinGroupChat = async (req, res) => {
 			name: 'groupChatList'
 		});
 		return RespData(res, options);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -374,7 +380,8 @@ const getGroupMemberList = async (req, res) => {
 	try {
 		const results = await getGroupMembers(group_id, room);
 		return RespData(res, results);
-	} catch {
+	} catch (err) {
+		console.error('[group] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };

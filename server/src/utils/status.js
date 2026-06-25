@@ -4,14 +4,20 @@ exports.CommonStatus = {
 	TOKEN_ERR: 1002,
 	PARAM_ERR: 1003,
 	CREATE_ERR: 1004,
-	UPDATE_ERR: 1005
+	UPDATE_ERR: 1005,
+	UNAUTHORIZED: 1006,
+	NOT_FOUND: 1007,
+	CONNECTION_ERR: 1008
 };
 const CommonStatusMap = {
 	1001: '服务有误',
 	1002: 'Token 错误或过期',
 	1003: '参数错误',
 	1004: '创建失败',
-	1005: '修改失败'
+	1005: '修改失败',
+	1006: '未授权，请重新登录',
+	1007: '资源不存在',
+	1008: '连接失败'
 };
 
 // 2xx 开头的状态码用于 auth 模块
@@ -31,27 +37,71 @@ const AuthStatusMap = {
 };
 
 // 3xx 开头的状态码用于 friend 模块
+exports.FriendStatus = {
+	FRIEND_EXIST: 3001,
+	FRIEND_NOT_EXIST: 3002,
+	FRIEND_ALREADY_ADDED: 3003,
+	FRIEND_SELF: 3004
+};
+const FriendStatusMap = {
+	3001: '好友已存在',
+	3002: '好友不存在',
+	3003: '该用户已是你的好友',
+	3004: '不能添加自己为好友'
+};
 
 // 4xx 开头的状态码用于 group 模块
 exports.GroupStatus = {
 	ALL_EXIT_ERR: 4001,
-	EXIT_GROUP_ERR: 4002
+	EXIT_GROUP_ERR: 4002,
+	GROUP_NOT_EXIST: 4003,
+	GROUP_PERMISSION_ERR: 4004
 };
 const GroupStatusMap = {
 	4001: '你邀请的好友都已经加入群聊',
-	4002: '你已加入群聊'
+	4002: '你已加入群聊',
+	4003: '群聊不存在',
+	4004: '无权限操作该群聊'
 };
 
 // 5xx 开头的状态码用于 message 模块
+exports.MessageStatus = {
+	MESSAGE_SEND_ERR: 5001,
+	MESSAGE_WS_ERR: 5002,
+	ROOM_PARAM_ERR: 5003,
+	MESSAGE_HISTORY_ERR: 5004
+};
+const MessageStatusMap = {
+	5001: '消息发送失败',
+	5002: '消息通道连接失败',
+	5003: '房间参数错误',
+	5004: '获取历史消息失败'
+};
 
 // 6xx 开头的状态码用于 file 模块
 exports.FileStatus = {
 	FILE_EXIST: 6001,
-	ALL_CHUNK_UPLOAD: 6002
+	ALL_CHUNK_UPLOAD: 6002,
+	FILE_TOO_LARGE: 6003,
+	FILE_TYPE_ERR: 6004,
+	FILE_UPLOAD_ERR: 6005
 };
 const FileStatusMap = {
 	6001: '该文件已被上传',
-	6002: '已完成所有分片上传，请合并文件'
+	6002: '已完成所有分片上传，请合并文件',
+	6003: '文件大小超出限制',
+	6004: '不支持的文件类型',
+	6005: '文件上传失败'
+};
+
+// 7xx 开头的状态码用于 RTC 模块
+exports.RtcStatus = {
+	RTC_ROOM_ERR: 7001,
+	RTC_CALL_ERR: 7002
+};
+const RtcStatusMap = {
+	7001: '音视频房间创建失败',
+	7002: '通话发起失败'
 };
 
 // 合并所有的状态码
@@ -59,7 +109,10 @@ exports.StatusMap = {
 	...AuthStatusMap,
 	...GroupStatusMap,
 	...CommonStatusMap,
-	...FileStatusMap
+	...FileStatusMap,
+	...FriendStatusMap,
+	...MessageStatusMap,
+	...RtcStatusMap
 };
 
 exports.SUCCESS_CODE = 200;

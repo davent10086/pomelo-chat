@@ -53,4 +53,6 @@ export interface IChatToolProps {
 	recentMessages?: any[];
 	// 当前用户画像/配置信息（可选），用于定制化补全风格
 	userProfile?: any;
+	// M2: 从外部插入文本（替代 window.dispatchEvent）
+	onInsertText?: (text: string) => void;
 }

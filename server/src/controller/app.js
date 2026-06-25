@@ -6,48 +6,65 @@ const expressWs = require('express-ws');
 const app = express();
 expressWs(app);
 
+// CORS 白名单域名（生产环境应通过环境变量配置）
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+	.split(',')
+	.map(s => s.trim())
+	.filter(Boolean);
+
 /**
- * 解决跨域
+ * 解决跨域：使用具体 Origin 回显，配合 Credentials
  */
 const cors = (req, res, next) => {
-	// 设置允许跨域的域名，* 代表允许任意域名跨域
-	res.header('Access-Control-Allow-Origin', '*');
-	// 允许的 header 类型
-	res.header('Access-Control-Allow-Headers', '*');
-	res.header('Access-Control-Allow-Credentials', true);
-	// 跨域允许的请求方式
+	const origin = req.headers.origin;
+	if (origin && ALLOWED_ORIGINS.includes(origin)) {
+		res.header('Access-Control-Allow-Origin', origin);
+		res.header('Access-Control-Allow-Credentials', 'true');
+		// Vary 头便于缓存正确处理不同 Origin
+		res.header('Vary', 'Origin');
+	}
+	// 允许的 header 类型（具体列出，避免 *）
+	res.header(
+		'Access-Control-Allow-Headers',
+		'Content-Type, Authorization, X-Requested-With'
+	);
 	res.header('Access-Control-Allow-Methods', 'PUT,POST,GET,DELETE,OPTIONS');
 	res.header('Content-Type', 'application/json;charset=utf-8');
 
-	if (req.method.toLowerCase() === 'options')
-		res.sendStatus(200); // 让 options 尝试请求快速结束
-	else next();
+	if (req.method.toLowerCase() === 'options') {
+		res.sendStatus(200);
+	} else {
+		next();
+	}
 };
 
 /**
- * 静态文件访问的中间件，利用 Express 托管静态文件，它使得从指定的目录（这里是uploads）中提供文件。
+ * 静态文件访问的中间件，利用 Express 托管静态文件
+ * L3: 移除强制 octet-stream，让 express.static 根据扩展名自动设置 content-type
  */
 const staticDownload = (req, res, next) => {
-	// 设置允许跨域的域名，* 代表允许任意域名跨域
-	res.header('Access-Control-Allow-Origin', '*');
-	// 允许的 header 类型
-	res.header('Access-Control-Allow-Headers', '*');
-	res.header('Access-Control-Allow-Credentials', true);
-	// 跨域允许的请求方式
+	const origin = req.headers.origin;
+	if (origin && ALLOWED_ORIGINS.includes(origin)) {
+		res.header('Access-Control-Allow-Origin', origin);
+		res.header('Access-Control-Allow-Credentials', 'true');
+		res.header('Vary', 'Origin');
+	}
+	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 	res.header('Access-Control-Allow-Methods', 'PUT, POST, GET, DELETE, OPTIONS, HEAD');
-	res.header('content-type', 'application/octet-stream');
-	if (req.method.toLowerCase() === 'options')
-		res.sendStatus(200); // 让 options 尝试请求快速结束
-	else next();
+	if (req.method.toLowerCase() === 'options') {
+		res.sendStatus(200);
+	} else {
+		next();
+	}
 };
 app.use('/uploads', staticDownload, express.static('uploads'));
 
 /**
- * 处理 HTTP 请求体中的参数，将请求体解析成 JSON 对象或者 URL-encoded 格式，并限制请求体大小为 100mb
+ * 处理 HTTP 请求体中的参数
  */
 const bodyParser = require('body-parser');
-app.use(bodyParser.json({ limit: '100mb' })); //parse application/json
-app.use(bodyParser.urlencoded({ limit: '100mb', extended: true })); //parse application/json
+app.use(bodyParser.json({ limit: '100mb' }));
+app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 
 /**
  * 注册路由
@@ -58,11 +75,14 @@ const messageRouter = require('./routes/message')();
 const groupRouter = require('./routes/group')();
 const rtcRouter = require('./routes/rtc')();
 const fileRouter = require('./routes/file')();
-app.use('', cors); // 防止浏览器的预检请求导致控制台报的跨域错误
+// assistant 代理路由（H4/M10）
+const assistantRouter = require('./routes/assistant')();
+app.use('', cors);
 app.use('/api/chat/v1/auth', cors, indexRouter);
 app.use('/api/chat/v1/friend', cors, friendRouter);
 app.use('/api/chat/v1/message', cors, messageRouter);
 app.use('/api/chat/v1/group', cors, groupRouter);
 app.use('/api/chat/v1/rtc', cors, rtcRouter);
 app.use('/api/chat/v1/file', cors, fileRouter);
+app.use('/api/chat/v1/assistant', cors, assistantRouter);
 module.exports = app;

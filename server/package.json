@@ -6,7 +6,6 @@
 	"main": "index.js",
 	"author": {
 		"name": "daventLee"
-		
 	},
 	"scripts": {
 		"start": "nodemon src/index.js",
@@ -14,6 +13,7 @@
 		"prettier": "prettier --write **/*.js"
 	},
 	"dependencies": {
+		"bcrypt": "^6.0.0",
 		"body-parser": "^1.20.2",
 		"crypto": "^1.0.1",
 		"express": "^4.18.2",

@@ -23,7 +23,7 @@ import { formatCallTime } from '@/utils/time';
 const VideoModal = (props: ICallModalProps) => {
 	const showMessage = useShowMessage();
 	const { openmodal, handleModal, status, type, callInfo } = props;
-	const user = JSON.parse(userStorage.getItem());
+	const user = userStorage.getItem();
 	const [callStatus, setCallStatus] = useState<callStatusType>(status);
 	const [duration, setDuration] = useState<number>(0);
 	const [callList, setCallList] = useState<ICallList>({}); // 与 callListRef 作用类似，不过可以负责相关DOM的渲染

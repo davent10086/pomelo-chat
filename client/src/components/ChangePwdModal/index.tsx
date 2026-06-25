@@ -27,7 +27,7 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 	// 退出登录
 	const confirmLogout = async () => {
 		try {
-			const res = await handleLogout(JSON.parse(userStorage.getItem()));
+			const res = await handleLogout(userStorage.getItem());
 			if (res.code === HttpStatus.SUCCESS) {
 				clearSessionStorage();
 				showMessage('success', '登录已过期，请重新登录');

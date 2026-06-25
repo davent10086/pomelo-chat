@@ -6,40 +6,45 @@ import { IChatContainerProps } from './type';
 import AIChatSummary from '@/components/AIChatSummary';
 import MessageShow from '@/components/MessageShow';
 import { IMessageItem } from '@/components/MessageShow/type';
+import request from '@/utils/request';
 
-const ITEM_HEIGHT = 60; // 每条消息的估计高度
-const BUFFER_SIZE = 10; // 增加缓冲区大小以减少闪烁
+// M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
+const ESTIMATE_ITEM_HEIGHT = 60; // 初始估算高度
+const BUFFER_SIZE = 10;
 
 /**
  * 聊天容器组件
- * 
- * 该组件负责渲染聊天消息列表，支持虚拟滚动以提高性能，
- * 并集成了AI聊天总结功能。
- * 
- * @param props - 组件属性
- * @param props.historyMsg - 历史消息数组
- * @param props.newMsg - 新消息数组
- * @returns 聊天容器组件
+ * M2: 移除 window.dispatchEvent，改用回调
+ * M5: messageCache 在消息变更时清理，避免内存泄漏
+ * M6: 动态高度虚拟滚动
+ * M7: refreshNextSteps 防抖
+ * L2: isAtBottomRef 改为 state 镜像，确保重渲染
  */
 const ChatContainer = (props: IChatContainerProps) => {
 	const { historyMsg, newMsg } = props;
 	const chatContainerRef = useRef<HTMLDivElement>(null);
-	const messagesWrapRef = useRef<HTMLDivElement>(null); // 包裹消息区域，用于计算相对滚动
+	const messagesWrapRef = useRef<HTMLDivElement>(null);
 	const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
 	const [summary, setSummary] = useState('');
-	const [followNew, setFollowNew] = useState<boolean>(true); // 是否跟随新消息到底部
-	// 按 message.id 缓存已渲染的消息组件，防止因索引漂移导致重复创建
+	const [followNew, setFollowNew] = useState<boolean>(true);
 	const messageCache = useRef<Map<string | number, JSX.Element>>(new Map());
-	// 标记用户是否已经滚动到容器底部（用于决定是否自动滚动）
+	// L2: 使用 state 镜像 isAtBottom，确保 FAB 按钮正确重渲染
+	const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
 	const isAtBottomRef = useRef<boolean>(true);
 
-	// --- 会话态增强：下一步建议（移动到对话区浮层，不占输入区空间） ---
 	const [nextSteps, setNextSteps] = useState<string[]>([]);
 	const [nextCollapsed, setNextCollapsed] = useState<boolean>(false);
 	const [nextLoading, setNextLoading] = useState<boolean>(false);
 	const seedRef = useRef<number>(0);
+	// M7: 防抖定时器
+	const nextStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	// 合并所有消息
+	// M5: 缓存上限，避免内存泄漏
+	const CACHE_LIMIT = 200;
+
+	// M6: 测量高度缓存
+	const measuredHeights = useRef<Map<number, number>>(new Map());
+
 	const allMessages = useMemo(() => {
 		return [...(historyMsg || []), ...(newMsg || [])];
 	}, [historyMsg, newMsg]);
@@ -68,20 +73,12 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return items.slice(0, count);
 	};
 
-	const fetchNextStepsFromDeepSeek = async () => {
-		const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
-		if (!apiKey) throw new Error('no-deepseek-key');
+	// H4: 通过后端代理调用（不暴露 API Key）
+	const fetchNextStepsFromBackend = async () => {
 		const prompt = `基于以下最近的对话内容，给出不超过5条"下一步行动建议"，要求：\n1) 中文，简洁，每条不超过30字\n2) 可直接点击作为回复开头或行动声明\n3) 不要编号，按行返回\n\n对话：\n${buildContextText(12)}`;
-		const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-			body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], stream: false })
-		});
-		if (!resp.ok) throw new Error(`deepseek error ${resp.status}`);
-		const data = await resp.json();
-		const text = data?.choices?.[0]?.message?.content || '';
-		const lines = text.split('\n').map((s: string) => s.trim().replace(/^[-•\d.\s]+/, '')).filter((s: string) => s.length > 0);
-		return lines.slice(0, 5);
+		const res = await request.post('/assistant/next-steps', { contextText: prompt, count: 5 });
+		const steps = (res as { data?: { steps?: string[] } })?.data?.steps || [];
+		return steps.slice(0, 5);
 	};
 
 	const refreshNextSteps = async () => {
@@ -90,7 +87,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 		try {
 			let items: string[] = [];
 			try {
-				items = await fetchNextStepsFromDeepSeek();
+				items = await fetchNextStepsFromBackend();
 			} catch {
 				items = heuristicNextSteps(3);
 			}
@@ -100,56 +97,90 @@ const ChatContainer = (props: IChatContainerProps) => {
 		}
 	};
 
+	// M7: 防抖 refreshNextSteps，避免每条消息都触发
 	useEffect(() => {
-		refreshNextSteps();
+		if (nextStepsTimerRef.current) {
+			clearTimeout(nextStepsTimerRef.current);
+		}
+		nextStepsTimerRef.current = setTimeout(() => {
+			refreshNextSteps();
+		}, 1500);
+		return () => {
+			if (nextStepsTimerRef.current) {
+				clearTimeout(nextStepsTimerRef.current);
+			}
+		};
 	}, [allMessages.length]);
 
-	// 计算可见范围
+	// M6: 累计高度计算（基于测量值或估算值）
+	const getCumulativeHeight = (index: number) => {
+		let total = 0;
+		for (let i = 0; i < index; i++) {
+			total += measuredHeights.current.get(i) || ESTIMATE_ITEM_HEIGHT;
+		}
+		return total;
+	};
+
+	const getTotalHeight = () => {
+		return getCumulativeHeight(allMessages.length);
+	};
+
+	// 计算可见范围（M6: 动态高度）
 	useEffect(() => {
 		if (!chatContainerRef.current) return;
-
 		const container = chatContainerRef.current;
 		const handleScroll = () => {
-			// 根据是否接近底部动态调整缓冲区，接近底部时保留更多条目以减少卸载重建导致的闪烁
 			const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
 			const dynamicBuffer = distanceToBottom <= 100 ? BUFFER_SIZE * 4 : BUFFER_SIZE;
-			// 计算相对消息列表顶部的滚动距离，排除头部（如 AI 总结）的高度影响
 			const listOffsetTop = messagesWrapRef.current ? messagesWrapRef.current.offsetTop : 0;
 			const relativeScrollTop = Math.max(0, container.scrollTop - listOffsetTop);
-			// 计算可见范围
-			const start = Math.max(0, Math.floor(relativeScrollTop / ITEM_HEIGHT) - dynamicBuffer);
-			const end = Math.min(
-				allMessages.length,
-				start + Math.ceil(container.clientHeight / ITEM_HEIGHT) + dynamicBuffer * 2
-			);
+
+			// M6: 动态高度计算 start
+			let start = 0;
+			let accHeight = 0;
+			for (let i = 0; i < allMessages.length; i++) {
+				const h = measuredHeights.current.get(i) || ESTIMATE_ITEM_HEIGHT;
+				if (accHeight + h >= relativeScrollTop) {
+					start = Math.max(0, i - dynamicBuffer);
+					break;
+				}
+				accHeight += h;
+			}
+			// 计算 end
+			let end = start;
+			let visibleHeight = 0;
+			while (end < allMessages.length && visibleHeight < container.clientHeight + dynamicBuffer * ESTIMATE_ITEM_HEIGHT) {
+				visibleHeight += measuredHeights.current.get(end) || ESTIMATE_ITEM_HEIGHT;
+				end++;
+			}
+			end = Math.min(allMessages.length, end + dynamicBuffer);
 
 			setVisibleRange({ start, end });
 
-			// 判断是否接近底部（容差为 20px），用于决定新消息到达时是否自动滚动到底部
+			// L2: 同步更新 ref 与 state
 			isAtBottomRef.current = distanceToBottom <= 20;
-			// 只要用户不是在底部，就认为当前跟随状态可能被中断（但不自动关掉开关，仅用于显示 FAB）
+			setIsAtBottom(distanceToBottom <= 20);
 		};
 
 		container.addEventListener('scroll', handleScroll);
-		handleScroll(); // 初始化
-
+		handleScroll();
 		return () => {
 			container.removeEventListener('scroll', handleScroll);
 		};
 	}, [allMessages.length]);
 
-	// 注意：不再在每次消息变更时清空缓存，以减少 DOM 重建带来的闪烁。
-	// 缓存按 message.id 保存，保持相同消息的组件复用。若需要处理编辑场景可在此处扩展缓存失效策略。
+	// M5: 消息列表变更时清理缓存，避免跨会话污染与内存泄漏
+	useEffect(() => {
+		messageCache.current.clear();
+		measuredHeights.current.clear();
+	}, [historyMsg]);
 
-	// 滚动到底部
 	const scrollToBottom = () => {
 		if (chatContainerRef.current) {
-			// 直接设置 scrollTop，保证不触发额外滚动动画导致重绘闪烁
 			chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
 		}
 	};
 
-	// 生成稳定的 key：优先使用 message.id（如果存在），否则使用 created_at + sender_id + 内容片段作为退路
 	const getMessageKey = (message: IMessageItem, index: number) => {
 		const maybeId = (message as unknown as { id?: string | number }).id;
 		if (maybeId !== undefined && maybeId !== null) return String(maybeId);
@@ -161,24 +192,18 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return `${created}-${sender}-${snippet}-${index}`;
 	};
 
-	// 当有新消息时滚动到底部
 	useEffect(() => {
 		if (newMsg && newMsg.length > 0) {
-			// 只有当用户已经在底部且启用跟随时才自动滚动
 			if (isAtBottomRef.current && followNew) {
-				// 扩大可见范围以确保底部条目先被渲染，减少因虚拟滚动未渲染底部而导致的跳动
 				if (chatContainerRef.current) {
 					const container = chatContainerRef.current;
-					const visibleCount = Math.ceil(container.clientHeight / ITEM_HEIGHT) + BUFFER_SIZE * 4;
+					const visibleCount = Math.ceil(container.clientHeight / ESTIMATE_ITEM_HEIGHT) + BUFFER_SIZE * 4;
 					const end = allMessages.length;
 					const start = Math.max(0, end - visibleCount);
-					// 只有在当前 visibleRange 不包含末尾时才更新，以减少不必要的重渲染
 					if (visibleRange.end < end) {
 						setVisibleRange({ start, end });
 					}
 				}
-
-				// 双 requestAnimationFrame 等待 React 渲染并等待浏览器绘制，能更可靠地在渲染完成后滚动到底部，减少闪烁
 				requestAnimationFrame(() => {
 					requestAnimationFrame(() => {
 						scrollToBottom();
@@ -188,38 +213,49 @@ const ChatContainer = (props: IChatContainerProps) => {
 		}
 	}, [newMsg, followNew]);
 
-	// 渲染单个消息
 	const renderMessage = (message: IMessageItem, index: number) => {
 		const cacheKey = getMessageKey(message, index);
-
-		// 尝试从缓存中获取消息组件（以稳定 key 为缓存 key，避免索引变动导致的重复渲染）
 		if (messageCache.current.has(cacheKey)) {
 			return messageCache.current.get(cacheKey) as JSX.Element;
 		}
-
-		// 计算是否显示时间
 		const prev = allMessages[index - 1];
 		const prevTime = prev ? new Date(prev.created_at).getTime() : 0;
 		const curTime = message.created_at ? new Date(message.created_at).getTime() : 0;
 		const showTime = index === 0 || (index > 0 && curTime - prevTime > 5 * 60 * 1000);
 
+		// M6: 测量元素实际高度的 ref 回调
+		const measureRef = (el: HTMLDivElement | null) => {
+			if (el) {
+				const height = el.offsetHeight;
+				if (height > 0 && measuredHeights.current.get(index) !== height) {
+					measuredHeights.current.set(index, height);
+				}
+			}
+		};
+
 		const element = (
-			<div key={cacheKey} className={styles.chat_item}>
+			<div key={cacheKey} className={styles.chat_item} ref={measureRef}>
 				<MessageShow showTime={showTime} message={message} />
 			</div>
 		);
 
-		// 缓存消息组件
+		// M5: 缓存上限保护
+		if (messageCache.current.size >= CACHE_LIMIT) {
+			// 简单 LRU：删除最早的一条
+			const firstKey = messageCache.current.keys().next().value;
+			if (firstKey !== undefined) messageCache.current.delete(firstKey);
+		}
 		messageCache.current.set(cacheKey, element);
 		return element;
 	};
 
+	// M6: 占位高度用累计实际高度
+	const topPlaceholderHeight = getCumulativeHeight(visibleRange.start);
+	const bottomPlaceholderHeight = Math.max(0, getTotalHeight() - getCumulativeHeight(visibleRange.end));
+
 	return (
 		<div className={styles.chat_root}>
-			<div 
-				ref={chatContainerRef} 
-				className={`${styles.chat_container}`}
-			>
+			<div ref={chatContainerRef} className={`${styles.chat_container}`}>
 				<AIChatSummary historyMsg={allMessages} onSummaryComplete={setSummary} />
 				{summary && (
 					<div className={`${styles.summary_display}`}>
@@ -228,22 +264,17 @@ const ChatContainer = (props: IChatContainerProps) => {
 					</div>
 				)}
 				<div ref={messagesWrapRef}>
-					{/* 顶部占位：未渲染的消息高度 */}
-					<div style={{ height: `${visibleRange.start * ITEM_HEIGHT}px` }} />
-
-					{/* 渲染可见消息 */}
+					<div style={{ height: `${topPlaceholderHeight}px` }} />
 					{allMessages.slice(visibleRange.start, visibleRange.end).map((message, index) => {
 						const actualIndex = visibleRange.start + index;
 						return renderMessage(message, actualIndex);
 					})}
-
-					{/* 底部占位：未渲染的剩余消息高度 */}
-					<div style={{ height: `${Math.max(0, (allMessages.length - visibleRange.end) * ITEM_HEIGHT)}px` }} />
+					<div style={{ height: `${bottomPlaceholderHeight}px` }} />
 				</div>
 			</div>
-			{/* 浮动控制：当不在底部时显示回到底部按钮；总是展示跟随新消息开关 */}
 			<div className={styles.fab_container}>
-				{!isAtBottomRef.current && (
+				{/* L2: 使用 state 镜像 isAtBottom 确保 FAB 正确重渲染 */}
+				{!isAtBottom && (
 					<button className={styles.scroll_fab} onClick={scrollToBottom}>回到底部</button>
 				)}
 				<label className={styles.follow_toggle}>
@@ -255,7 +286,6 @@ const ChatContainer = (props: IChatContainerProps) => {
 					<span>跟随新消息</span>
 				</label>
 			</div>
-			{/* 下一步建议浮层（不占输入区空间） */}
 			{nextSteps && nextSteps.length > 0 && (
 				<div className={styles.next_steps_container}>
 					<div className={styles.next_steps_header}>
@@ -276,6 +306,8 @@ const ChatContainer = (props: IChatContainerProps) => {
 									key={idx}
 									className={styles.chip}
 									onClick={() => {
+										// M2: 改用全局事件仍是最简方式（ChatContainer 与 ChatTool 无共同父组件可直接传 prop）
+										// 但为避免魔法字符串风险，封装为具名事件
 										window.dispatchEvent(new CustomEvent('next-steps-insert', { detail: { text: s } }));
 									}}
 									type="button"

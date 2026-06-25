@@ -71,7 +71,7 @@ const Login = () => {
 		const res = await getUserInfo();
 		if (res && res.info.username === username) {
 			tokenStorage.setItem(res.token);
-			userStorage.setItem(JSON.stringify(res.info));
+			userStorage.setItem(res.info);
 			showMessage('success', '登录成功');
 			navigate('/');
 			return;
@@ -87,7 +87,7 @@ const Login = () => {
 					showMessage('success', '登录成功');
 					setLoading(false);
 					tokenStorage.setItem(res.data.token);
-					userStorage.setItem(JSON.stringify(res.data.info));
+					userStorage.setItem(res.data.info);
 					// 判断是否勾选了记住密码
 					if (isRemember) {
 						rememberUser(res.data.info);

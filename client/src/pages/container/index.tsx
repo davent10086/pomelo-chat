@@ -20,55 +20,41 @@ import { IFriendInfo } from '@/pages/address-book/type';
 import Chat from '@/pages/chat';
 import { HttpStatus } from '@/utils/constant';
 import { handleLogout } from '@/utils/logout';
-import { clearSessionStorage, userStorage } from '@/utils/storage';
+import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
+import { safeParse } from '@/utils/safe-parse';
+import ReconnectingWebSocket from '@/utils/websocket';
 
 const Container = () => {
 	const showMessage = useShowMessage();
 	const navigate = useNavigate();
-	const user = JSON.parse(userStorage.getItem());
+	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
+	const user = userStorage.getItem();
 	const [currentIcon, setCurrentIcon] = useState<string>('icon-message');
 	const [openForgetModal, setForgetModal] = useState(false);
 	const [openInfoModal, setInfoModal] = useState(false);
 	const [openAudioModal, setAudioModal] = useState(false);
 	const [openVideoModal, setVideoModal] = useState(false);
-	const socket = useRef<WebSocket | null>(null); // websocket 实例
-	const addressBookRef = useRef<IAddressBookRef>(null); // 通讯录组件实例
-	const chatRef = useRef<IChatRef>(null); // 聊天列表组件实例
+	const socket = useRef<ReconnectingWebSocket | null>(null);
+	const addressBookRef = useRef<IAddressBookRef>(null);
+	const chatRef = useRef<IChatRef>(null);
 	const [initSelectedChat, setInitSelectedChat] = useState<IFriendInfo | IGroupChatInfo | null>(
 		null
-	); // 初始化选中的聊天对象 (只有从通讯录页面进入聊天页面时才会有值)
-	const [room, setRoom] = useState<string>(''); // 当前音视频通话房间号
-	const [curMode, setCurMode] = useState<string>(''); // 当前音视频通话模式
-	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]); // 音视频通话对象列表
+	);
+	const [room, setRoom] = useState<string>('');
+	const [curMode, setCurMode] = useState<string>('');
+	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]);
 
-	// 控制修改密码的弹窗显隐
-	const handleForgetModal = (visible: boolean) => {
-		setForgetModal(visible);
-	};
+	const handleForgetModal = (visible: boolean) => setForgetModal(visible);
+	const handleInfoModal = (visible: boolean) => setInfoModal(visible);
+	const handleAudioModal = (visible: boolean) => setAudioModal(visible);
+	const handleVideoModal = (visible: boolean) => setVideoModal(visible);
 
-	// 控制修改信息的弹窗显隐
-	const handleInfoModal = (visible: boolean) => {
-		setInfoModal(visible);
-	};
-
-	// 控制音频通话弹窗的显隐
-	const handleAudioModal = (visible: boolean) => {
-		setAudioModal(visible);
-	};
-
-	// 控制视频通话弹窗的显隐
-	const handleVideoModal = (visible: boolean) => {
-		setVideoModal(visible);
-	};
-
-	// 退出登录
 	const confirmLogout = async () => {
 		try {
 			const res = await handleLogout(user);
 			if (res.code === HttpStatus.SUCCESS) {
 				clearSessionStorage();
 				showMessage('success', '退出成功');
-				// 关闭 websocket 连接
 				if (socket.current !== null) {
 					socket.current.close();
 					socket.current = null;
@@ -82,7 +68,6 @@ const Container = () => {
 		}
 	};
 
-	// 点击头像用户信息弹窗
 	const infoContent = (
 		<div className={styles.infoContent}>
 			<div className={styles.infoContainer}>
@@ -118,50 +103,80 @@ const Container = () => {
 		</div>
 	);
 
-	// 进入到主页面时建立一个 websocket 连接
+	// 进入主页面时建立 websocket 连接（H3: 携带 token 认证）
 	const initSocket = () => {
-		const ws = new WebSocket(`${wsBaseURL}/auth/user_channel?username=${user.username}`);
-		ws.onmessage = e => {
-			const message = JSON.parse(e.data);
+		const token = tokenStorage.getItem();
+		const ws = new ReconnectingWebSocket(
+			`${wsBaseURL}/auth/user_channel?username=${user.username}&token=${encodeURIComponent(token)}`
+		);
+
+		ws.onMessage = e => {
+			// H11: safeParse 保护，非法 JSON 不致白屏
+			const message = safeParse<{ name: string; callReceiverList?: ICallReceiverInfo[]; room?: string; mode?: string }>(e.data, { name: '' });
 			switch (message.name) {
 				case 'friendList':
-					// 重新加载好友列表
 					addressBookRef.current?.refreshFriendList();
 					break;
 				case 'groupChatList':
-					// 重新加载群聊列表
 					addressBookRef.current?.refreshGroupChatList();
 					break;
 				case 'chatList':
-					// 重新加载消息列表
 					chatRef.current?.refreshChatList();
 					break;
-				case 'create_room':
-					// 打开响应音视频通话窗口
+				case 'create_room': {
 					try {
 						const { callReceiverList, room, mode } = message;
-						setCallReceiverList(callReceiverList);
-						setRoom(room);
-						setCurMode(mode);
-						// 区分是音频还是视频
-						if (mode.includes('audio')) {
-							setAudioModal(true);
-						} else {
-							setVideoModal(true);
+						if (callReceiverList && room && mode) {
+							setCallReceiverList(callReceiverList);
+							setRoom(room);
+							setCurMode(mode);
+							if (mode.includes('audio')) {
+								setAudioModal(true);
+							} else {
+								setVideoModal(true);
+							}
 						}
 					} catch {
 						showMessage('error', '音视频通话响应失败');
 					}
 					break;
+				}
 			}
 		};
+
+		ws.onOpen = () => {
+			console.log('[通知管道] 连接成功');
+			addressBookRef.current?.refreshFriendList();
+			addressBookRef.current?.refreshGroupChatList();
+			chatRef.current?.refreshChatList();
+		};
+
+		ws.onError = () => {
+			console.error('[通知管道] 连接出错，将自动重连');
+		};
+
+		ws.onReconnecting = retryCount => {
+			console.log(`[通知管道] 正在重连... 第 ${retryCount} 次`);
+		};
+
+		ws.onMaxRetriesReached = () => {
+			showMessage('error', '通知服务连接失败，请刷新页面重试');
+		};
+
+		ws.connect();
 		socket.current = ws;
 	};
+	// L1: 添加 cleanup，组件卸载时关闭 socket
 	useEffect(() => {
 		initSocket();
+		return () => {
+			if (socket.current) {
+				socket.current.close();
+				socket.current = null;
+			}
+		};
 	}, []);
 
-	// 在通讯录页面选择一个好友或群聊进行发送信息时跳转到聊天页面
 	const handleChooseChat = (item: IFriendInfo | IGroupChatInfo) => {
 		setCurrentIcon('icon-message');
 		navigate('/chat');
@@ -225,48 +240,30 @@ const Container = () => {
 					)}
 				</div>
 			</div>
-			{
-				// 修改密码弹窗
-				openForgetModal && (
-					<ChangePwdModal openmodal={openForgetModal} handleModal={handleForgetModal} />
-				)
-			}
-			{
-				// 修改信息弹窗
-				openInfoModal && (
-					<ChangePerInfoModal openmodal={openInfoModal} handleModal={handleInfoModal} />
-				)
-			}
-			{
-				// 音频通话弹窗
-				openAudioModal && callReceiverList.length && (
-					<AudioModal
-						openmodal={openAudioModal}
-						handleModal={handleAudioModal}
-						status="receive"
-						type={curMode.includes('private') ? 'private' : 'group'}
-						callInfo={{
-							room,
-							callReceiverList
-						}}
-					/>
-				)
-			}
-			{
-				// 视频通话弹窗
-				openVideoModal && callReceiverList.length && (
-					<VideoModal
-						openmodal={openVideoModal}
-						handleModal={handleVideoModal}
-						status="receive"
-						type={curMode.includes('private') ? 'private' : 'group'}
-						callInfo={{
-							room,
-							callReceiverList
-						}}
-					/>
-				)
-			}
+			{openForgetModal && (
+				<ChangePwdModal openmodal={openForgetModal} handleModal={handleForgetModal} />
+			)}
+			{openInfoModal && (
+				<ChangePerInfoModal openmodal={openInfoModal} handleModal={handleInfoModal} />
+			)}
+			{openAudioModal && callReceiverList.length && (
+				<AudioModal
+					openmodal={openAudioModal}
+					handleModal={handleAudioModal}
+					status="receive"
+					type={curMode.includes('private') ? 'private' : 'group'}
+					callInfo={{ room, callReceiverList }}
+				/>
+			)}
+			{openVideoModal && callReceiverList.length && (
+				<VideoModal
+					openmodal={openVideoModal}
+					handleModal={handleVideoModal}
+					status="receive"
+					type={curMode.includes('private') ? 'private' : 'group'}
+					callInfo={{ room, callReceiverList }}
+				/>
+			)}
 		</div>
 	);
 };

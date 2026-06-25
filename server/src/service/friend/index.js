@@ -109,7 +109,8 @@ const searchUser = async (req, res) => {
 			}
 		}
 		return RespData(res, searchList);
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -127,7 +128,8 @@ const addFriend = async (req, res) => {
 	// 获取发送方信息、好友 id、好友用户名、好友头像（注意：好友备注及好友分组是默认值）
 	const sender = req.user;
 	const { id, username, avatar } = req.body;
-	if (!(sender && id && username && avatar)) {
+	// avatar 允许为空字符串（注册时 avatar 可为空），仅校验必填字段与 avatar 存在性
+	if (!(sender && id && username && avatar != null)) {
 		return RespError(res, CommonStatus.PARAM_ERR);
 	}
 	try {
@@ -161,7 +163,8 @@ const addFriend = async (req, res) => {
 		await addFriendRecord(info_sender);
 		NotificationUser({ receiver_username: sender.username, name: 'friendList' });
 		return RespSuccess(res);
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -198,7 +201,8 @@ const getFriendList = async (req, res) => {
 			}
 		}
 		return RespData(res, friendList);
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -246,7 +250,8 @@ const getFriendById = async (req, res) => {
 		if (results.length !== 0) {
 			return RespData(res, results[0]);
 		}
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -266,7 +271,8 @@ const getFriendGroupList = async (req, res) => {
 		const sql = `SELECT * FROM friend_group WHERE user_id = ?`;
 		const results = await Query(sql, [user_id]);
 		return RespData(res, results);
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -288,7 +294,8 @@ const createFriendGroup = async (req, res) => {
 		if (results.affectedRows === 1) {
 			return RespSuccess(res);
 		}
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };
@@ -310,7 +317,8 @@ const updateFriend = async (req, res) => {
 		if (results.affectedRows === 1) {
 			return RespSuccess(res);
 		}
-	} catch {
+	} catch (err) {
+		console.error('[friend] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };

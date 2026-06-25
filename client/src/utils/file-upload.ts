@@ -16,19 +16,40 @@ interface IUploadChunkParams {
 	extname: string;
 }
 
+// M9: 最大并发数
+const MAX_CONCURRENCY = 4;
+
+/**
+ * M9: 并发池，限制同时进行的分片上传数量
+ */
+async function runWithConcurrency<T>(
+	tasks: (() => Promise<T>)[],
+	concurrency: number
+): Promise<T[]> {
+	const results: T[] = [];
+	let index = 0;
+	const workers: Promise<void>[] = [];
+	const runNext = async (): Promise<void> => {
+		while (index < tasks.length) {
+			const currentIndex = index++;
+			try {
+				results[currentIndex] = await tasks[currentIndex]();
+			} catch (err) {
+				// 抛出让外层捕获
+				throw err;
+			}
+		}
+	};
+	for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
+		workers.push(runNext());
+	}
+	await Promise.all(workers);
+	return results;
+}
+
 /**
  * 分片上传：
- * 1. 将文件进行分片并计算Hash值：得到 allChunkList---所有分片，fileHash---文件的hash值
- * 2. 通过fileHash请求服务端，判断文件上传状态，得到 neededFileList---待上传文件分片
- * 3. 同步上传进度，针对不同文件上传状态调用 progress_cb
- * 4. 发送上传请求
- * 5. 发送文件合并请求
- * @param {File} file 目标上传文件
- * @param {number} baseChunkSize 上传分片大小，单位Mb
- * @param {number} maxRetries 最大重试次数
- * @param {number} retryDelay 重试延迟时间
- * @param {Function} progress_cb 更新上传进度的回调函数
- * @returns {Promise}
+ * M9: Worker 完成后 terminate；分片并发限制；扩展名正确处理
  */
 export async function uploadFile(
 	file: File,
@@ -44,15 +65,21 @@ export async function uploadFile(
 		const sliceFileWorker = new Worker(new URL('./slice-md5-worker.ts', import.meta.url), {
 			type: 'module'
 		});
-		// 将文件以及分片大小通过postMessage发送给sliceFileWorker线程
+		// M9: 标记是否已 resolve/reject，避免 Worker 在 Promise 结束后仍触发
+		let settled = false;
+		const finalize = (fn: () => void) => {
+			if (settled) return;
+			settled = true;
+			// M9: 无论成功失败，terminate Worker 释放线程
+			sliceFileWorker.terminate();
+			fn();
+		};
 		sliceFileWorker.postMessage({ targetFile: file, baseChunkSize });
-		// 分片处理完之后触发onmessage事件
 		sliceFileWorker.onmessage = async e => {
 			switch (e.data.messageType) {
 				case 'success':
 					chunkList.push(...e.data.chunks);
 					fileHash = e.data.fileHash;
-					// 处理文件
 					try {
 						const result = await handleFile(
 							file,
@@ -62,30 +89,39 @@ export async function uploadFile(
 							retryDelay,
 							progress_cb
 						);
-						if (result.success) {
-							resolve(result);
-						} else {
-							reject({ success: false, message: result.message });
-						}
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					} catch (error: any) {
-						reject({ success: false, message: error.message });
+						finalize(() => {
+							if (result.success) resolve(result);
+							else reject({ success: false, message: result.message });
+						});
+					} catch (error: unknown) {
+						const err = error as { message?: string };
+						finalize(() => reject({ success: false, message: err.message || '上传失败' }));
 					}
 					break;
 				case 'progress':
 					chunkList.push(...e.data.chunks);
 					break;
 				case 'fail':
-					reject({ success: false, message: '文件分片处理出错' });
+					finalize(() => reject({ success: false, message: '文件分片处理出错' }));
 					break;
 				default:
 					break;
 			}
 		};
+		// M9: Worker 异常时也 terminate
+		sliceFileWorker.onerror = () => {
+			finalize(() => reject({ success: false, message: '文件分片处理出错' }));
+		};
 	});
 }
 
-// 将文件分片及Hash值进行处理
+// M9: 正确提取扩展名（处理多扩展名与无扩展名）
+const getExtname = (filename: string): string => {
+	const lastDot = filename.lastIndexOf('.');
+	if (lastDot <= 0) return ''; // 无扩展名或隐藏文件
+	return filename.slice(lastDot + 1).toLowerCase();
+};
+
 async function handleFile(
 	file: File,
 	chunkList: ArrayBuffer[],
@@ -95,120 +131,76 @@ async function handleFile(
 	progress_cb?: (progress: number) => void
 ): Promise<IUploadFileRes> {
 	const filename = file.name;
-	const extname = filename.split('.')[1];
-	// 所有分片 ArrayBuffer[]
+	// M9: 用 lastIndexOf 取最后一个扩展名，处理 .tar.gz 等
+	const extname = getExtname(filename);
 	const allChunkList = chunkList;
-	// 需要上传的分片序列 number[]
 	let neededChunkList: number[] = [];
-	// 上传进度
 	let progress = 0;
-	// 获取文件上传状态
 	try {
-		const params = {
-			fileHash,
-			totalCount: allChunkList.length,
-			extname
-		};
+		const params = { fileHash, totalCount: allChunkList.length, extname };
 		const res = await vertifyFile(params);
 
 		if (res.code === HttpStatus.FILE_EXIST) {
-			// 文件已存在，秒传
-			return {
-				success: true,
-				filePath: res.data.filePath,
-				message: res.data.message || ''
-			};
+			return { success: true, filePath: res.data.filePath, message: res.data.message || '' };
 		} else if (res.code === HttpStatus.ALL_CHUNK_UPLOAD) {
-			// 已完成所有分片上传，请合并文件
-			const mergeParams = {
-				fileHash,
-				extname
-			};
+			const mergeParams = { fileHash, extname };
 			try {
 				const mergeRes = await mergeFile(mergeParams);
 				if (mergeRes.code === HttpStatus.SUCCESS) {
-					return {
-						success: true,
-						filePath: mergeRes.data.filePath,
-						message: mergeRes.data.message || ''
-					};
-				} else {
-					throw new Error('文件合并失败');
+					return { success: true, filePath: mergeRes.data.filePath, message: mergeRes.data.message || '' };
 				}
+				throw new Error('文件合并失败');
 			} catch {
 				throw new Error('文件合并失败');
 			}
 		} else if (res.code === HttpStatus.SUCCESS) {
-			// 获取需要上传的分片序列
 			const { neededFileList, message } = res.data;
 			if (!neededFileList.length) {
-				return {
-					success: true,
-					filePath: res.data.filePath,
-					message: message || ''
-				};
+				return { success: true, filePath: res.data.filePath, message: message || '' };
 			}
-			// 部分上传成功，更新neededChunkList，断点续传
 			neededChunkList = neededFileList;
 		} else {
 			throw new Error('获取文件上传状态失败');
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	} catch (error: any) {
-		throw new Error(error.message || '获取文件上传状态失败');
+	} catch (error: unknown) {
+		const err = error as { message?: string };
+		throw new Error(err.message || '获取文件上传状态失败');
 	}
 
-	// 同步上传进度，断点续传情况下
 	progress = ((allChunkList.length - neededChunkList.length) / allChunkList.length) * 100;
 	if (!allChunkList.length) {
 		throw new Error('文件分片失败');
 	}
 
-	// 为每个需要上传的分片发送请求
-	const requestList = allChunkList.map(async (chunk: ArrayBuffer, index: number) => {
-		if (neededChunkList.includes(index + 1)) {
-			const params = {
-				chunk,
-				chunkIndex: index + 1,
-				fileHash,
-				extname
-			};
-			try {
-				await uploadChunkWithRetry(params, maxRetries, retryDelay);
-				// 更新进度
-				progress += Math.ceil(100 / allChunkList.length);
-				if (progress >= 100) progress = 100;
-				if (progress_cb) progress_cb(progress);
-			} catch {
-				throw new Error('存在上传失败的分片');
+	// M9: 使用并发池限制分片上传并发数
+	const tasks: (() => Promise<void>)[] = allChunkList.map((chunk: ArrayBuffer, index: number) => {
+		return async () => {
+			if (neededChunkList.includes(index + 1)) {
+				const params = { chunk, chunkIndex: index + 1, fileHash, extname };
+				try {
+					await uploadChunkWithRetry(params, maxRetries, retryDelay);
+					progress += Math.ceil(100 / allChunkList.length);
+					if (progress >= 100) progress = 100;
+					if (progress_cb) progress_cb(progress);
+				} catch {
+					throw new Error('存在上传失败的分片');
+				}
 			}
-		}
+		};
 	});
-	// 如果有失败的分片，抛出错误，并停止后面的合并操作
+
 	try {
-		await Promise.all(requestList);
+		await runWithConcurrency(tasks, MAX_CONCURRENCY);
 		// 发送合并请求
-		try {
-			const params = {
-				fileHash,
-				extname
-			};
-			const mergeRes = await mergeFile(params);
-			if (mergeRes.code === HttpStatus.SUCCESS) {
-				return {
-					success: true,
-					filePath: mergeRes.data.filePath,
-					message: mergeRes.data.message || ''
-				};
-			} else {
-				throw new Error('文件合并失败');
-			}
-		} catch {
-			throw new Error('文件合并失败');
+		const params = { fileHash, extname };
+		const mergeRes = await mergeFile(params);
+		if (mergeRes.code === HttpStatus.SUCCESS) {
+			return { success: true, filePath: mergeRes.data.filePath, message: mergeRes.data.message || '' };
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	} catch (error: any) {
-		throw new Error(error.message || '存在上传失败的分片');
+		throw new Error('文件合并失败');
+	} catch (error: unknown) {
+		const err = error as { message?: string };
+		throw new Error(err.message || '存在上传失败的分片');
 	}
 }
 
@@ -224,9 +216,8 @@ const uploadChunkWithRetry = async (
 			const res = await uploadChunk(params);
 			if (res.code === HttpStatus.SUCCESS) {
 				return res;
-			} else {
-				throw new Error('分片上传失败');
 			}
+			throw new Error('分片上传失败');
 		} catch {
 			retries++;
 			if (retries >= maxRetries) {

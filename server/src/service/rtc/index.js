@@ -250,11 +250,16 @@ const connectRTC = async (ws, req) => {
 				LoginRooms[username].status = false;
 			}
 		});
-	} catch {
+
+		ws.on('error', err => {
+			console.error(`[RTC管道] 连接出错 room=${room} username=${username}:`, err.message);
+		});
+	} catch (err) {
+		console.error('[RTC管道] connectRTC 异常:', err.message);
 		ws.send(
 			JSON.stringify({
 				name: 'connect_fail',
-				reason: '服务有误!!!'
+				reason: '服务有误，请稍后重试'
 			})
 		);
 		ws.close();
@@ -285,7 +290,8 @@ const getRoomMembers = async (req, res) => {
 			data.push(key);
 		}
 		return RespData(res, data);
-	} catch {
+	} catch (err) {
+		console.error('[rtc] 异常:', err.message);
 		return RespError(res, CommonStatus.SERVER_ERR);
 	}
 };

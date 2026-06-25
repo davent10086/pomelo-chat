@@ -17,7 +17,7 @@ import { tokenStorage, userStorage } from '@/utils/storage';
  */
 const ChangePerInfoModal = (props: IChangePerInfoModalProps) => {
 	const showMessage = useShowMessage();
-	const user = JSON.parse(userStorage.getItem());
+	const user = userStorage.getItem();
 	const [changePerInfoFormInstance] = Form.useForm<IChangePerInfoForm>();
 	const { openmodal, handleModal } = props;
 	const [loading, setLoading] = useState(false);
@@ -46,7 +46,7 @@ const ChangePerInfoModal = (props: IChangePerInfoModalProps) => {
 					handleModal(false);
 					// 更新本地存储
 					tokenStorage.setItem(res.data.token);
-					userStorage.setItem(JSON.stringify(res.data.info));
+					userStorage.setItem(res.data.info);
 				} else {
 					showMessage('error', '修改失败，请重试');
 					setLoading(false);

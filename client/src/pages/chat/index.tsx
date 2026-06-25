@@ -3,7 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 
 import { getChatList } from './api';
 import styles from './index.module.less';
-import { IConnectParams, IChatListProps } from './type';
+import { IConnectParams, IChatListProps, IChatRef } from './type';
 
 import { StatusIconList } from '@/assets/icons';
 import ChatContainer from '@/components/ChatContainer';
@@ -14,112 +14,91 @@ import ImageLoad from '@/components/ImageLoad';
 import { IMessageItem } from '@/components/MessageShow/type';
 import SearchContainer from '@/components/SearchContainer';
 import { wsBaseURL } from '@/config';
+import { AI_USERNAME, getAiAvatar, useAiAssistant } from '@/hooks/useAiAssistant';
 import useShowMessage from '@/hooks/useShowMessage';
 import { IFriendInfo } from '@/pages/address-book/type';
-import { chatCompletions } from '@/utils/assistant';
 import { HttpStatus } from '@/utils/constant';
-import { userStorage } from '@/utils/storage';
+import { safeParse } from '@/utils/safe-parse';
+import { tokenStorage, userStorage } from '@/utils/storage';
 import { formatChatListTime } from '@/utils/time';
+import ReconnectingWebSocket from '@/utils/websocket';
 
-// 自定义的类型保护，用于判断是否为 IFriendInfo 类型 / IGroupChatInfo 类型
+// 自定义类型保护
 const isFriendInfo = (chatInfo: IFriendInfo | IGroupChatInfo): chatInfo is IFriendInfo => {
 	return (chatInfo as IFriendInfo).friend_id !== undefined;
 };
 
-// 判断当前的聊天是否为群聊（消息列表项未包含 receiver_username 时视为群聊）
 const isGroupChat = (item: IMessageListItem) => !item.receiver_username;
 
-const Chat = forwardRef((props: IChatListProps, ref) => {
+// M4: forwardRef 泛型化，ref 类型为 IChatRef
+const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const { initSelectedChat } = props;
-	const user = JSON.parse(userStorage.getItem());
+	// H11: userStorage.getItem() 已返回对象
+	const user = userStorage.getItem();
 	const showMessage = useShowMessage();
-	const [chatList, setChatList] = useState<IMessageListItem[]>([]); // 消息列表
-	const [curChatInfo, setCurChatInfo] = useState<IMessageListItem>(); // 当前选中的对话信息
-	const socket = useRef<WebSocket | null>(null); // websocket 实例
+	const [chatList, setChatList] = useState<IMessageListItem[]>([]);
+	const [curChatInfo, setCurChatInfo] = useState<IMessageListItem>();
+	const socket = useRef<ReconnectingWebSocket | null>(null);
 	const [historyMsg, setHistoryMsg] = useState<IMessageItem[]>([]);
 	const [newMessage, setNewMessage] = useState<IMessageItem[]>([]);
-	// 本地 AI 助手会话缓存（不依赖服务端）
-	const [aiHistory, setAiHistory] = useState<IMessageItem[]>([]);
 
-	const AI_USERNAME = 'ai-assistant';
-	const AI_AVATAR = (typeof window !== 'undefined' ? window.location.origin : '') + '/Tomotake Yoshino.jpg';
-	const isAssistantListItem = (item: IMessageListItem | undefined) => !!item && (item.receiver_username === AI_USERNAME || item.room?.startsWith('ai_'));
-	const isAssistantInit = (info: IFriendInfo | IGroupChatInfo | null) => !!info && isFriendInfo(info) && (info.username === AI_USERNAME || info.friend_id === -1);
+	// M1: 使用 AI 助手 hook
+	const { aiHistory, appendAiHistory, setAiHistory, generateReply } = useAiAssistant(user);
 
-	// 回退：本地启发式（虚拟人物：朝武芳乃 风格）
-	const genAiReply = (text: string): string => {
-		const msg = text.trim();
-		if (!msg) return '……嗯？在想什么事情吗？我在听哦。';
-		// 简单情绪/语气与问句识别
-		const isQuestion = /[?？]$/.test(msg) || /(吗|么|如何|怎么|为何|原因|可以|能否)/.test(msg);
-		const isGreeting = /(你好|在吗|早上好|晚上好|hello|hi|嗨)/i.test(msg);
-		const isThanks = /(谢谢|多谢|辛苦|感激)/.test(msg);
-		if (isGreeting) return '你好呀，我是朝武芳乃……今天也请多关照。想先聊点什么呢？';
-		if (isThanks) return '不用客气。能帮上忙就好……接下来要继续吗？';
-		if (isQuestion) {
-			return '嗯……让我想一想。或许可以从目标开始，逐步分解，再一点点推进。若有更多细节，告诉我吧，我会陪你一起解决的。';
-		}
-		// 默认回应（温柔鼓励 + 继续话题）
-		return '我明白了。听起来很重要呢……不急，我们慢慢来。你愿意多说一点细节吗？我想更贴近你的想法。';
-	};
+	const AI_AVATAR = getAiAvatar();
+	const isAssistantListItem = (item: IMessageListItem | undefined) =>
+		!!item && (item.receiver_username === AI_USERNAME || item.room?.startsWith('ai_'));
+	const isAssistantInit = (info: IFriendInfo | IGroupChatInfo | null) =>
+		!!info && isFriendInfo(info) && (info.username === AI_USERNAME || info.friend_id === -1);
 
-	// 大模型人设提示：优先使用地址簿页面注入的 Markdown 人设（localStorage），否则回退到内置简版提示
-	const DEFAULT_PERSONA_PROMPT = `你将以第一人称扮演“朝武芳乃”（温柔、体贴、认真、略带羞涩的少女）。说话风格：\n1) 温柔鼓励，但不过度；\n2) 口语自然，适度使用“……”与停顿；\n3) 不输出不当内容；\n4) 一般不超过100字，除非用户要求详细。\n不要透露系统或你是大模型。`;
-	const PERSONA_PROMPT = (typeof window !== 'undefined' ? (localStorage.getItem('AI_PERSONA_PROMPT') || '') : '') || DEFAULT_PERSONA_PROMPT;
-
-	const buildOpenAIMessages = (all: IMessageItem[], nextUserText: string) => {
-		const msgs: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
-			{ role: 'system', content: PERSONA_PROMPT }
-		];
-		for (const m of all) {
-			if (m.sender_id === user.id) msgs.push({ role: 'user', content: m.content });
-			else msgs.push({ role: 'assistant', content: m.content });
-		}
-		msgs.push({ role: 'user', content: nextUserText });
-		return msgs;
-	};
-
-	// 进入聊天房间时建立 websocket 连接
+	// 建立聊天 websocket（H3: 携带 token）
 	const initSocket = (connectParams: IConnectParams) => {
-		// 如果 socket 已经存在，则重新建立连接
 		if (socket.current !== null) {
 			socket.current.close();
 			socket.current = null;
 		}
-		const ws = new WebSocket(
-			`${wsBaseURL}/message/connect_chat?room=${connectParams.room}&id=${connectParams.sender_id}&type=${connectParams.type}`
+		const token = tokenStorage.getItem();
+		const ws = new ReconnectingWebSocket(
+			`${wsBaseURL}/message/connect_chat?room=${connectParams.room}&id=${connectParams.sender_id}&type=${connectParams.type}&token=${encodeURIComponent(token)}`
 		);
-		// 获取消息记录
-		ws.onmessage = e => {
-			const message = JSON.parse(e.data);
-			// 判断返回的信息是历史消息数组还是单条消息
+		ws.onMessage = e => {
+			// H11: safeParse 保护
+			const message = safeParse<IMessageItem | IMessageItem[]>(e.data, []);
 			if (Array.isArray(message)) {
 				setHistoryMsg(message);
 				return;
 			} else {
-				// 如果是单条消息，则说明是当前的最新消息
 				setNewMessage(preMsg => [...preMsg, message]);
 			}
 		};
-		ws.onerror = () => {
-			showMessage('error', 'websocket 连接失败');
+
+		ws.onOpen = () => {
+			console.log(`[消息管道] 连接成功 room=${connectParams.room}`);
 		};
-		// 建立连接
+		ws.onError = () => {
+			console.error('[消息管道] 连接出错，将自动重连');
+			showMessage('error', '消息连接失败，正在重连...');
+		};
+		ws.onReconnecting = retryCount => {
+			console.log(`[消息管道] 正在重连... 第 ${retryCount} 次`);
+		};
+		ws.onMaxRetriesReached = () => {
+			showMessage('error', '消息连接失败，请刷新页面重试');
+		};
+		ws.connect();
 		socket.current = ws;
 	};
 
-	// 选择聊天室
 	const chooseRoom = (item: IMessageListItem) => {
 		setHistoryMsg([]);
 		setNewMessage([]);
 		setCurChatInfo(item);
 		if (isAssistantListItem(item)) {
-			// 本地助手：不建立 socket，使用本地历史
 			setHistoryMsg(aiHistory);
 		} else {
 			const params: IConnectParams = {
 				room: item.room,
-				sender_id: user.id,
+				sender_id: String(user.id),
 				type: isGroupChat(item) ? 'group' : 'private'
 			};
 			initSocket(params);
@@ -129,9 +108,8 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 
 	// 发送消息
 	const sendMessage = async (message: ISendMessage) => {
-		// 如果是与本地 AI 助手对话，拦截并本地生成回复
+		// AI 助手对话：本地拦截生成回复
 		if (isAssistantListItem(curChatInfo)) {
-			// 先追加用户消息
 			const userMsg: IMessageItem = {
 				sender_id: user.id,
 				receiver_id: message.receiver_id,
@@ -143,15 +121,9 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 				created_at: new Date()
 			};
 			setNewMessage(prev => [...prev, userMsg]);
-			setAiHistory(prev => [...prev, userMsg]);
-			// 生成 AI 回复：优先走大模型，无 Key 时回退本地启发式
-			let replyText = '';
-			try {
-				const msgs = buildOpenAIMessages([...aiHistory], String(message.content));
-				replyText = await chatCompletions(msgs);
-			} catch (e) {
-				replyText = genAiReply(String(message.content));
-			}
+			appendAiHistory(userMsg);
+			// M1: 通过 hook 生成回复（后端代理 + 启发式回退）
+			const replyText = await generateReply(String(message.content), aiHistory);
 			const aiMsg: IMessageItem = {
 				sender_id: 0,
 				receiver_id: user.id,
@@ -163,12 +135,15 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 				created_at: new Date()
 			};
 			setNewMessage(prev => [...prev, aiMsg]);
-			setAiHistory(prev => [...prev, aiMsg]);
+			appendAiHistory(aiMsg);
 			// 更新左侧最近会话预览
 			setChatList(prev => {
 				if (!curChatInfo) return prev;
-				const updated = prev.map(it => (it.room === curChatInfo!.room ? { ...it, lastMessage: replyText, updated_at: new Date(), type: 'text' } : it));
-				// 如果不存在（首次），插入一条
+				const updated = prev.map(it =>
+					it.room === curChatInfo!.room
+						? { ...it, lastMessage: replyText, updated_at: new Date(), type: 'text' }
+						: it
+				);
 				if (!updated.find(it => it.room === curChatInfo!.room)) {
 					return [
 						{
@@ -189,12 +164,11 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 			});
 			return;
 		}
-		// 普通会话：透传到服务端
+		// 普通会话：透传服务端
 		socket.current?.send(JSON.stringify(message));
 		refreshChatList();
 	};
 
-	// 刷新消息列表
 	const refreshChatList = async () => {
 		try {
 			const res = await getChatList();
@@ -208,22 +182,21 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 		}
 	};
 
-	// 初始化
+	// L1: useEffect 依赖与 cleanup
 	useEffect(() => {
 		const init = async () => {
 			await refreshChatList();
-			// 如果有初始选中的聊天室，则选中且建立连接
 			if (initSelectedChat) {
-				// 等待获取消息列表后再进行后续操作
 				const updatedChatList = (await getChatList()).data;
-
-				const targetIndex = updatedChatList.findIndex(item => item.room === initSelectedChat.room);
-				// 如果消息列表中存在该聊天室，则选中，否则造一个假的以便用于发送消息
+				const targetIndex = updatedChatList.findIndex(
+					item => item.room === initSelectedChat.room
+				);
 				if (targetIndex > -1) {
 					const initChatInfo = updatedChatList.splice(targetIndex, 1)[0];
 					setCurChatInfo(initChatInfo);
 				} else {
-					let newMessage = {
+					// L2: 变量改名避免遮蔽 newMessage state
+					let newItem: IMessageListItem = {
 						receiver_id: 0,
 						name: '',
 						room: initSelectedChat.room,
@@ -233,25 +206,22 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 						type: 'text',
 						avatar: initSelectedChat.avatar
 					};
-					// 如果是私聊
 					if (isFriendInfo(initSelectedChat)) {
-						newMessage = Object.assign(newMessage, {
+						newItem = Object.assign(newItem, {
 							receiver_id: initSelectedChat.friend_user_id,
 							name: initSelectedChat.remark,
 							receiver_username: initSelectedChat.username
 						});
 					} else {
-						// 如果是群聊
-						newMessage = Object.assign(newMessage, {
+						newItem = Object.assign(newItem, {
 							receiver_id: initSelectedChat.id,
 							name: initSelectedChat.name
 						});
 					}
-					setChatList([newMessage, ...updatedChatList]);
-					setCurChatInfo(newMessage);
+					setChatList([newItem, ...updatedChatList]);
+					setCurChatInfo(newItem);
 				}
 
-				// AI 助手：不建立 socket，并放入一条问候消息
 				if (isAssistantInit(initSelectedChat)) {
 					const welcome: IMessageItem = {
 						sender_id: 0,
@@ -268,7 +238,7 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 				} else {
 					const params: IConnectParams = {
 						room: initSelectedChat.room,
-						sender_id: user.id,
+						sender_id: String(user.id),
 						type: isFriendInfo(initSelectedChat) ? 'private' : 'group'
 					};
 					initSocket(params);
@@ -276,16 +246,16 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 			}
 		};
 		init();
-		// 组件卸载时关闭 websocket 连接
+		// L1: cleanup 关闭 socket
 		return () => {
 			socket.current?.close();
 		};
 	}, []);
 
-	// 暴露方法出去
 	useImperativeHandle(ref, () => ({
 		refreshChatList
 	}));
+
 	return (
 		<>
 			<div className={styles.chatList}>
@@ -304,7 +274,8 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 									id={`chatList_${item.room}`}
 									onClick={() => chooseRoom(item)}
 									style={{
-										backgroundColor: curChatInfo?.room === item.room ? 'rgba(0, 0, 0, 0.08)' : ''
+										backgroundColor:
+											curChatInfo?.room === item.room ? 'rgba(0, 0, 0, 0.08)' : ''
 									}}
 								>
 									<div className={styles.chat_avatar}>
@@ -371,7 +342,6 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 								<ChatContainer historyMsg={historyMsg} newMsg={newMessage} />
 							</div>
 							<div className={styles.chat_input}>
-								{/* 将最近消息与用户画像传递给 ChatTool（前端实现 Tab 补全/选项功能） */}
 								<ChatTool
 									curChatInfo={curChatInfo}
 									sendMessage={sendMessage}
@@ -387,6 +357,5 @@ const Chat = forwardRef((props: IChatListProps, ref) => {
 	);
 });
 
-// 指定显示名称
 Chat.displayName = 'Chat';
 export default Chat;

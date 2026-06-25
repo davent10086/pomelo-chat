@@ -18,115 +18,118 @@ import {
 import { userStorage } from '@/utils/storage';
 import { formatChatContentTime } from '@/utils/time';
 
+/**
+ * M8: 提取为模块级组件，避免在父组件函数体内定义导致重挂载
+ * 图片/视频和文件被清理时的兜底显示
+ */
+const ChatContentPocket = () => (
+	<div className={`${styles.content_delete} ${styles.content_file}`}>
+		<img src={LoadErrorImage.FILE_DELETE} draggable="false" alt="文件已过期" />
+		<span>文件已过期或被清理</span>
+	</div>
+);
+
+/**
+ * M8: 提取为模块级组件，保留内部 state 与 effect
+ * 消息内容 (分为文本、图片、视频和文件)
+ */
+const ChatContent = (props: IChatContentProps): JSX.Element | null => {
+	const { messageType, messageContent, fileSize } = props;
+	const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
+	const [isVideoPlay, setIsVideoPlay] = useState<boolean>(false);
+	const [isFileExist, setIsFileExist] = useState<boolean>(true);
+
+	useEffect(() => {
+		if (messageType !== 'text') {
+			urlExists(`${serverURL}${messageContent}`).then(res => {
+				if (!res) {
+					setIsFileExist(res);
+				}
+			});
+		}
+		if (messageType === 'image' || messageType === 'video') {
+			const mediaURL = serverURL + messageContent;
+			getMediaSize(mediaURL, messageType)
+				.then(size => {
+					setCurMediaInfo({ type: messageType, url: mediaURL, size });
+				})
+				.catch(() => {
+					/* empty */
+				});
+		}
+	}, [messageType, messageContent]);
+
+	const handleOpenVideo = () => {
+		setIsVideoPlay(true);
+	};
+
+	if (!isFileExist) return <ChatContentPocket />;
+	switch (messageType) {
+		case 'text':
+			return <div className={styles.content_text}>{messageContent}</div>;
+		case 'image':
+			// L2: 移除冗余的 curMediaInfo && curMediaInfo 判断
+			return curMediaInfo ? (
+				<Image
+					width={getMediaShowSize(curMediaInfo.size, 'image').width}
+					src={curMediaInfo.url}
+					rootClassName="content_image"
+				/>
+			) : (
+				<div className={styles.content_media_placeholder} />
+			);
+		case 'video':
+			return curMediaInfo ? (
+				<div className={styles.content_video}>
+					<video
+						src={serverURL + messageContent}
+						muted
+						style={{
+							width: getMediaShowSize(curMediaInfo.size, 'video').width
+						}}
+					/>
+					<img src={ChatImage.PLAY} alt="" onClick={handleOpenVideo} draggable="false" />
+					<Modal
+						open={isVideoPlay}
+						footer={null}
+						title="视频"
+						onCancel={() => setIsVideoPlay(false)}
+						destroyOnClose
+						width={800}
+					>
+						<video src={serverURL + messageContent} muted controls autoPlay width={750} />
+					</Modal>
+				</div>
+			) : (
+				<div className={styles.content_media_placeholder} />
+			);
+		case 'file':
+			return (
+				<div
+					className={styles.content_file}
+					onClick={() => {
+						downloadFile(`${serverURL}${messageContent}`);
+					}}
+				>
+					<div className={styles.content_file_name}>
+						<span>{getFileName(messageContent)}</span>
+						{fileSize && <span>{fileSize}</span>}
+					</div>
+					<div className={styles.content_file_img}>
+						<img src={getFileIcons(messageContent)} draggable="false" alt="文件" />
+					</div>
+				</div>
+			);
+		default:
+			return null;
+	}
+};
+
 const MessageShow = (props: IMessageShowProps) => {
 	const { showTime, message } = props;
-	const user = JSON.parse(userStorage.getItem());
+	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
+	const user = userStorage.getItem();
 	const { sender_id, content, avatar, type, file_size, created_at } = message;
-
-	// 图片/视频和文件被清理时的兜底显示
-	const ChatContentPocket = () => (
-		<div className={`${styles.content_delete} ${styles.content_file}`}>
-			<img src={LoadErrorImage.FILE_DELETE} draggable="false"></img>
-			<span>文件已过期或被清理</span>
-		</div>
-	);
-
-	// 消息内容 (分为文本、图片、视频和文件)
-	const ChatContent = (props: IChatContentProps): JSX.Element | null => {
-		const { messageType, messageContent, fileSize } = props;
-		const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
-		const [isVideoPlay, setIsVideoPlay] = useState<boolean>(false);
-		const [isFileExist, setIsFileExist] = useState<boolean>(true); // 使用 useState 来定义文件是否存在的状态，默认为 true
-
-		useEffect(() => {
-			// 非文本消息时，检查链接是否有效
-			if (messageType !== 'text') {
-				urlExists(`${serverURL}${messageContent}`).then(res => {
-					if (!res) {
-						setIsFileExist(res);
-					}
-				});
-			}
-			if (messageType === 'image' || messageType === 'video') {
-				const mediaURL = serverURL + messageContent;
-				getMediaSize(mediaURL, messageType)
-					.then(size => {
-						setCurMediaInfo({ type: messageType, url: mediaURL, size });
-					})
-					.catch(() => {
-						/* empty */
-					});
-			}
-		}, [messageType, messageContent]);
-
-		// 打开视频的播放窗口
-		const handleOpenVideo = () => {
-			setIsVideoPlay(true);
-		};
-
-		// 消息内容
-		if (!isFileExist) return <ChatContentPocket />;
-		switch (messageType) {
-			case 'text':
-				return <div className={styles.content_text}>{messageContent}</div>;
-			case 'image':
-				// 如果媒体信息尚未准备好，渲染占位元素以保留空间，避免高度突变
-				return curMediaInfo && curMediaInfo ? (
-					<Image
-						width={getMediaShowSize(curMediaInfo.size, 'image').width}
-						src={curMediaInfo.url}
-						rootClassName="content_image"
-					/>
-				) : (
-					<div className={styles.content_media_placeholder} />
-				);
-			case 'video':
-				// 视频同样使用占位来减少加载时的高度跳变
-				return curMediaInfo && curMediaInfo ? (
-					<div className={styles.content_video}>
-						<video
-							src={serverURL + messageContent}
-							muted
-							style={{
-								width: getMediaShowSize(curMediaInfo.size, 'video').width
-							}}
-						/>
-						<img src={ChatImage.PLAY} alt="" onClick={handleOpenVideo} draggable="false" />
-						<Modal
-							open={isVideoPlay}
-							footer={null}
-							title="视频"
-							onCancel={() => setIsVideoPlay(false)}
-							destroyOnClose
-							width={800}
-						>
-							<video src={serverURL + messageContent} muted controls autoPlay width={750} />
-						</Modal>
-					</div>
-				) : (
-					<div className={styles.content_media_placeholder} />
-				);
-			case 'file':
-				return (
-					<div
-						className={styles.content_file}
-						onClick={() => {
-							downloadFile(`${serverURL}${messageContent}`);
-						}}
-					>
-						<div className={styles.content_file_name}>
-							<span>{getFileName(messageContent)}</span>
-							{fileSize && <span>{fileSize}</span>}
-						</div>
-						<div className={styles.content_file_img}>
-							<img src={getFileIcons(messageContent)} draggable="false"></img>
-						</div>
-					</div>
-				);
-			default:
-				return null;
-		}
-	};
 
 	return (
 		<>

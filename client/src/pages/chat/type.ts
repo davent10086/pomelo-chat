@@ -17,3 +17,8 @@ export interface IConnectParams {
 export interface IChatListProps {
 	initSelectedChat: IFriendInfo | IGroupChatInfo | null;
 }
+
+// M4: Chat 组件通过 forwardRef 暴露给父组件的句柄类型
+export interface IChatRef {
+	refreshChatList: () => Promise<void> | void;
+}
