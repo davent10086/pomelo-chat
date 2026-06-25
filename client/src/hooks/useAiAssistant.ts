@@ -19,7 +19,9 @@ export const getPersonaPrompt = () => {
 
 export const getAiAvatar = () => {
 	if (typeof window !== 'undefined') {
-		return window.location.origin + '/Tomotake Yoshino.jpg';
+		// 头像路径从环境变量读取，便于替换 AI 角色形象
+		const avatarPath = ((import.meta as unknown) as { env?: { VITE_AI_AVATAR_PATH?: string } }).env?.VITE_AI_AVATAR_PATH || '/Tomotake Yoshino.jpg';
+		return window.location.origin + avatarPath;
 	}
 	return '';
 };

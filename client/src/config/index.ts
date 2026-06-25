@@ -4,6 +4,7 @@ interface ViteEnv {
 	VITE_API_BASE?: string;
 	VITE_WS_BASE?: string;
 	VITE_SERVER_URL?: string;
+	VITE_SERVER_PORT?: string;
 }
 
 // 获取 Vite 环境变量，兼容不同环境下的访问方式
@@ -14,8 +15,8 @@ const ENV_API = viteEnv.VITE_API_BASE;
 const ENV_WS = viteEnv.VITE_WS_BASE;
 const ENV_SERVER = viteEnv.VITE_SERVER_URL;
 
-// 默认服务端口配置
-const DEFAULT_PORT = 3000;
+// 默认服务端口配置（从环境变量读取，便于非 3000 端口部署）
+const DEFAULT_PORT = Number(viteEnv.VITE_SERVER_PORT) || 3000;
 
 // 判断运行环境是否为浏览器环境
 const isBrowser = typeof window !== 'undefined' && !!window.location;

@@ -1,6 +1,9 @@
 import { Button, Modal, Spin, message } from 'antd';
 import React, { useRef, useState } from 'react';
 
+import { apiBaseURL } from '@/config';
+import { tokenStorage } from '@/utils/storage';
+
 import styles from './index.module.less';
 import { IAIChatSummaryProps } from './type';
 
@@ -22,16 +25,8 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
 
     setLoading(true);
     try {
-      // 检查是否有API密钥
-      const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
-      if (!apiKey) {
-        message.error('请配置DeepSeek API密钥(VITE_DEEPSEEK_API_KEY)');
-        setLoading(false);
-        return;
-      }
-
       // 构造聊天记录文本
-      const chatText = historyMsg.map(msg => 
+      const chatText = historyMsg.map(msg =>
         `${msg.sender_name || '用户'}: ${msg.content}`
       ).join('\n');
 
@@ -45,46 +40,23 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
   summaryRef.current = '';
       setIsModalVisible(true);
 
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      // H4: 通过后端 /assistant/chat/stream 代理调用，前端不再暴露 API Key
+      const token = tokenStorage.getItem();
+      const response = await fetch(`${apiBaseURL}/assistant/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'user', content: prompt }
-          ],
-          stream: true
+          messages: [{ role: 'user', content: prompt }]
         }),
         signal: controller.signal
       });
 
       if (!response.ok || !response.body) {
-        // fallback：若不支持流或出错，尝试非流模式
-        const nonStream = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: 'deepseek-chat',
-            messages: [{ role: 'user', content: prompt }],
-            stream: false
-          })
-        });
-        const data = await nonStream.json();
-        if (data.choices && data.choices.length > 0) {
-          const summaryText = data.choices[0].message.content;
-          setSummary(summaryText);
-          onSummaryComplete(summaryText);
-        } else {
-          const errorMessage = data?.error?.message || 'AI总结失败，请稍后重试';
-          throw new Error(errorMessage);
-        }
-        return;
+        const errText = await response.text().catch(() => '');
+        throw new Error(errText || `AI总结失败 (${response.status})`);
       }
 
       const reader = response.body.getReader();
@@ -141,7 +113,7 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
       if (err?.name === 'AbortError') {
         message.info('已取消生成');
       } else {
-        const errorMsg = err?.message || 'AI总结失败,请检查网络连接或API密钥配置';
+        const errorMsg = err?.message || 'AI总结失败,请稍后重试';
         message.error(errorMsg);
       }
     } finally {
