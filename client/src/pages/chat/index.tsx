@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd';
+import { Button, Tooltip } from 'antd';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { getChatList } from './api';
@@ -14,7 +14,7 @@ import ImageLoad from '@/components/ImageLoad';
 import { IMessageItem } from '@/components/MessageShow/type';
 import SearchContainer from '@/components/SearchContainer';
 import { wsBaseURL } from '@/config';
-import { AI_USERNAME, getAiAvatar, useAiAssistant } from '@/hooks/useAiAssistant';
+import { AI_USERNAME, getAiAvatar, useAiAssistant, type AgentReplyResult } from '@/hooks/useAiAssistant';
 import useShowMessage from '@/hooks/useShowMessage';
 import { IFriendInfo } from '@/pages/address-book/type';
 import { HttpStatus } from '@/utils/constant';
@@ -41,6 +41,8 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const socket = useRef<ReconnectingWebSocket | null>(null);
 	const [historyMsg, setHistoryMsg] = useState<IMessageItem[]>([]);
 	const [newMessage, setNewMessage] = useState<IMessageItem[]>([]);
+	const [agentResult, setAgentResult] = useState<AgentReplyResult | null>(null);
+	const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string }>();
 
 	// M1: 使用 AI 助手 hook
 	const { aiHistory, appendAiHistory, setAiHistory, generateReply } = useAiAssistant(user);
@@ -50,6 +52,11 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		!!item && (item.receiver_username === AI_USERNAME || item.room?.startsWith('ai_'));
 	const isAssistantInit = (info: IFriendInfo | IGroupChatInfo | null) =>
 		!!info && isFriendInfo(info) && (info.username === AI_USERNAME || info.friend_id === -1);
+
+	const insertAgentText = (text?: string) => {
+		if (!text) return;
+		setInsertTextRequest({ id: Date.now(), text });
+	};
 
 	// 建立聊天 websocket（H3: 携带 token）
 	const initSocket = (connectParams: IConnectParams) => {
@@ -92,6 +99,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const chooseRoom = (item: IMessageListItem) => {
 		setHistoryMsg([]);
 		setNewMessage([]);
+		setAgentResult(null);
 		setCurChatInfo(item);
 		if (isAssistantListItem(item)) {
 			setHistoryMsg(aiHistory);
@@ -122,8 +130,17 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 			};
 			setNewMessage(prev => [...prev, userMsg]);
 			appendAiHistory(userMsg);
-			// M1: 通过 hook 生成回复（后端代理 + 启发式回退）
-			const replyText = await generateReply(String(message.content), aiHistory);
+			setAgentResult(null);
+			const contextMessages = [...aiHistory, userMsg];
+			// M1: 通过 hook 生成回复（Agent + 后端代理 + 启发式回退）
+			const reply = await generateReply(String(message.content), contextMessages, {
+				room: curChatInfo!.room,
+				currentChatType: 'assistant',
+				currentReceiverId: curChatInfo!.receiver_id,
+				recentMessages: [...historyMsg, ...newMessage, userMsg]
+			});
+			const replyText = reply.text;
+			setAgentResult(reply);
 			const aiMsg: IMessageItem = {
 				sender_id: 0,
 				receiver_id: user.id,
@@ -226,7 +243,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 					const welcome: IMessageItem = {
 						sender_id: 0,
 						receiver_id: user.id,
-						content: '……你好呀。我是朝武芳乃。今天也请多关照。若是有什么在意的事，和我说说吧。',
+						content: '你好！我是AI助手，有什么可以帮你的吗？',
 						room: initSelectedChat.room,
 						avatar: AI_AVATAR,
 						type: 'text',
@@ -255,6 +272,90 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	useImperativeHandle(ref, () => ({
 		refreshChatList
 	}));
+
+	const renderAgentPanel = () => {
+		if (!curChatInfo || !isAssistantListItem(curChatInfo) || !agentResult) return null;
+		const hasReplySuggestions = !!agentResult.replySuggestions?.length;
+		const hasTodos = !!agentResult.todos?.length;
+		const hasDraft = !!agentResult.draftMessage;
+		const hasAgentTrace = !!agentResult.agentTrace?.length;
+		const hasToolTrace = !!agentResult.toolTrace?.length;
+		const hasAgentSteps = !!agentResult.agentSteps?.length;
+		if (!(hasReplySuggestions || hasTodos || hasDraft || hasAgentTrace || hasToolTrace || hasAgentSteps)) return null;
+
+		return (
+			<div className={styles.agentPanel}>
+				{hasReplySuggestions && (
+					<div className={styles.agentSection}>
+						<div className={styles.agentTitle}>回复建议</div>
+						<div className={styles.agentChips}>
+							{agentResult.replySuggestions!.map(item => (
+								<Button key={item} size="small" onClick={() => insertAgentText(item)}>
+									{item}
+								</Button>
+							))}
+						</div>
+					</div>
+				)}
+				{hasDraft && (
+					<div className={styles.agentSection}>
+						<div className={styles.agentTitle}>消息草稿</div>
+						<button
+							type="button"
+							className={styles.agentDraft}
+							onClick={() => insertAgentText(agentResult.draftMessage)}
+						>
+							{agentResult.draftMessage}
+						</button>
+					</div>
+				)}
+				{hasTodos && (
+					<div className={styles.agentSection}>
+						<div className={styles.agentTitle}>待办建议</div>
+						<div className={styles.todoList}>
+							{agentResult.todos!.map((todo, index) => (
+								<div className={styles.todoItem} key={`${todo.title}-${index}`}>
+									<span>{todo.title}</span>
+									{todo.assignee && <em>{todo.assignee}</em>}
+									{todo.due && <em>{todo.due}</em>}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+				{(hasAgentSteps || hasAgentTrace || hasToolTrace) && (
+					<div className={`${styles.agentSection} ${styles.traceSection}`}>
+						<div className={styles.agentTitle}>执行轨迹</div>
+						<div className={styles.traceList}>
+							{hasAgentSteps
+								? agentResult.agentSteps!.map(item => (
+										<span
+											className={`${styles.agentTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`}
+											key={`agent-step-${item.agent}`}
+										title={item.detail ? `${item.detail}${item.durationMs != null ? ` (${item.durationMs}ms)` : ''}` : undefined}
+										>
+											{item.agent}
+										</span>
+									))
+								: agentResult.agentTrace?.map(item => (
+										<span className={styles.agentTraceItem} key={`agent-${item}`}>
+											{item}
+										</span>
+									))}
+							{agentResult.toolTrace?.map((item, index) => (
+								<span
+									className={`${styles.toolTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`}
+									key={`tool-${item.tool}-${index}`}
+								>
+									{item.tool}
+								</span>
+							))}
+						</div>
+					</div>
+				)}
+			</div>
+		);
+	};
 
 	return (
 		<>
@@ -342,11 +443,13 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 								<ChatContainer historyMsg={historyMsg} newMsg={newMessage} />
 							</div>
 							<div className={styles.chat_input}>
+								{renderAgentPanel()}
 								<ChatTool
 									curChatInfo={curChatInfo}
 									sendMessage={sendMessage}
 									recentMessages={[...historyMsg, ...newMessage]}
 									userProfile={user}
+									externalInsertText={insertTextRequest}
 								/>
 							</div>
 						</div>

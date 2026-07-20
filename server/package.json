@@ -3,37 +3,63 @@
 	"private": true,
 	"version": "1.0.0",
 	"description": "pomelo-chat 项目的后端部分",
-	"main": "index.js",
+	"main": "dist/index.js",
 	"author": {
 		"name": "daventLee"
 	},
 	"scripts": {
-		"start": "nodemon src/index.js",
+		"start": "nodemon --watch src --ext ts --exec \"ts-node --files src/index.ts\"",
+		"build": "tsc -p tsconfig.json",
+		"serve": "node dist/index.js",
+		"test:agent": "node scripts/test-agent.js",
+		"test:agent-routing": "node scripts/test-agent-routing.js",
+		"test:security": "node scripts/test-security-regressions.js",
+		"test:mcp": "node scripts/test-mcp-stdio.js",
+		"mcp:stdio": "ts-node --files src/mcp/pomelo-stdio.ts",
 		"eslint": "eslint --fix --max-warnings=0",
-		"prettier": "prettier --write **/*.js"
+		"prettier": "prettier --write \"src/**/*.ts\""
 	},
 	"dependencies": {
+		"@langchain/core": "^1.2.3",
+		"@langchain/openai": "^1.5.5",
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@modelcontextprotocol/server": "^2.0.0-beta.4",
 		"bcrypt": "^6.0.0",
 		"body-parser": "^1.20.2",
-		"crypto": "^1.0.1",
+		"dotenv": "^17.4.2",
 		"express": "^4.18.2",
 		"express-ws": "^5.0.2",
-		"fs": "0.0.1-security",
 		"fs-extra": "^11.2.0",
 		"ioredis": "^5.3.2",
 		"jsonwebtoken": "^9.0.0",
+		"langchain": "^1.5.3",
 		"multer": "1.4.5-lts.1",
 		"mysql": "^2.18.1",
-		"uuid": "^9.0.0"
+		"uuid": "^9.0.0",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"@types/bcrypt": "^5.0.2",
+		"@types/express": "^4.17.21",
+		"@types/express-ws": "^3.0.4",
+		"@types/fs-extra": "^11.0.4",
+		"@types/jsonwebtoken": "^9.0.6",
+		"@types/multer": "^1.4.11",
+		"@types/mysql": "^2.15.26",
+		"@types/node": "^20.11.30",
+		"@types/uuid": "^9.0.8",
+		"@typescript-eslint/eslint-plugin": "^7.4.0",
+		"@typescript-eslint/parser": "^7.4.0",
 		"eslint": "8.38.0",
 		"lint-staged": "^15.2.2",
 		"nodemon": "^3.1.7",
-		"prettier": "^3.2.5"
+		"prettier": "^3.2.5",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.4.5"
 	},
 	"lint-staged": {
-		"**/*.js": [
+		"**/*.ts": [
 			"npm run eslint"
 		]
 	}

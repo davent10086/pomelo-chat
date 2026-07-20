@@ -17,7 +17,7 @@ import ImageLoad from '@/components/ImageLoad';
 import { wsBaseURL } from '@/config';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import { userStorage } from '@/utils/storage';
+import { tokenStorage, userStorage } from '@/utils/storage';
 import { formatCallTime } from '@/utils/time';
 
 const AudioModal = (props: ICallModalProps) => {
@@ -41,7 +41,7 @@ const AudioModal = (props: ICallModalProps) => {
 			socket.current = null;
 		}
 		const ws = new WebSocket(
-			`${wsBaseURL}/rtc/connect?room=${connectParams.room}&username=${connectParams.username}&type=${connectParams.type}`
+			`${wsBaseURL}/rtc/connect?room=${encodeURIComponent(connectParams.room)}&username=${encodeURIComponent(connectParams.username)}&type=${encodeURIComponent(connectParams.type)}&token=${encodeURIComponent(tokenStorage.getItem())}`
 		);
 		ws.onopen = async () => {
 			// 如果是通话发起人，则初始化音视频流并发送创建房间指令

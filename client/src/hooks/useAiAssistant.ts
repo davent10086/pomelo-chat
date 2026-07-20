@@ -1,14 +1,63 @@
 import { useCallback, useState } from 'react';
 
 import { IMessageItem } from '@/components/MessageShow/type';
+import { sanitizeAiContent } from '@/utils/sanitize';
 import { IUserInfo } from '@/utils/storage';
 import request from '@/utils/request';
 
 // AI 助手用户名与头像
 export const AI_USERNAME = 'ai-assistant';
 
+interface AgentAction {
+	type: 'todo_suggestion' | 'reply_suggestion' | 'send_message_draft';
+	requiresConfirmation: boolean;
+	payload: Record<string, unknown>;
+}
+
+export interface AgentTodo {
+	title: string;
+	assignee?: string;
+	due?: string;
+}
+
+export interface AgentStep {
+	agent: string;
+	role: 'coordinator' | 'context' | 'todo' | 'reply';
+	status: 'planned' | 'success' | 'skipped' | 'error';
+	detail?: string;
+	tools?: string[];
+	durationMs?: number;
+}
+
+export interface AgentResponse {
+	content: string;
+	summary?: string;
+	todos?: AgentTodo[];
+	replySuggestions?: string[];
+	draftMessage?: string;
+	actions?: AgentAction[];
+	toolTrace?: Array<{ tool: string; status: 'success' | 'error' }>;
+	agentTrace?: string[];
+	agentSteps?: AgentStep[];
+}
+
+export interface AgentReplyResult extends AgentResponse {
+	text: string;
+}
+
+interface GenerateReplyOptions {
+	room?: string;
+	currentChatType?: string;
+	currentReceiverId?: number;
+	recentMessages?: IMessageItem[];
+}
+
+interface ChatResponse {
+	content: string;
+}
+
 // 大模型人设提示（优先 localStorage，回退内置）
-const DEFAULT_PERSONA_PROMPT = `你将以第一人称扮演"朝武芳乃"（温柔、体贴、认真、略带羞涩的少女）。说话风格：\n1) 温柔鼓励，但不过度；\n2) 口语自然，适度使用"……"与停顿；\n3) 不输出不当内容；\n4) 一般不超过100字，除非用户要求详细。\n不要透露系统或你是大模型。`;
+const DEFAULT_PERSONA_PROMPT = `你是一个友好、实用的AI助手。说话风格：\n1) 简洁清晰，直接回应用户问题；\n2) 口语自然，礼貌得体；\n3) 不输出不当内容；\n4) 一般不超过100字，除非用户要求详细。\n不要透露系统或你是大模型。`;
 
 export const getPersonaPrompt = () => {
 	if (typeof window !== 'undefined') {
@@ -20,25 +69,25 @@ export const getPersonaPrompt = () => {
 export const getAiAvatar = () => {
 	if (typeof window !== 'undefined') {
 		// 头像路径从环境变量读取，便于替换 AI 角色形象
-		const avatarPath = ((import.meta as unknown) as { env?: { VITE_AI_AVATAR_PATH?: string } }).env?.VITE_AI_AVATAR_PATH || '/Tomotake Yoshino.jpg';
+		const avatarPath = ((import.meta as unknown) as { env?: { VITE_AI_AVATAR_PATH?: string } }).env?.VITE_AI_AVATAR_PATH || '/yuzu.svg';
 		return window.location.origin + avatarPath;
 	}
 	return '';
 };
 
-// 回退：本地启发式（虚拟人物：朝武芳乃 风格）
+// 回退：本地启发式（通用 AI 助手风格）
 const genAiReply = (text: string): string => {
 	const msg = text.trim();
-	if (!msg) return '……嗯？在想什么事情吗？我在听哦。';
+	if (!msg) return '我在听，请继续说。';
 	const isQuestion = /[?？]$/.test(msg) || /(吗|么|如何|怎么|为何|原因|可以|能否)/.test(msg);
 	const isGreeting = /(你好|在吗|早上好|晚上好|hello|hi|嗨)/i.test(msg);
 	const isThanks = /(谢谢|多谢|辛苦|感激)/.test(msg);
-	if (isGreeting) return '你好呀，我是朝武芳乃……今天也请多关照。想先聊点什么呢？';
-	if (isThanks) return '不用客气。能帮上忙就好……接下来要继续吗？';
+	if (isGreeting) return '你好！我是AI助手，有什么可以帮你的吗？';
+	if (isThanks) return '不客气，能帮上忙就好。还有其他问题吗？';
 	if (isQuestion) {
-		return '嗯……让我想一想。或许可以从目标开始，逐步分解，再一点点推进。若有更多细节，告诉我吧，我会陪你一起解决的。';
+		return '让我想想。可以从目标开始，逐步分解，再一点点推进。若有更多细节，告诉我吧。';
 	}
-	return '我明白了。听起来很重要呢……不急，我们慢慢来。你愿意多说一点细节吗？我想更贴近你的想法。';
+	return '我明白了。你愿意多说一点细节吗？这样我能更好地帮助你。';
 };
 
 const buildOpenAIMessages = (all: IMessageItem[], nextUserText: string, userId: unknown) => {
@@ -54,6 +103,17 @@ const buildOpenAIMessages = (all: IMessageItem[], nextUserText: string, userId: 
 	return msgs;
 };
 
+const buildContextText = (messages: IMessageItem[] = []) =>
+	messages
+		.slice(-20)
+		.map(item => `${item.sender_id}: ${item.content}`)
+		.join('\n');
+
+const buildAgentDisplayText = (data: AgentResponse): string => {
+	const parts = [data.content, data.summary ? `\n总结：${data.summary}` : ''].filter(Boolean);
+	return sanitizeAiContent(parts.join('\n'));
+};
+
 /**
  * M1: AI 助手 hook，从 Chat 页面抽取
  * 通过后端代理调用大模型（H4: 不再在前端暴露 API Key）
@@ -63,17 +123,59 @@ export const useAiAssistant = (user: IUserInfo) => {
 	const [aiHistory, setAiHistory] = useState<IMessageItem[]>([]);
 
 	const generateReply = useCallback(
-		async (userText: string, history: IMessageItem[]): Promise<string> => {
+		async (
+			userText: string,
+			history: IMessageItem[],
+			options: GenerateReplyOptions = {}
+		): Promise<AgentReplyResult> => {
+			try {
+				const agentRes = await request.post<
+					{
+						input: string;
+						room?: string;
+						context: {
+							currentChatType?: string;
+							currentReceiverId?: number;
+							recentMessagesText?: string;
+						};
+					},
+					AgentResponse
+				>('/assistant/agent', {
+					input: userText,
+					room: options.room,
+					context: {
+						currentChatType: options.currentChatType || 'assistant',
+						currentReceiverId: options.currentReceiverId,
+						recentMessagesText: buildContextText(options.recentMessages || history)
+					}
+				});
+				const agentData = agentRes.data?.data;
+				if (agentData?.content) {
+					return {
+						...agentData,
+						text: buildAgentDisplayText(agentData)
+					};
+				}
+			} catch {
+				/* agent 不可用时继续走普通聊天补全 */
+			}
+
 			try {
 				const messages = buildOpenAIMessages(history, userText, user.id);
 				// H4: 通过后端代理调用，不暴露 API Key
-				const res = await request.post('/assistant/chat', { messages });
-				const content = (res as { data?: { content?: string } })?.data?.content;
-				if (content) return content;
-				return genAiReply(userText);
+				const res = await request.post<{ messages: ReturnType<typeof buildOpenAIMessages> }, ChatResponse>(
+					'/assistant/chat',
+					{ messages }
+				);
+				const content = res.data?.data?.content;
+				// 漏洞2: 前端兜底 sanitize
+				if (content) return { content, text: sanitizeAiContent(content), actions: [] };
+				const fallback = genAiReply(userText);
+				return { content: fallback, text: fallback, actions: [] };
 			} catch {
 				// 后端不可用或无 Key，回退本地启发式
-				return genAiReply(userText);
+				const fallback = genAiReply(userText);
+				return { content: fallback, text: fallback, actions: [] };
 			}
 		},
 		[user]

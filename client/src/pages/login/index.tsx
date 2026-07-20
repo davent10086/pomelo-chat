@@ -11,7 +11,7 @@ import { IUserInfo } from '@/components/ChangePerInfoModal/type';
 import ChangePwdModal from '@/components/ChangePwdModal';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import { generateRandomString, encrypt, decrypt } from '@/utils/encryption';
+import { generateRandomString, encrypt, decryptLegacy } from '@/utils/encryption';
 import { tokenStorage, userStorage } from '@/utils/storage';
 
 /**
@@ -41,9 +41,15 @@ const getUserInfo = async () => {
 	const userInfo = localStorage.getItem('userInfo');
 	const authToken = localStorage.getItem('authToken');
 	if (userInfo && authToken) {
-		const info = JSON.parse(await decrypt(userInfo));
-		const token = await decrypt(authToken);
-		return { info, token };
+		try {
+			const info = JSON.parse(await decryptLegacy(userInfo));
+			const token = await decryptLegacy(authToken);
+			return { info, token };
+		} catch {
+			localStorage.removeItem('userInfo');
+			localStorage.removeItem('authToken');
+			localStorage.removeItem('isRemember');
+		}
 	}
 	return null;
 };

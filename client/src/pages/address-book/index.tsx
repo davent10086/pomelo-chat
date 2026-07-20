@@ -28,7 +28,7 @@ import { IFriendGroupItem, IGroupChatInfo } from '@/components/CreateGroupChatMo
 import ImageLoad from '@/components/ImageLoad';
 import SearchContainer from '@/components/SearchContainer';
 import useShowMessage from '@/hooks/useShowMessage';
-// 朝武芳乃人设（Markdown）作为角色系统提示词，使用 Vite 的 ?raw 导入为字符串
+// AI 助手卡片组件，提供内置 AI 助手入口
 import AiAssistantCard from '@/components/AiAssistantCard';
 import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
