@@ -13,11 +13,11 @@ Pomelo Chat 是一个基于 WebSocket 和 HTTP 的实时聊天应用，支持用
 - 侧边栏精简
   - 移除“收藏 / 朋友圈 / 小程序面板 / 手机”图标，仅保留常用项；“退出登录”固定在底部。
 - 背景展示
-  - 全局背景由渐变改为图片，路径在 `client/src/assets/styles/global.less` 的 `html, body` 选择器：
+  - 全局背景色配置在 `client/src/assets/styles/global.less` 的 `html, body` 选择器：
     ```less
-    background: url('/Tomotake%20Yoshino.jpg') center center / cover no-repeat fixed !important;
+    background-color: #f5f5f5 !important;
     ```
-    将图片（如 `bg.jpg`）放入 `client/public/` 后，可直接改为 `url('/bg.jpg')`。
+    如需使用背景图，将图片（如 `bg.jpg`）放入 `client/public/` 后，可改为 `background: url('/bg.jpg') center center / cover no-repeat fixed !important;`。
 
 ## 主题风格（WeChat 白色主题）
 
@@ -43,8 +43,8 @@ Pomelo Chat 是一个基于 WebSocket 和 HTTP 的实时聊天应用，支持用
 - 音视频通话信令支持
 - 消息持久化存储（MySQL）
 - Redis 缓存会话与通知
- - AI 辅助交互（实验性）：输入补全（Tab 补全）、对话摘要与建议面板（前端优先调用第三方 AI，支持本地回退）
- - 虚拟角色（前端内置）：通讯录中提供“朝武芳乃”虚拟人物，可由大模型驱动进行拟人化对话（支持无 Key 的本地启发式回退）
+- AI 辅助交互（实验性）：输入补全（Tab 补全）、对话摘要与建议面板（前端优先调用第三方 AI，支持本地回退）
+- AI 助手（前端内置）：通讯录中提供 AI 助手入口，可由大模型驱动进行对话（支持无 Key 的本地启发式回退）
 
 ## 技术架构
 
@@ -205,12 +205,12 @@ npm run dev
   - `REDIS_HOST` / `REDIS_PORT`：Redis 地址与端口
 
 ## 文件上传限制
-## 虚拟角色（前端内置）
+## AI 助手（前端内置）
 
-通讯录“好友”页顶部新增了一个“朝武芳乃”虚拟联系人：
+通讯录“好友”页顶部新增了一个 AI 助手入口：
 
 - 仅前端实现，无需后端改动；
-- 点击即可进入与“朝武芳乃”的对话，提供温柔体贴的拟人化回复；
+- 点击即可进入与 AI 助手的对话，提供实用的回复；
 - 可由大模型驱动（DeepSeek/OpenAI 协议兼容接口），未配置 Key 时会回退到本地启发式；
 - 仍可搭配输入区的 Tab 补全与对话区“下一步建议”使用。
 
@@ -405,3 +405,41 @@ pm2 start src/index.js --name pomelo-chat
 ## 许可证
 
 MIT
+
+## Pomelo MCP Server
+
+The backend can also expose the read-only/suggestion AI tools through a local MCP stdio server.
+
+```powershell
+cd server
+$env:POMELO_MCP_USER_ID="1"
+npm run mcp:stdio
+```
+
+Available tools:
+
+- `get_recent_messages` - read recent messages from a visible room.
+- `search_contacts` - search contacts visible to the selected user.
+- `search_groups` - search groups joined by the selected user.
+- `extract_todos` - extract todo suggestions without writing data.
+- `suggest_replies` - generate reply suggestions without sending messages.
+
+`POMELO_MCP_USER_ID` is required because stdio MCP does not carry the app JWT. Treat it as the local authorization boundary for the MCP client. Optional `POMELO_MCP_ROOM` can provide a default room for `get_recent_messages`.
+
+Validation:
+
+```powershell
+npm --prefix server run test:mcp
+```
+
+### External MCP clients
+
+The assistant supports three configured external MCP categories:
+
+- `calendar`: list/search events by default; put create/update tools in `writeTools`.
+- `files`: search/read a narrow local directory or cloud-drive scope.
+- `web`: web search and page-reading tools for current information and documentation.
+
+Tools in `writeTools` are not exposed to the autonomous Agent. They can only be called through the authenticated `/assistant/agent/tool` endpoint with `confirmed: true`, allowing the UI to show a confirmation card before creating a calendar event or reminder. See `server/.env.mcp.example` for configuration templates.
+
+For Alibaba Cloud Model Studio WebSearch, enable the service in the Bailian MCP marketplace, then set `DASHSCOPE_API_KEY` in `server/.env` and copy the WebSearch JSON template from `server/.env.mcp.example`. The built-in WebSearch endpoint is `https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp`. WebParser normally uses a workspace-specific endpoint shown in Bailian's external-call configuration. The server supports both `streamableHttp` and legacy `sse` remote MCP types.

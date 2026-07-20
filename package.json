@@ -7,9 +7,12 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon src/index.js",
-    "eslint": "eslint --fix --max-warnings=0",
-    "prettier": "prettier --write **/*.js"
+    "start": "npm --prefix server start",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server start",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "eslint": "npm --prefix server run eslint && npm --prefix client run eslint",
+    "prettier": "prettier --write \"**/*.{js,ts,tsx,less,json,md}\""
   },
   "dependencies": {
     "@types/react-window": "^1.8.8",

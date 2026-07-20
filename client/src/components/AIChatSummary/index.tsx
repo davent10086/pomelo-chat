@@ -2,6 +2,7 @@ import { Button, Modal, Spin, message } from 'antd';
 import React, { useRef, useState } from 'react';
 
 import { apiBaseURL } from '@/config';
+import { sanitizeAiContent } from '@/utils/sanitize';
 import { tokenStorage } from '@/utils/storage';
 
 import styles from './index.module.less';
@@ -86,9 +87,11 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
                 ?? parsed?.choices?.[0]?.message?.content
                 ?? '';
               if (delta) {
+                // 漏洞2: 前端兜底 sanitize 流式数据
+                const safeDelta = sanitizeAiContent(delta);
                 // 逐步更新
                 setSummary(prev => {
-                  const next = prev + delta;
+                  const next = prev + safeDelta;
                   summaryRef.current = next;
                   return next;
                 });

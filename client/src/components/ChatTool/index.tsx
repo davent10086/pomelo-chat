@@ -18,7 +18,14 @@ import request from '@/utils/request';
 import { userStorage } from '@/utils/storage';
 
 const ChatTool = (props: IChatToolProps) => {
-	const { curChatInfo, sendMessage, recentMessages = [], userProfile = {}, onInsertText } = props;
+	const {
+		curChatInfo,
+		sendMessage,
+		recentMessages = [],
+		userProfile = {},
+		onInsertText,
+		externalInsertText
+	} = props;
 	// H11: userStorage.getItem() 已返回对象
 	const user = userProfile && Object.keys(userProfile).length ? userProfile : userStorage.getItem();
 	const showMessage = useShowMessage();
@@ -190,6 +197,13 @@ const ChatTool = (props: IChatToolProps) => {
 			}
 		};
 	}, []);
+
+	useEffect(() => {
+		if (externalInsertText?.text) {
+			insertTextAtCursor(externalInsertText.text);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [externalInsertText?.id]);
 
 	const acceptSuggestion = () => {
 		if (!previewText) return;

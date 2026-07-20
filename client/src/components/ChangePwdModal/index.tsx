@@ -9,7 +9,7 @@ import { IChangePwdForm, IChangePwdModalProps } from './type';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 import { handleLogout } from '@/utils/logout';
-import { clearSessionStorage, userStorage } from '@/utils/storage';
+import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
 
 /**
  * 修改密码弹窗组件
@@ -45,7 +45,11 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 	 * @param values - 包含用户名、手机号、密码和确认密码的表单数据
 	 */
 	const handleSubmit = async (values: IChangePwdForm) => {
-		const { username, phone, password, confirm } = values;
+		const { currentPassword, password, confirm } = values;
+		if (!tokenStorage.getItem()) {
+			showMessage('error', '请先登录后修改密码');
+			return;
+		}
 		if (password !== confirm) {
 			showMessage('error', '两次密码不一致');
 			return;
@@ -53,17 +57,16 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 		setLoading(true);
 		try {
 			const params = {
-				username,
+				currentPassword,
 				password,
-				confirmPassword: confirm,
-				phone
 			};
 			const res = await handleChange(params);
 			if (res.code === HttpStatus.SUCCESS) {
 				showMessage('success', '修改成功');
 				setLoading(false);
 				handleModal(false);
-				confirmLogout();
+				clearSessionStorage();
+				navigate('/login');
 			} else {
 				showMessage('error', res.message);
 				setLoading(false);
@@ -86,17 +89,17 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 				footer={null}
 				wrapClassName="changePwdModal"
 			>
-				<Form name="changePwdForm" onFinish={handleSubmit} className={styles.changePwdForm}>
+				<Form name="changePwdForm" initialValues={{ phone: 'verified' }} onFinish={handleSubmit} className={styles.changePwdForm}>
 					<Form.Item
-						name="username"
+						name="currentPassword"
 						rules={[
 							{ required: true, message: '请输入用户名' },
 							{ max: 255, message: '用户名最多输入255个字符' }
 						]}
 					>
-						<Input type="text" placeholder="请输入用户名"></Input>
+						<Input type="password" placeholder="请输入当前密码"></Input>
 					</Form.Item>
-					<Form.Item
+					<Form.Item hidden
 						name="phone"
 						rules={[
 							{ required: true, message: '请输入手机号' },

@@ -6,7 +6,6 @@ import { IChatContentProps, IMessageShowProps, IMediaInfo } from './type';
 
 import { ChatImage, LoadErrorImage } from '@/assets/images';
 import ImageLoad from '@/components/ImageLoad';
-import { serverURL } from '@/config';
 import {
 	getMediaSize,
 	getMediaShowSize,
@@ -16,6 +15,7 @@ import {
 	urlExists
 } from '@/utils/File';
 import { userStorage } from '@/utils/storage';
+import { getAuthorizedMediaURL } from '@/utils/media-url';
 import { formatChatContentTime } from '@/utils/time';
 
 /**
@@ -41,14 +41,14 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 
 	useEffect(() => {
 		if (messageType !== 'text') {
-			urlExists(`${serverURL}${messageContent}`).then(res => {
+			urlExists(getAuthorizedMediaURL(messageContent)).then(res => {
 				if (!res) {
 					setIsFileExist(res);
 				}
 			});
 		}
 		if (messageType === 'image' || messageType === 'video') {
-			const mediaURL = serverURL + messageContent;
+			const mediaURL = getAuthorizedMediaURL(messageContent);
 			getMediaSize(mediaURL, messageType)
 				.then(size => {
 					setCurMediaInfo({ type: messageType, url: mediaURL, size });
@@ -82,7 +82,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 			return curMediaInfo ? (
 				<div className={styles.content_video}>
 					<video
-						src={serverURL + messageContent}
+						src={getAuthorizedMediaURL(messageContent)}
 						muted
 						style={{
 							width: getMediaShowSize(curMediaInfo.size, 'video').width
@@ -97,7 +97,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 						destroyOnClose
 						width={800}
 					>
-						<video src={serverURL + messageContent} muted controls autoPlay width={750} />
+						<video src={getAuthorizedMediaURL(messageContent)} muted controls autoPlay width={750} />
 					</Modal>
 				</div>
 			) : (
@@ -108,7 +108,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 				<div
 					className={styles.content_file}
 					onClick={() => {
-						downloadFile(`${serverURL}${messageContent}`);
+						downloadFile(getAuthorizedMediaURL(messageContent));
 					}}
 				>
 					<div className={styles.content_file_name}>

@@ -1,5 +1,6 @@
 import { LoadErrorImage } from '@/assets/images';
 import { serverURL } from '@/config';
+import { getAuthorizedMediaURL } from '@/utils/media-url';
 
 interface ImageProps {
 	src: string;
@@ -16,7 +17,7 @@ const ImageLoad = (props: ImageProps) => {
 				src
 					? src.startsWith('http') || src.startsWith('https')
 						? `${src}`
-						: `${serverURL}${src}`
+					: getAuthorizedMediaURL(src)
 					: `${LoadErrorImage.AVATAR}`
 			}
 			onError={e => {

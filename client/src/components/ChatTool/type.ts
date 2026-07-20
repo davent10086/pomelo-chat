@@ -55,4 +55,6 @@ export interface IChatToolProps {
 	userProfile?: any;
 	// M2: 从外部插入文本（替代 window.dispatchEvent）
 	onInsertText?: (text: string) => void;
+	// 从父组件触发插入文本到输入框，id 变化时执行
+	externalInsertText?: { id: number; text: string };
 }

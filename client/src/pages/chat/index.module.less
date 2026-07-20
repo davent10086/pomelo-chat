@@ -145,11 +145,146 @@
 
 			.chat_input {
 				height: 2.2rem;
+				overflow: hidden;
+				display: flex;
+				flex-direction: column;
+
+				> div:last-child {
+					flex: 1;
+					min-height: 0;
+				}
 			}
 		}
 	}
 
 	.group_icon {
 		margin-left: 0.03rem;
+	}
+
+	.agentPanel {
+		max-height: 0.82rem;
+		overflow: auto;
+		padding: 0.06rem 0.2rem 0;
+		background: @deeply-border_bg-color;
+		border-bottom: 0.005rem solid @primary-border_bg-color;
+	}
+
+	.agentSection {
+		display: flex;
+		align-items: center;
+		gap: 0.08rem;
+		margin-bottom: 0.05rem;
+	}
+
+	.agentTitle {
+		flex: 0 0 auto;
+		color: @font-color-lightest;
+		font-size: 0.12rem;
+	}
+
+	.agentChips {
+		display: flex;
+		gap: 0.06rem;
+		overflow-x: auto;
+	}
+
+	.agentDraft {
+		max-width: 100%;
+		border: 1px solid @primary-border_bg-color;
+		background: @primary-color;
+		color: @font-color;
+		border-radius: 4px;
+		padding: 0.04rem 0.08rem;
+		font-size: 0.12rem;
+		text-align: left;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		cursor: pointer;
+	}
+
+	.todoList {
+		display: flex;
+		gap: 0.06rem;
+		overflow-x: auto;
+	}
+
+	.todoItem {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 0.04rem;
+		max-width: 2.4rem;
+		border: 1px solid fade(@primary-antd-color, 30%);
+		background: fade(@primary-antd-color, 8%);
+		border-radius: 4px;
+		padding: 0.04rem 0.08rem;
+		font-size: 0.12rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+
+		em {
+			color: @font-color-lightest;
+			font-style: normal;
+		}
+	}
+
+	.traceSection {
+		align-items: flex-start;
+	}
+
+	.traceList {
+		display: flex;
+		flex-wrap: nowrap;
+		gap: 0.05rem;
+		overflow-x: auto;
+		min-width: 0;
+	}
+
+	.agentTraceItem,
+	.toolTraceItem {
+		flex: 0 0 auto;
+		border-radius: 4px;
+		padding: 0.025rem 0.06rem;
+		font-size: 0.11rem;
+		line-height: 1.4;
+		white-space: nowrap;
+	}
+
+	.agentTraceItem {
+		border: 1px solid fade(@primary-antd-color, 30%);
+		background: fade(@primary-antd-color, 10%);
+		color: @primary-antd-color;
+	}
+
+	.toolTraceItem {
+		border: 1px solid @primary-border_bg-color;
+		background: @primary-color;
+		color: @font-color-lightest;
+	}
+
+	.traceStatus_success {
+		border-color: fade(@primary-antd-color, 40%);
+		background: fade(@primary-antd-color, 12%);
+		color: @primary-antd-color;
+	}
+
+	.traceStatus_skipped {
+		border-color: @primary-border_bg-color;
+		background: fade(@font-color-lightest, 8%);
+		color: @font-color-lightest;
+	}
+
+	.traceStatus_error {
+		border-color: fade(#ff4d4f, 35%);
+		background: fade(#ff4d4f, 8%);
+		color: #cf1322;
+	}
+
+	.traceStatus_planned {
+		border-color: fade(#576b95, 30%);
+		background: fade(#576b95, 8%);
+		color: #576b95;
 	}
 }

@@ -3,10 +3,8 @@
  */
 // 注册接口参数类型
 export interface IChangePwdParams {
-	username: string;
-	phone: string;
+	currentPassword: string;
 	password: string;
-	confirmPassword: string;
 }
 
 /**
@@ -19,8 +17,7 @@ export interface IChangePwdModalProps {
 }
 // 修改密码表单类型
 export interface IChangePwdForm {
-	username: string;
-	phone: string;
+	currentPassword: string;
 	password: string;
 	confirm: string;
 }
