@@ -7,6 +7,7 @@ export interface AgentContext {
 	currentChatType?: 'private' | 'group' | 'assistant';
 	currentReceiverId?: number;
 	recentMessagesText?: string;
+	memoryEnabled?: boolean;
 }
 
 export interface AgentStep {

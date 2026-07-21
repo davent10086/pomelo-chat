@@ -6,9 +6,10 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const port = process.env.PORT || 3000;
 const apiBase = process.env.AGENT_TEST_API_BASE || `http://localhost:${port}/api/chat/v1`;
-const username = process.env.AGENT_TEST_USERNAME || 'agent_test';
+const testRunId = Date.now();
+const username = process.env.AGENT_TEST_USERNAME || `agent_test_${testRunId}`;
 const password = process.env.AGENT_TEST_PASSWORD || '123456';
-const phone = process.env.AGENT_TEST_PHONE || '13900000001';
+const phone = process.env.AGENT_TEST_PHONE || `139${String(testRunId).slice(-8)}`;
 const input =
 	process.argv.slice(2).join(' ') ||
 	process.env.AGENT_TEST_INPUT ||

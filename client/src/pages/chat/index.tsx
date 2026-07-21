@@ -1,4 +1,4 @@
-import { Button, Tooltip } from 'antd';
+import { Button, Modal, Switch, Tooltip } from 'antd';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { getChatList } from './api';
@@ -18,6 +18,7 @@ import { AI_USERNAME, getAiAvatar, useAiAssistant, type AgentReplyResult } from 
 import useShowMessage from '@/hooks/useShowMessage';
 import { IFriendInfo } from '@/pages/address-book/type';
 import { HttpStatus } from '@/utils/constant';
+import request from '@/utils/request';
 import { safeParse } from '@/utils/safe-parse';
 import { tokenStorage, userStorage } from '@/utils/storage';
 import { formatChatListTime } from '@/utils/time';
@@ -29,6 +30,14 @@ const isFriendInfo = (chatInfo: IFriendInfo | IGroupChatInfo): chatInfo is IFrie
 };
 
 const isGroupChat = (item: IMessageListItem) => !item.receiver_username;
+
+interface AssistantMemoryItem {
+	id: number;
+	category: string;
+	content: string;
+	created_at?: string;
+	updated_at?: string;
+}
 
 // M4: forwardRef 泛型化，ref 类型为 IChatRef
 const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
@@ -43,6 +52,12 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const [newMessage, setNewMessage] = useState<IMessageItem[]>([]);
 	const [agentResult, setAgentResult] = useState<AgentReplyResult | null>(null);
 	const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string }>();
+	const [memoryEnabled, setMemoryEnabled] = useState(
+		() => localStorage.getItem('AI_MEMORY_ENABLED') !== 'false'
+	);
+	const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+	const [memoryList, setMemoryList] = useState<AssistantMemoryItem[]>([]);
+	const [memoryLoading, setMemoryLoading] = useState(false);
 
 	// M1: 使用 AI 助手 hook
 	const { aiHistory, appendAiHistory, setAiHistory, generateReply } = useAiAssistant(user);
@@ -56,6 +71,49 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const insertAgentText = (text?: string) => {
 		if (!text) return;
 		setInsertTextRequest({ id: Date.now(), text });
+	};
+
+	const callAgentTool = async <T,>(name: string, args: Record<string, unknown>) => {
+		const res = await request.post<
+			{ name: string; args: Record<string, unknown> },
+			{ name: string; result: T }
+		>('/assistant/agent/tools/call', { name, args });
+		return res.data.data.result;
+	};
+
+	const refreshMemories = async () => {
+		setMemoryLoading(true);
+		try {
+			const result = await callAgentTool<{ memories: AssistantMemoryItem[] }>('search_memory', {
+				query: '',
+				limit: 20
+			});
+			setMemoryList(result.memories || []);
+		} catch {
+			showMessage('error', '记忆读取失败');
+		} finally {
+			setMemoryLoading(false);
+		}
+	};
+
+	const openMemoryManager = async () => {
+		setMemoryModalOpen(true);
+		await refreshMemories();
+	};
+
+	const handleMemoryEnabledChange = (checked: boolean) => {
+		setMemoryEnabled(checked);
+		localStorage.setItem('AI_MEMORY_ENABLED', String(checked));
+	};
+
+	const deleteMemory = async (content: string) => {
+		try {
+			await callAgentTool('forget_memory', { query: content });
+			showMessage('success', '已删除记忆');
+			await refreshMemories();
+		} catch {
+			showMessage('error', '删除记忆失败');
+		}
 	};
 
 	// 建立聊天 websocket（H3: 携带 token）
@@ -137,7 +195,8 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 				room: curChatInfo!.room,
 				currentChatType: 'assistant',
 				currentReceiverId: curChatInfo!.receiver_id,
-				recentMessages: [...historyMsg, ...newMessage, userMsg]
+				recentMessages: [...historyMsg, ...newMessage, userMsg],
+				memoryEnabled
 			});
 			const replyText = reply.text;
 			setAgentResult(reply);
@@ -285,6 +344,24 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 
 		return (
 			<div className={styles.agentPanel}>
+				<div className={styles.agentToolbar}>
+					<div className={styles.workflow}>
+						<span className={styles.workflowItem}>规划</span>
+						<span className={styles.workflowArrow}>→</span>
+						<span className={styles.workflowItem}>工具</span>
+						<span className={styles.workflowArrow}>→</span>
+						<span className={styles.workflowItem}>结果</span>
+						<span className={styles.workflowArrow}>→</span>
+						<span className={styles.workflowItem}>用户确认</span>
+					</div>
+					<div className={styles.memoryControls}>
+						<span>记忆</span>
+						<Switch size="small" checked={memoryEnabled} onChange={handleMemoryEnabledChange} />
+						<Button size="small" onClick={openMemoryManager}>
+							管理
+						</Button>
+					</div>
+				</div>
 				{hasReplySuggestions && (
 					<div className={styles.agentSection}>
 						<div className={styles.agentTitle}>回复建议</div>
@@ -456,6 +533,37 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 					)}
 				</div>
 			</div>
+			<Modal
+				title="AI 记忆管理"
+				open={memoryModalOpen}
+				onCancel={() => setMemoryModalOpen(false)}
+				footer={null}
+				width={640}
+			>
+				<div className={styles.memoryHeader}>
+					<span>关闭后，AI 本轮请求不会读取或写入长期记忆。</span>
+					<Switch checked={memoryEnabled} onChange={handleMemoryEnabledChange} />
+				</div>
+				<div className={styles.memoryList}>
+					{memoryLoading ? (
+						<div className={styles.memoryEmpty}>正在读取记忆...</div>
+					) : memoryList.length === 0 ? (
+						<div className={styles.memoryEmpty}>暂无长期记忆</div>
+					) : (
+						memoryList.map(item => (
+							<div className={styles.memoryItem} key={item.id}>
+								<div>
+									<strong>{item.category || 'memory'}</strong>
+									<span>{item.content}</span>
+								</div>
+								<Button size="small" danger onClick={() => deleteMemory(item.content)}>
+									删除
+								</Button>
+							</div>
+						))
+					)}
+				</div>
+			</Modal>
 		</>
 	);
 });

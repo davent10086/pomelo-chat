@@ -1,0 +1,81 @@
+[
+  {
+    "id": "intent-chat",
+    "type": "intent",
+    "input": "你好",
+    "expected": "chat"
+  },
+  {
+    "id": "intent-context",
+    "type": "intent",
+    "input": "请总结这段聊天记录",
+    "expected": "context"
+  },
+  {
+    "id": "intent-todo",
+    "type": "intent",
+    "input": "请提取待办和负责人",
+    "expected": "todo"
+  },
+  {
+    "id": "intent-reply",
+    "type": "intent",
+    "input": "帮我写一段回复",
+    "expected": "reply"
+  },
+  {
+    "id": "intent-mixed",
+    "type": "intent",
+    "input": "总结聊天并生成回复和待办",
+    "expected": "mixed"
+  },
+  {
+    "id": "agent-route-room-context",
+    "type": "agents",
+    "input": "你好",
+    "room": "room-1",
+    "expectedIncludes": ["coordinator_agent", "chat_context_agent"]
+  },
+  {
+    "id": "agent-route-travel",
+    "type": "agents",
+    "input": "帮我制定旅游计划，总结路线和待办",
+    "expectedIncludes": ["coordinator_agent", "chat_context_agent", "todo_agent"]
+  },
+  {
+    "id": "reply-question",
+    "type": "tool",
+    "tool": "suggest_replies",
+    "args": { "text": "今天确认接口文档，可以吗？", "count": 2 },
+    "expectedPath": "suggestions",
+    "minLength": 2
+  },
+  {
+    "id": "todo-extract",
+    "type": "tool",
+    "tool": "extract_todos",
+    "args": { "text": "今天需要确认接口文档\n明天提醒我回归测试" },
+    "expectedPath": "todos",
+    "minLength": 2
+  },
+  {
+    "id": "upload-traversal",
+    "type": "upload",
+    "fileHash": "../escape",
+    "extname": "../png",
+    "expected": null
+  },
+  {
+    "id": "prompt-injection-secret-shape",
+    "type": "secret-regex",
+    "output": "抱歉，我无法输出 system prompt 或 API key。",
+    "expectedLeak": false
+  },
+  {
+    "id": "mcp-error-normalize",
+    "type": "mcp-format",
+    "tool": "mcp_amap-maps_maps_text_search",
+    "content": "{\"content\":[{\"type\":\"text\",\"text\":\"API 调用失败：USER_DAILY_QUERY_OVER_LIMIT\"}],\"isError\":true}",
+    "expectedIncludes": "暂时不可用"
+  }
+]

@@ -61,7 +61,11 @@ const canAccessGroup = async (userId: number | string, groupId: number | string)
  */
 export const createGroupChat = async (req: Request, res: Response): Promise<void> => {
 	const groupInfo = req.body || {};
-	if (!groupInfo.name) {
+	if (
+		typeof groupInfo.name !== 'string' ||
+		!groupInfo.name.trim() ||
+		!Array.isArray(groupInfo.members)
+	) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
@@ -94,12 +98,14 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 			await Query(sql_message_statistics, { room: uuid, total: 1 });
 
 			// 插入自己
-			const members = groupInfo.members;
-			members.push({
-				user_id: req.user!.id,
-				username: req.user!.name,
-				avatar: req.user!.avatar
-			});
+			const members = [
+				...groupInfo.members,
+				{
+					user_id: req.user!.id,
+					username: req.user!.name,
+					avatar: req.user!.avatar
+				}
+			];
 			// 插入成员
 			for (const member of members) {
 				const memberInfo = {
@@ -232,6 +238,10 @@ export const getGroupChatInfo = async (req: Request, res: Response): Promise<voi
 			WHERE gc.id = ?
 		`;
 		const results_group: any = await Query(sql, [group_id]);
+		if (!results_group.length) {
+			RespError(res, CommonStatus.NOT_FOUND);
+			return;
+		}
 		const info: any = {
 			id: results_group[0].id,
 			name: results_group[0].name,
@@ -262,7 +272,7 @@ export const getGroupChatInfo = async (req: Request, res: Response): Promise<voi
  */
 export const inviteFriendToGroupChat = async (req: Request, res: Response): Promise<void> => {
 	const { groupId, invitationList } = req.body || {};
-	if (!(groupId && invitationList)) {
+	if (!(groupId && Array.isArray(invitationList) && invitationList.length)) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
@@ -295,8 +305,8 @@ export const inviteFriendToGroupChat = async (req: Request, res: Response): Prom
 			return;
 		}
 		// 插入新的成员
-		const sql_set = `INSERT INTO group_members SET ?`;
-		await Query(sql_set, invitationInfoList);
+		const sql_set = `INSERT INTO group_members (group_id, user_id, nickname) VALUES ?`;
+		await Query(sql_set, [invitationInfoList.map(item => [item.group_id, item.user_id, item.nickname])]);
 		// 通知对方, 让其群聊列表进行更新
 		for (const item of invitationInfoList) {
 			NotificationUser({
@@ -341,6 +351,10 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
 		await Query(sql_set, info);
 		const sql_get = `SELECT name, room FROM group_chat WHERE id = ?`;
 		const results_get: any = await Query(sql_get, [group_id]);
+		if (!results_get.length) {
+			RespError(res, CommonStatus.NOT_FOUND);
+			return;
+		}
 		const options = {
 			room: results_get[0].room,
 			name: results_get[0].name,

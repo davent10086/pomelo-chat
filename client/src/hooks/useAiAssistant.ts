@@ -50,6 +50,7 @@ interface GenerateReplyOptions {
 	currentChatType?: string;
 	currentReceiverId?: number;
 	recentMessages?: IMessageItem[];
+	memoryEnabled?: boolean;
 }
 
 interface ChatResponse {
@@ -134,11 +135,12 @@ export const useAiAssistant = (user: IUserInfo) => {
 						input: string;
 						room?: string;
 						context: {
-							currentChatType?: string;
-							currentReceiverId?: number;
-							recentMessagesText?: string;
-						};
-					},
+						currentChatType?: string;
+						currentReceiverId?: number;
+						recentMessagesText?: string;
+						memoryEnabled?: boolean;
+					};
+				},
 					AgentResponse
 				>('/assistant/agent', {
 					input: userText,
@@ -146,7 +148,8 @@ export const useAiAssistant = (user: IUserInfo) => {
 					context: {
 						currentChatType: options.currentChatType || 'assistant',
 						currentReceiverId: options.currentReceiverId,
-						recentMessagesText: buildContextText(options.recentMessages || history)
+						recentMessagesText: buildContextText(options.recentMessages || history),
+						memoryEnabled: options.memoryEnabled !== false
 					}
 				});
 				const agentData = agentRes.data?.data;

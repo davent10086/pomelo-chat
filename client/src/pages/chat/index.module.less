@@ -162,11 +162,49 @@
 	}
 
 	.agentPanel {
-		max-height: 0.82rem;
+		max-height: 1.08rem;
 		overflow: auto;
 		padding: 0.06rem 0.2rem 0;
 		background: @deeply-border_bg-color;
 		border-bottom: 0.005rem solid @primary-border_bg-color;
+	}
+
+	.agentToolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.12rem;
+		margin-bottom: 0.05rem;
+		font-size: 0.12rem;
+	}
+
+	.workflow {
+		display: flex;
+		align-items: center;
+		gap: 0.04rem;
+		min-width: 0;
+		overflow-x: auto;
+		white-space: nowrap;
+	}
+
+	.workflowItem {
+		border: 1px solid fade(@primary-antd-color, 30%);
+		background: fade(@primary-antd-color, 8%);
+		color: @primary-antd-color;
+		border-radius: 4px;
+		padding: 0.025rem 0.06rem;
+	}
+
+	.workflowArrow {
+		color: @font-color-lightest;
+	}
+
+	.memoryControls {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 0.06rem;
+		color: @font-color-lightest;
 	}
 
 	.agentSection {
@@ -286,5 +324,53 @@
 		border-color: fade(#576b95, 30%);
 		background: fade(#576b95, 8%);
 		color: #576b95;
+	}
+}
+
+.memoryHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 12px;
+	color: @font-color-lightest;
+	font-size: 13px;
+}
+
+.memoryList {
+	max-height: 360px;
+	overflow: auto;
+}
+
+.memoryEmpty {
+	padding: 24px 0;
+	text-align: center;
+	color: @font-color-lightest;
+}
+
+.memoryItem {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid @primary-border_bg-color;
+
+	div {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	strong {
+		color: @primary-antd-color;
+		font-size: 12px;
+	}
+
+	span {
+		color: @font-color;
+		font-size: 13px;
+		word-break: break-word;
 	}
 }

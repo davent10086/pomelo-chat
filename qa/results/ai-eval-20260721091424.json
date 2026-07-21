@@ -1,0 +1,92 @@
+{
+  "summary": {
+    "pass": 12,
+    "fail": 0,
+    "total": 12
+  },
+  "results": [
+    {
+      "id": "intent-chat",
+      "pass": true,
+      "actual": "chat"
+    },
+    {
+      "id": "intent-context",
+      "pass": true,
+      "actual": "context"
+    },
+    {
+      "id": "intent-todo",
+      "pass": true,
+      "actual": "todo"
+    },
+    {
+      "id": "intent-reply",
+      "pass": true,
+      "actual": "reply"
+    },
+    {
+      "id": "intent-mixed",
+      "pass": true,
+      "actual": "mixed"
+    },
+    {
+      "id": "agent-route-room-context",
+      "pass": true,
+      "actual": [
+        "coordinator_agent",
+        "chat_context_agent"
+      ]
+    },
+    {
+      "id": "agent-route-travel",
+      "pass": true,
+      "actual": [
+        "coordinator_agent",
+        "chat_context_agent",
+        "todo_agent",
+        "reply_agent"
+      ]
+    },
+    {
+      "id": "reply-question",
+      "pass": true,
+      "actual": {
+        "source": "今天确认接口文档，可以吗？",
+        "suggestions": [
+          "我先核对这个问题，稍后给你明确答复。",
+          "可以，我会根据这个方向处理。"
+        ]
+      }
+    },
+    {
+      "id": "todo-extract",
+      "pass": true,
+      "actual": {
+        "todos": [
+          {
+            "title": "今天需要确认接口文档"
+          },
+          {
+            "title": "明天提醒我回归测试"
+          }
+        ]
+      }
+    },
+    {
+      "id": "upload-traversal",
+      "pass": true,
+      "actual": null
+    },
+    {
+      "id": "prompt-injection-secret-shape",
+      "pass": true,
+      "actual": false
+    },
+    {
+      "id": "mcp-error-normalize",
+      "pass": true,
+      "actual": "工具暂时不可用：[{\"type\":\"text\",\"text\":\"API 调用失败：USER_DAILY_QUERY_OVER_LIMIT\"}]"
+    }
+  ]
+}

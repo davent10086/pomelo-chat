@@ -110,7 +110,7 @@ const parseToolResult = (content: unknown): any => {
 			}
 		}
 		if (typeof value !== 'object') return value;
-		if (value.forecasts || value.transits || value.results) return value;
+		if (value.isError || value.forecasts || value.transits || value.results) return value;
 		if (value.structuredContent) return walk(value.structuredContent, depth + 1);
 		if (Array.isArray(value.content)) {
 			for (const block of value.content) {
@@ -127,6 +127,11 @@ const formatToolResult = (name: string, content: unknown): string => {
 	const result = parseToolResult(content);
 	if (!result) return '';
 	if (typeof result === 'string') return result;
+
+	if (result.isError) {
+		const message = normalizeMessageContent(result.content) || result.message || '工具暂时不可用';
+		return `${name} 暂时不可用：${String(message).replace(/\s+/g, ' ').slice(0, 180)}`;
+	}
 
 	if (name.includes('maps_weather') && Array.isArray(result.forecasts)) {
 		const first = result.forecasts[0];
@@ -158,6 +163,9 @@ const buildToolBackedContent = (
 	content: string,
 	toolOutputs: Array<{ name: string; content: unknown }>
 ): string => {
+	const safeContent = content
+		.replace(/\{[\s\S]{0,600}USER_DAILY_QUERY_OVER_LIMIT[\s\S]{0,600}\}/g, '地图或搜索工具暂时不可用：外部服务额度已用完。')
+		.replace(/\{[\s\S]{0,600}"isError"\s*:\s*true[\s\S]{0,600}\}/g, '工具暂时不可用，请稍后再试。');
 	const formatted = toolOutputs
 		.map(item => {
 			const result = formatToolResult(item.name, item.content);
@@ -166,7 +174,7 @@ const buildToolBackedContent = (
 		.filter(Boolean)
 		.join('\n\n')
 		.slice(0, 16000);
-	if (!formatted) return content;
+	if (!formatted) return safeContent;
 	return `${content}\n\n查询到的具体结果：\n${formatted}`.slice(0, 18000);
 };
 
@@ -188,7 +196,8 @@ export const normalizeAgentRequest = (
 					? currentChatType
 					: undefined,
 			currentReceiverId: Number.isFinite(receiverId) ? receiverId : undefined,
-			recentMessagesText
+			recentMessagesText,
+			memoryEnabled: rawContext.memoryEnabled !== false
 		}
 	};
 };
@@ -276,17 +285,22 @@ const runLangChainAgent = async (
 ): Promise<AgentResult> => {
 	const agentPlan = await runAgentOrchestrator({ userId, input, room, context, onEvent });
 	let memoryContext: Record<string, unknown> = { memories: [] };
-	try {
-		memoryContext = await executePomeloTool(
-			{ userId, currentRoom: room },
-			{ name: 'search_memory', args: { query: input, limit: 8 } }
-		);
-	} catch {
-		// Memory is optional; a database or legacy-schema failure must not block chat.
+	if (context?.memoryEnabled !== false) {
+		try {
+			memoryContext = await executePomeloTool(
+				{ userId, currentRoom: room },
+				{ name: 'search_memory', args: { query: input, limit: 8 } }
+			);
+		} catch {
+			// Memory is optional; a database or legacy-schema failure must not block chat.
+		}
 	}
 	const preloadedTools = agentPlan.preToolTrace
 		.filter(item => item.status === 'success')
 		.map(item => item.tool);
+	const excludedTools = context?.memoryEnabled === false
+		? [...preloadedTools, 'search_memory', 'save_memory', 'forget_memory']
+		: preloadedTools;
 	const model = new ChatOpenAI({
 		model: MODEL,
 		apiKey: API_KEY,
@@ -303,7 +317,7 @@ const runLangChainAgent = async (
 		tools: [
 			...buildPomeloChatTools(
 				{ userId, currentRoom: room },
-				{ exclude: preloadedTools }
+				{ exclude: excludedTools }
 			),
 			...(await externalMcpManager.buildTools())
 		],
@@ -344,9 +358,12 @@ const runLangChainAgent = async (
 		.filter(item => item.name.startsWith('mcp_'));
 	const toolTrace = messages
 		.filter(item => item?._getType?.() === 'tool')
-		.map(item => item.name || item.tool_call_id || 'tool')
-		.filter(name => !/^extract-\d+$/.test(String(name)))
-		.map(name => ({ tool: name, status: 'success' as const }));
+		.map(item => ({
+			name: item.name || item.tool_call_id || 'tool',
+			status: parseToolResult(item.content)?.isError ? 'error' as const : 'success' as const
+		}))
+		.filter(item => !/^extract-\d+$/.test(String(item.name)))
+		.map(item => ({ tool: item.name, status: item.status }));
 
 	return {
 		...structured,
