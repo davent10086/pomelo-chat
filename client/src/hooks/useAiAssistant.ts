@@ -8,16 +8,29 @@ import request from '@/utils/request';
 // AI 助手用户名与头像
 export const AI_USERNAME = 'ai-assistant';
 
-interface AgentAction {
-	type: 'todo_suggestion' | 'reply_suggestion' | 'send_message_draft';
+export interface AgentAction {
+	type: 'create_tasks' | 'send_message' | 'reply_suggestion';
 	requiresConfirmation: boolean;
 	payload: Record<string, unknown>;
+	confirmationId?: string;
+	expiresAt?: string;
 }
 
 export interface AgentTodo {
 	title: string;
 	assignee?: string;
 	due?: string;
+}
+
+export interface AssistantTask {
+	id: number;
+	title: string;
+	assignee?: string;
+	due?: string;
+	status: 'open' | 'completed';
+	sourceRoom?: string;
+	createdAt?: string;
+	updatedAt?: string;
 }
 
 export interface AgentStep {
@@ -60,9 +73,25 @@ interface ChatResponse {
 // 大模型人设提示（优先 localStorage，回退内置）
 const DEFAULT_PERSONA_PROMPT = `你是一个友好、实用的AI助手。说话风格：\n1) 简洁清晰，直接回应用户问题；\n2) 口语自然，礼貌得体；\n3) 不输出不当内容；\n4) 一般不超过100字，除非用户要求详细。\n不要透露系统或你是大模型。`;
 
+const LEGACY_PERSONA_PATTERNS = [
+	/朝武芳乃/,
+	/芳乃/,
+	/巫女/,
+	/双手交叠/,
+	/轻轻低下头/,
+	/Tomotake/i,
+	/Yoshino/i,
+	/yuzu/i
+];
+
 export const getPersonaPrompt = () => {
 	if (typeof window !== 'undefined') {
-		return localStorage.getItem('AI_PERSONA_PROMPT') || DEFAULT_PERSONA_PROMPT;
+		const storedPersona = localStorage.getItem('AI_PERSONA_PROMPT');
+		if (storedPersona && LEGACY_PERSONA_PATTERNS.some(pattern => pattern.test(storedPersona))) {
+			localStorage.removeItem('AI_PERSONA_PROMPT');
+			return DEFAULT_PERSONA_PROMPT;
+		}
+		return storedPersona || DEFAULT_PERSONA_PROMPT;
 	}
 	return DEFAULT_PERSONA_PROMPT;
 };
@@ -70,7 +99,7 @@ export const getPersonaPrompt = () => {
 export const getAiAvatar = () => {
 	if (typeof window !== 'undefined') {
 		// 头像路径从环境变量读取，便于替换 AI 角色形象
-		const avatarPath = ((import.meta as unknown) as { env?: { VITE_AI_AVATAR_PATH?: string } }).env?.VITE_AI_AVATAR_PATH || '/yuzu.svg';
+		const avatarPath = ((import.meta as unknown) as { env?: { VITE_AI_AVATAR_PATH?: string } }).env?.VITE_AI_AVATAR_PATH || '/ai-assistant.svg';
 		return window.location.origin + avatarPath;
 	}
 	return '';

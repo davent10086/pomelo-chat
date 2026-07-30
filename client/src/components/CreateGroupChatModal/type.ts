@@ -30,7 +30,7 @@ export interface IGroupMemberItem {
 // 创建群聊时传递的参数
 export interface ICreateGroupParams {
 	name: string;
-	announcement: string;
+	announcement: string | null;
 	avatar: string;
 	members: IGroupMemberItem[];
 }

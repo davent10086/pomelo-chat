@@ -139,5 +139,30 @@
 				border-bottom: 0.01rem solid var(--a-link-color);
 			}
 		}
+
+		.demoAccounts {
+			width: 80%;
+			margin: 0 auto 0.14rem;
+			text-align: center;
+			font-size: 0.11rem;
+			color: var(--font-color-lightest);
+
+			.demoAccountList {
+				display: flex;
+				justify-content: center;
+				flex-wrap: wrap;
+				gap: 0.06rem;
+				margin-top: 0.06rem;
+			}
+
+			button {
+				border: 1px solid fade(@primary-antd-color, 35%);
+				border-radius: 999px;
+				background: fade(@primary-antd-color, 8%);
+				color: @primary-antd-color;
+				font-size: 0.11rem;
+				cursor: pointer;
+			}
+		}
 	}
 }

@@ -1,5 +1,5 @@
 // 优先使用环境变量，其次根据当前页面所在主机动态拼接（便于局域网调试）
-// Vite 注入的环境变量类型声明（避免使用 any）
+// Vite 注入的环境变量类型声明（避免宽泛类型）
 interface ViteEnv {
 	VITE_API_BASE?: string;
 	VITE_WS_BASE?: string;

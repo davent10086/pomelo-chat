@@ -1,4 +1,5 @@
-import { Image, Modal } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, CopyOutlined, DeleteOutlined, LoadingOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Image, Modal, Tooltip, message as antdMessage } from 'antd';
 import { useEffect, useState } from 'react';
 
 import styles from './index.module.less';
@@ -7,21 +8,17 @@ import { IChatContentProps, IMessageShowProps, IMediaInfo } from './type';
 import { ChatImage, LoadErrorImage } from '@/assets/images';
 import ImageLoad from '@/components/ImageLoad';
 import {
-	getMediaSize,
-	getMediaShowSize,
-	getFileName,
-	getFileIcons,
 	downloadFile,
+	getFileIcons,
+	getFileName,
+	getMediaShowSize,
+	getMediaSize,
 	urlExists
 } from '@/utils/File';
-import { userStorage } from '@/utils/storage';
 import { getAuthorizedMediaURL } from '@/utils/media-url';
+import { userStorage } from '@/utils/storage';
 import { formatChatContentTime } from '@/utils/time';
 
-/**
- * M8: 提取为模块级组件，避免在父组件函数体内定义导致重挂载
- * 图片/视频和文件被清理时的兜底显示
- */
 const ChatContentPocket = () => (
 	<div className={`${styles.content_delete} ${styles.content_file}`}>
 		<img src={LoadErrorImage.FILE_DELETE} draggable="false" alt="文件已过期" />
@@ -29,46 +26,32 @@ const ChatContentPocket = () => (
 	</div>
 );
 
-/**
- * M8: 提取为模块级组件，保留内部 state 与 effect
- * 消息内容 (分为文本、图片、视频和文件)
- */
 const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 	const { messageType, messageContent, fileSize } = props;
 	const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
-	const [isVideoPlay, setIsVideoPlay] = useState<boolean>(false);
-	const [isFileExist, setIsFileExist] = useState<boolean>(true);
+	const [isVideoPlay, setIsVideoPlay] = useState(false);
+	const [isFileExist, setIsFileExist] = useState(true);
 
 	useEffect(() => {
 		if (messageType !== 'text') {
 			urlExists(getAuthorizedMediaURL(messageContent)).then(res => {
-				if (!res) {
-					setIsFileExist(res);
-				}
+				if (!res) setIsFileExist(false);
 			});
 		}
 		if (messageType === 'image' || messageType === 'video') {
 			const mediaURL = getAuthorizedMediaURL(messageContent);
 			getMediaSize(mediaURL, messageType)
-				.then(size => {
-					setCurMediaInfo({ type: messageType, url: mediaURL, size });
-				})
-				.catch(() => {
-					/* empty */
-				});
+				.then(size => setCurMediaInfo({ type: messageType, url: mediaURL, size }))
+				.catch(() => undefined);
 		}
 	}, [messageType, messageContent]);
 
-	const handleOpenVideo = () => {
-		setIsVideoPlay(true);
-	};
-
 	if (!isFileExist) return <ChatContentPocket />;
+
 	switch (messageType) {
 		case 'text':
 			return <div className={styles.content_text}>{messageContent}</div>;
 		case 'image':
-			// L2: 移除冗余的 curMediaInfo && curMediaInfo 判断
 			return curMediaInfo ? (
 				<Image
 					width={getMediaShowSize(curMediaInfo.size, 'image').width}
@@ -84,19 +67,12 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 					<video
 						src={getAuthorizedMediaURL(messageContent)}
 						muted
-						style={{
-							width: getMediaShowSize(curMediaInfo.size, 'video').width
-						}}
+						style={{ width: getMediaShowSize(curMediaInfo.size, 'video').width }}
 					/>
-					<img src={ChatImage.PLAY} alt="" onClick={handleOpenVideo} draggable="false" />
-					<Modal
-						open={isVideoPlay}
-						footer={null}
-						title="视频"
-						onCancel={() => setIsVideoPlay(false)}
-						destroyOnClose
-						width={800}
-					>
+					<button type="button" className={styles.play_button} onClick={() => setIsVideoPlay(true)} aria-label="播放视频">
+						<img src={ChatImage.PLAY} alt="" draggable="false" />
+					</button>
+					<Modal open={isVideoPlay} footer={null} title="视频" onCancel={() => setIsVideoPlay(false)} destroyOnClose width={800}>
 						<video src={getAuthorizedMediaURL(messageContent)} muted controls autoPlay width={750} />
 					</Modal>
 				</div>
@@ -105,12 +81,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 			);
 		case 'file':
 			return (
-				<div
-					className={styles.content_file}
-					onClick={() => {
-						downloadFile(getAuthorizedMediaURL(messageContent));
-					}}
-				>
+				<button type="button" className={styles.content_file} onClick={() => downloadFile(getAuthorizedMediaURL(messageContent))} aria-label={`下载文件 ${getFileName(messageContent)} `}>
 					<div className={styles.content_file_name}>
 						<span>{getFileName(messageContent)}</span>
 						{fileSize && <span>{fileSize}</span>}
@@ -118,7 +89,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 					<div className={styles.content_file_img}>
 						<img src={getFileIcons(messageContent)} draggable="false" alt="文件" />
 					</div>
-				</div>
+				</button>
 			);
 		default:
 			return null;
@@ -127,9 +98,28 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 
 const MessageShow = (props: IMessageShowProps) => {
 	const { showTime, message } = props;
-	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
 	const user = userStorage.getItem();
-	const { sender_id, content, avatar, type, file_size, created_at } = message;
+	const { sender_id, content, avatar, type, file_size, created_at, status } = message;
+	const [hidden, setHidden] = useState(false);
+	const isSelf = sender_id === user.id;
+
+	const statusMeta = (() => {
+		if (!isSelf) return null;
+		if (status === 'failed') return { text: '发送失败', icon: <CloseCircleOutlined /> };
+		if (status === 'pending') return { text: '发送中', icon: <LoadingOutlined /> };
+		return { text: '已发送', icon: <CheckCircleOutlined /> };
+	})();
+
+	const handleCopy = async () => {
+		try {
+			await navigator.clipboard.writeText(content);
+			antdMessage.success('已复制');
+		} catch {
+			antdMessage.error('复制失败');
+		}
+	};
+
+	if (hidden) return null;
 
 	return (
 		<>
@@ -138,9 +128,25 @@ const MessageShow = (props: IMessageShowProps) => {
 					<span>{formatChatContentTime(created_at)}</span>
 				</div>
 			)}
-			{sender_id === user.id ? (
+			{isSelf ? (
 				<div className={`${styles.self} ${styles.chat_item_content}`}>
-					<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+					{statusMeta && (
+						<span className={`${styles.message_status} ${status === 'failed' ? styles.status_failed : ''}`}>
+							{statusMeta.icon}{statusMeta.text}
+						</span>
+					)}
+					<div className={styles.message_bubble_wrap}>
+						<div className={styles.message_actions}>
+							<Tooltip title="复制"><Button size="small" type="text" icon={<CopyOutlined />} onClick={handleCopy} /></Tooltip>
+							{status === 'failed' && (
+								<Tooltip title="重新发送">
+									<Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => antdMessage.info('请在输入框中重新发送这条消息')} />
+								</Tooltip>
+							)}
+							<Tooltip title="本地隐藏"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => setHidden(true)} /></Tooltip>
+						</div>
+						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+					</div>
 					<div className={styles.avatar}>
 						<ImageLoad src={avatar} />
 					</div>
@@ -150,7 +156,13 @@ const MessageShow = (props: IMessageShowProps) => {
 					<div className={styles.avatar}>
 						<ImageLoad src={avatar} />
 					</div>
-					<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+					<div className={styles.message_bubble_wrap}>
+						<div className={styles.message_actions}>
+							<Tooltip title="复制"><Button size="small" type="text" icon={<CopyOutlined />} onClick={handleCopy} /></Tooltip>
+							<Tooltip title="本地隐藏"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => setHidden(true)} /></Tooltip>
+						</div>
+						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+					</div>
 				</div>
 			)}
 		</>

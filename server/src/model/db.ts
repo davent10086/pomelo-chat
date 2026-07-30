@@ -28,7 +28,8 @@ if (configPath) {
 		if (!process.env.DB_USER) user = res.user || user;
 		if (!process.env.DB_PASSWORD) password = res.password || password;
 		if (!process.env.DB_NAME) database = res.database || database;
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		// eslint-disable-next-line no-console
 		console.error('[db] 读取 config.json 失败，使用默认/环境变量配置:', err.message);
 	}
@@ -57,6 +58,20 @@ const runSql = (sql: string): Promise<void> =>
 	new Promise((resolve, reject) => {
 		db.query(sql, error => (error ? reject(error) : resolve()));
 	});
+
+const runMigrationSql = async (name: string, sql: string): Promise<void> => {
+	try {
+		await runSql(sql);
+	} catch (caught: unknown) {
+		const err = caught as { code?: string; message?: string };
+		if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME' || err.code === 'ER_TABLE_EXISTS_ERROR') {
+			return;
+		}
+		// eslint-disable-next-line no-console
+		console.error(`[db:migration] ${name} failed:`, err.message || String(caught));
+		throw caught;
+	}
+};
 
 // 表结构定义（独立函数，仅返回 SQL）
 const userTableSQL = () => `
@@ -104,6 +119,9 @@ const friendTableSQL = () => `
 const messageTableSQL = () => `
   CREATE TABLE IF NOT EXISTS message (
     id int(11) NOT NULL AUTO_INCREMENT, 
+    conversation_id int(11) NULL,
+    client_msg_id VARCHAR(64) NULL,
+    room_seq BIGINT NOT NULL DEFAULT 0,
     sender_id int(11) NOT NULL, 
     receiver_id int(11) NOT NULL, 
     content longtext NOT NULL, 
@@ -114,6 +132,11 @@ const messageTableSQL = () => `
     status int(1) NOT NULL DEFAULT 0, 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
     PRIMARY KEY (id), 
+    UNIQUE KEY uniq_message_client (sender_id, client_msg_id),
+    INDEX idx_message_room_id (room, id),
+    INDEX idx_message_room_created (room, created_at),
+    INDEX idx_message_receiver_status (receiver_id, status, room),
+    INDEX idx_message_conversation_seq (conversation_id, room_seq),
     FOREIGN KEY (sender_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
@@ -124,7 +147,60 @@ const messageStatisticsTableSQL = () => `
     total int(255) NOT NULL, 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, 
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    UNIQUE KEY uniq_message_statistics_room (room)
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const conversationTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS conversation (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    room VARCHAR(255) NOT NULL,
+    type ENUM('private', 'group', 'assistant') NOT NULL,
+    target_id INT(11) NULL,
+    last_message_id INT(11) NULL,
+    last_seq BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_conversation_room (room),
+    INDEX idx_conversation_type_target (type, target_id),
+    INDEX idx_conversation_updated (updated_at)
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const conversationReadTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS conversation_read (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    conversation_id INT(11) NOT NULL,
+    user_id INT(11) NOT NULL,
+    last_read_seq BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_conversation_read_user (conversation_id, user_id),
+    INDEX idx_conversation_read_user (user_id, conversation_id),
+    FOREIGN KEY (conversation_id) REFERENCES conversation(id) ON DELETE CASCADE
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const fileMetadataTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS file_metadata (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    owner_id INT(11) NOT NULL,
+    file_hash VARCHAR(128) NOT NULL,
+    ext VARCHAR(16) NOT NULL,
+    media_type ENUM('image', 'video', 'file') NOT NULL,
+    storage_path VARCHAR(500) NOT NULL,
+    size BIGINT NOT NULL DEFAULT 0,
+    mime VARCHAR(128) NULL,
+    status ENUM('uploading', 'ready', 'deleted') NOT NULL DEFAULT 'ready',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_file_hash_ext (file_hash, ext),
+    INDEX idx_file_owner (owner_id, created_at),
+    INDEX idx_file_status (status, updated_at),
+    FOREIGN KEY (owner_id) REFERENCES user(id) ON DELETE CASCADE
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const schemaMigrationTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    id VARCHAR(128) NOT NULL PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
 const groupChatTableSQL = () => `
@@ -166,9 +242,42 @@ const assistantMemoryTableSQL = () => `
     INDEX idx_assistant_memory_category (user_id, category)
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
+const assistantTaskTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS assistant_task (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT(11) NOT NULL,
+    source_room VARCHAR(255) NULL,
+    title VARCHAR(500) NOT NULL,
+    assignee VARCHAR(255) NULL,
+    due VARCHAR(255) NULL,
+    status ENUM('open', 'completed') NOT NULL DEFAULT 'open',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_assistant_task_user_status (user_id, status),
+    INDEX idx_assistant_task_source_room (user_id, source_room),
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const mcpAuditLogTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS mcp_audit_log (
+    id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT(11) NULL,
+    server_name VARCHAR(128) NULL,
+    tool VARCHAR(255) NOT NULL,
+    event VARCHAR(64) NOT NULL,
+    requires_confirmation TINYINT(1) NOT NULL DEFAULT 0,
+    confirmed TINYINT(1) NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL,
+    error_message VARCHAR(500) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_mcp_audit_user_created (user_id, created_at),
+    INDEX idx_mcp_audit_tool_created (tool, created_at),
+    INDEX idx_mcp_audit_server_created (server_name, created_at)
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
 
 // L4: 串行建表，保证外键依赖顺序
-const initTables = async (): Promise<void> => {
+export const initDatabase = async (): Promise<void> => {
 	try {
 		// 顺序：user → friend_group → friend → group_chat → group_members → message → message_statistics
 		await runSql(userTableSQL());
@@ -176,30 +285,92 @@ const initTables = async (): Promise<void> => {
 		await runSql(friendTableSQL());
 		await runSql(groupChatTableSQL());
 		await runSql(groupMembersTableSQL());
+		await runSql(conversationTableSQL());
 		await runSql(messageTableSQL());
 		await runSql(messageStatisticsTableSQL());
+		await runSql(conversationReadTableSQL());
+		await runSql(fileMetadataTableSQL());
 		await runSql(assistantMemoryTableSQL());
+		await runSql(assistantTaskTableSQL());
+		await runSql(mcpAuditLogTableSQL());
+		await runSql(schemaMigrationTableSQL());
+		await runCompatibilityMigrations();
+		await backfillCompatibilityData();
 		// eslint-disable-next-line no-console
-		console.log('MySQL 数据表初始化完成');
-	} catch (err: any) {
+		console.log('MySQL 数据表初始化/迁移完成');
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		// eslint-disable-next-line no-console
-		console.error('MySQL 数据表初始化失败:', err.message);
+		console.error('MySQL 数据表初始化/迁移失败:', err.message);
+	}
+};
+
+const runCompatibilityMigrations = async (): Promise<void> => {
+	const migrations: Array<[string, string]> = [
+		['message_add_conversation_id', 'ALTER TABLE message ADD COLUMN conversation_id INT(11) NULL AFTER id'],
+		['message_add_client_msg_id', 'ALTER TABLE message ADD COLUMN client_msg_id VARCHAR(64) NULL AFTER conversation_id'],
+		['message_add_room_seq', 'ALTER TABLE message ADD COLUMN room_seq BIGINT NOT NULL DEFAULT 0 AFTER client_msg_id'],
+		['message_idx_room_id', 'ALTER TABLE message ADD INDEX idx_message_room_id (room, id)'],
+		['message_idx_room_created', 'ALTER TABLE message ADD INDEX idx_message_room_created (room, created_at)'],
+		['message_idx_receiver_status', 'ALTER TABLE message ADD INDEX idx_message_receiver_status (receiver_id, status, room)'],
+		['message_idx_conversation_seq', 'ALTER TABLE message ADD INDEX idx_message_conversation_seq (conversation_id, room_seq)'],
+		['message_uniq_client', 'ALTER TABLE message ADD UNIQUE KEY uniq_message_client (sender_id, client_msg_id)'],
+		['message_statistics_dedupe_room', 'DELETE ms1 FROM message_statistics ms1 INNER JOIN message_statistics ms2 ON ms1.room = ms2.room AND ms1.id > ms2.id'],
+		['message_statistics_uniq_room', 'ALTER TABLE message_statistics ADD UNIQUE KEY uniq_message_statistics_room (room)'],
+		['friend_idx_room', 'ALTER TABLE friend ADD INDEX idx_friend_room (room)'],
+		['friend_idx_group_user', 'ALTER TABLE friend ADD INDEX idx_friend_group_user (group_id, user_id)'],
+		['group_chat_idx_room', 'ALTER TABLE group_chat ADD INDEX idx_group_chat_room (room)'],
+		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)']
+	];
+	for (const [name, sql] of migrations) {
+		await runMigrationSql(name, sql);
+		await runMigrationSql(`record_${name}`, `INSERT IGNORE INTO schema_migrations (id) VALUES ('${name}')`);
+	}
+};
+
+const backfillCompatibilityData = async (): Promise<void> => {
+	const backfills: Array<[string, string]> = [
+		[
+			'conversation_backfill_from_messages',
+			`INSERT IGNORE INTO conversation (room, type, target_id, last_message_id, last_seq, updated_at)
+			 SELECT room, type, receiver_id, MAX(id), MAX(id), MAX(created_at)
+			 FROM message
+			 GROUP BY room, type, receiver_id`
+		],
+		[
+			'message_backfill_conversation_seq',
+			`UPDATE message m
+			 INNER JOIN conversation c ON c.room = m.room
+			 SET m.conversation_id = c.id, m.room_seq = CASE WHEN m.room_seq = 0 THEN m.id ELSE m.room_seq END
+			 WHERE m.conversation_id IS NULL OR m.room_seq = 0`
+		]
+	];
+	for (const [name, sql] of backfills) {
+		await runMigrationSql(name, sql);
+		await runMigrationSql(`record_${name}`, `INSERT IGNORE INTO schema_migrations (id) VALUES ('${name}')`);
 	}
 };
 
 /**
  * 4、测试 mysql 模块能否正常工作
  */
-db.query('select 1', async error => {
-	if (error) {
+export const assertDatabaseConnection = (): Promise<void> =>
+	new Promise((resolve, reject) => {
+		db.query('select 1', error => (error ? reject(error) : resolve()));
+	});
+
+if (process.env.POMELO_SKIP_AUTO_DB_INIT !== 'true') {
+	db.query('select 1', async error => {
+		if (error) {
+			// eslint-disable-next-line no-console
+			console.error('MySQL 连接失败', error.message);
+			process.exit(1);
+		}
 		// eslint-disable-next-line no-console
-		console.error('MySQL 连接失败', (error as any).message);
-		process.exit(1);
-	}
-	// eslint-disable-next-line no-console
-	console.log('MySQL 连接成功');
-	await initTables();
-});
+		console.log('MySQL 连接成功');
+		await initDatabase();
+	});
+}
 
 /**
  * 5、将连接好的数据库对象向外导出, 供外界使用

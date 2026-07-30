@@ -4,7 +4,8 @@ import type { Request, Response } from 'express';
 
 import { CommonStatus, FileStatus } from '../../utils/status';
 import { RespData, RespSuccess, RespError } from '../../utils/resp';
-import { normalizeUploadMetadata } from '../../utils/file';
+import { isAllowedUploadMime, normalizeUploadMetadata } from '../../utils/file';
+import { Query } from '../../utils/query';
 
 const getUploadPaths = (fileHash: unknown, extname: unknown) => {
 	const metadata = normalizeUploadMetadata(fileHash, extname);
@@ -82,7 +83,7 @@ export const uploadChunk = async (req: Request, res: Response): Promise<void> =>
 	const extname = req.body.extname;
 
 	const paths = getUploadPaths(fileHash, extname);
-	if (!paths || !Number.isInteger(chunkIndex) || chunkIndex < 1 || !chunk) {
+	if (!paths || !Number.isInteger(chunkIndex) || chunkIndex < 1 || !chunk || !isAllowedUploadMime(req.file?.mimetype)) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
@@ -175,6 +176,19 @@ export const mergeFile = async (req: Request, res: Response): Promise<void> => {
 		await removeDir(dirPath);
 	} catch {
 		/* empty */
+	}
+
+	try {
+		const stat = await fs.promises.stat(filePath);
+		await Query(
+			`INSERT INTO file_metadata (owner_id, file_hash, ext, media_type, storage_path, size, mime, status)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')
+			 ON DUPLICATE KEY UPDATE owner_id = VALUES(owner_id), storage_path = VALUES(storage_path), size = VALUES(size), status = 'ready', updated_at = CURRENT_TIMESTAMP`,
+			[req.user!.id, paths.fileHash, paths.ext, paths.suffix, fileDBPath, stat.size, null]
+		);
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
+		console.error('[file] metadata write failed:', err.message);
 	}
 
 	const data = { message: '文件合并成功', filePath: fileDBPath };

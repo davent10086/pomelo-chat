@@ -1,5 +1,5 @@
 import { LoadingOutlined, PlusOutlined } from '@ant-design/icons';
-import { Upload } from 'antd';
+import { Upload, type UploadProps } from 'antd';
 import { useEffect, useState } from 'react';
 
 import styles from './index.module.less';
@@ -15,10 +15,14 @@ export const ImageUpload = (props: IImageUploadProps) => {
 	const [imageUrl, setImageUrl] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const handleUpload = async (options: any) => {
+	const handleUpload: NonNullable<UploadProps['customRequest']> = async options => {
 		setLoading(true);
 		const file = options.file;
+		if (!(file instanceof File)) {
+			options.onError?.(new Error('Invalid upload file'));
+			setLoading(false);
+			return;
+		}
 		if (file.size > 10 * 1024 * 1024) {
 			showMessage('error', '图片文件不能超过 10M');
 			setLoading(false);

@@ -10,7 +10,13 @@ export interface IMessageShowProps {
 }
 // 右侧显示消息项的类型 —— 在client\src\pages\Chat\index.tsx中也被引用
 export interface IMessageItem {
+	id?: number;
+	client_msg_id?: string | null;
+	clientMsgId?: string;
+	room_seq?: number;
+	status?: 'pending' | 'sent' | 'failed';
 	sender_id: number;
+	sender_name?: string;
 	receiver_id: number;
 	content: string;
 	room: string;

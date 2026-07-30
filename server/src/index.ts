@@ -7,7 +7,7 @@ import expressWs from 'express-ws';
 import app, { registerAppRoutes } from './controller/app';
 
 // 全局登录用户房间
-(global as any).LoginRooms = {};
+global.LoginRooms = {};
 
 const port = Number(process.env.PORT || 3000);
 

@@ -6,13 +6,48 @@ import { RespData, RespSuccess, RespError } from '../../utils/resp';
 import { NotificationUser } from '../../utils/notification';
 import { Query } from '../../utils/query';
 
+interface FriendRow {
+	id: number;
+	user_id: number | string;
+	username: string;
+	avatar?: string | null;
+	remark?: string | null;
+	online_status?: string;
+	group_id: number | string;
+	room: string;
+}
+
+interface FriendGroupIdRow { id: number; }
+interface FriendGroupRow extends FriendGroupIdRow { name: string; }
+interface FriendGroupRecord extends FriendGroupRow { user_id: number | string; username: string; }
+interface FriendDetailRow {
+	friend_id: number;
+	friend_user_id: number;
+	online_status: string;
+	remark: string | null;
+	group_id: number;
+	group_name: string;
+	room: string;
+	unread_msg_count: number;
+	username: string;
+	avatar: string | null;
+	phone: string;
+	name: string | null;
+	signature: string | null;
+}
+interface UserSearchRow { id: number; name: string | null; username: string; avatar: string | null; }
+interface FriendSearchItem extends UserSearchRow { status: boolean; }
+interface FriendGroupListItem { name: string; online_counts: number; friend: FriendRow[]; }
+interface WriteResult { affectedRows: number; }
+type NewFriendRecord = Omit<FriendRow, 'id'>;
+
 /**
  * 根据分组ID查询好友信息
  */
-const getFriendByGroup = async (group_id: number): Promise<any[]> => {
+const getFriendByGroup = async (group_id: number): Promise<FriendRow[]> => {
 	try {
 		const sql = `SELECT * FROM friend WHERE group_id = ?`;
-		const results: any = await Query(sql, [group_id]);
+		const results = await Query<FriendRow[]>(sql, [group_id]);
 		return results;
 	} catch {
 		throw new Error('查询失败');
@@ -22,12 +57,12 @@ const getFriendByGroup = async (group_id: number): Promise<any[]> => {
 /**
  * 查询某个用户下的所有好友（数组平铺）
  */
-const getFriendByUser = async (user_id: number | string): Promise<any[]> => {
+const getFriendByUser = async (user_id: number | string): Promise<FriendRow[]> => {
 	try {
-		const friends: any[] = [];
+		const friends: FriendRow[] = [];
 		// 获取用户的所有分组
 		const sql = `SELECT id FROM friend_group WHERE user_id = ?`;
-		const results: any = await Query(sql, [user_id]);
+		const results = await Query<FriendGroupIdRow[]>(sql, [user_id]);
 		for (const group of results) {
 			const results = await getFriendByGroup(group.id);
 			friends.push(...results);
@@ -41,10 +76,10 @@ const getFriendByUser = async (user_id: number | string): Promise<any[]> => {
 /**
  * 添加好友记录
  */
-const addFriendRecord = async (friend_info: any): Promise<string> => {
+const addFriendRecord = async (friend_info: NewFriendRecord): Promise<string> => {
 	try {
 		const sql = `INSERT INTO friend SET ?`;
-		const results: any = await Query(sql, friend_info);
+		const results = await Query<WriteResult>(sql, friend_info);
 		if (results.affectedRows === 1) {
 			return '添加成功';
 		} else {
@@ -71,10 +106,10 @@ export const searchUser = async (req: Request, res: Response): Promise<void> => 
 	}
 	try {
 		const sql_get_user = `SELECT id, name, username, avatar FROM user WHERE username LIKE ?`;
-		const results_user: any = await Query(sql_get_user, [`%${username}%`]);
+		const results_user = await Query<UserSearchRow[]>(sql_get_user, [`%${username}%`]);
 		// 获取当前用户的所有好友
 		const friends = await getFriendByUser(sender.id);
-		const searchList: any[] = [];
+		const searchList: FriendSearchItem[] = [];
 		if (results_user.length !== 0) {
 			for (const userInfo of results_user) {
 				let flag = false;
@@ -100,7 +135,8 @@ export const searchUser = async (req: Request, res: Response): Promise<void> => 
 			}
 		}
 		RespData(res, searchList);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -125,7 +161,7 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 		// 获取接收方/自己的所有分组方便插入到默认分组中
 		const sql_get_group = `SELECT id FROM friend_group WHERE user_id = ?`;
 		// 将好友添加到自己的好友列表中并通知对方, 让其好友列表进行更新
-		const results_receiver: any = await Query(sql_get_group, [sender.id]);
+		const results_receiver = await Query<FriendGroupIdRow[]>(sql_get_group, [sender.id]);
 		const info_receiver = {
 			user_id: id,
 			username: username,
@@ -138,7 +174,7 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 		await addFriendRecord(info_receiver);
 		NotificationUser({ receiver_username: username, name: 'friendList' });
 		// 将自己添加到好友的好友列表中并通知自己，让好友列表进行更新
-		const results_sender: any = await Query(sql_get_group, [id]);
+		const results_sender = await Query<FriendGroupIdRow[]>(sql_get_group, [id]);
 		const info_sender = {
 			user_id: sender.id,
 			username: sender.username,
@@ -151,7 +187,8 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 		await addFriendRecord(info_sender);
 		NotificationUser({ receiver_username: sender.username, name: 'friendList' });
 		RespSuccess(res);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -167,12 +204,12 @@ export const getFriendList = async (req: Request, res: Response): Promise<void> 
 		const sender = req.user!;
 		const sql = `SELECT id, name FROM friend_group WHERE user_id = ?`;
 		// 获取当前用户的所有分组
-		const results: any = await Query(sql, [sender.id]);
-		const friendList: any[] = [];
+		const results = await Query<FriendGroupRow[]>(sql, [sender.id]);
+		const friendList: FriendGroupListItem[] = [];
 		if (results.length !== 0) {
 			// 获取每个分组下的好友
 			for (const result of results) {
-				const groupFriends: any = { name: result.name, online_counts: 0, friend: [] };
+				const groupFriends: FriendGroupListItem = { name: result.name, online_counts: 0, friend: [] };
 				const friends = await getFriendByGroup(result.id);
 				// 在线好友数量
 				for (const friend of friends) {
@@ -185,7 +222,8 @@ export const getFriendList = async (req: Request, res: Response): Promise<void> 
 			}
 		}
 		RespData(res, friendList);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -226,11 +264,12 @@ export const getFriendById = async (req: Request, res: Response): Promise<void> 
 			WHERE
 				f.id = ? AND fg.user_id = ?
 		`;
-		const results: any = await Query(sql, [id, req.user!.id]);
+		const results = await Query<FriendDetailRow[]>(sql, [id, req.user!.id]);
 		if (results.length !== 0) {
 			RespData(res, results[0]);
 		}
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -247,9 +286,10 @@ export const getFriendGroupList = async (req: Request, res: Response): Promise<v
 	}
 	try {
 		const sql = `SELECT * FROM friend_group WHERE user_id = ?`;
-		const results: any = await Query(sql, [user_id]);
+		const results = await Query<FriendGroupRecord[]>(sql, [user_id]);
 		RespData(res, results);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -266,7 +306,7 @@ export const createFriendGroup = async (req: Request, res: Response): Promise<vo
 	}
 	try {
 		const sql = `INSERT INTO friend_group SET ?`;
-		const results: any = await Query(sql, {
+		const results = await Query<WriteResult>(sql, {
 			user_id: req.user!.id,
 			username: req.user!.username,
 			name: name.trim()
@@ -274,7 +314,8 @@ export const createFriendGroup = async (req: Request, res: Response): Promise<vo
 		if (results.affectedRows === 1) {
 			RespSuccess(res);
 		}
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -291,11 +332,12 @@ export const updateFriend = async (req: Request, res: Response): Promise<void> =
 	}
 	try {
 		const sql = `UPDATE friend AS f JOIN friend_group AS target ON target.id = ? AND target.user_id = ? JOIN friend_group AS owner ON owner.id = f.group_id AND owner.user_id = ? SET f.remark = ?, f.group_id = ? WHERE f.id = ?`;
-		const results: any = await Query(sql, [group_id, req.user!.id, req.user!.id, remark, group_id, friend_id]);
+		const results = await Query<WriteResult>(sql, [group_id, req.user!.id, req.user!.id, remark, group_id, friend_id]);
 		if (results.affectedRows === 1) {
 			RespSuccess(res);
 		}
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[friend] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}

@@ -1,0 +1,27 @@
+{
+  "runId": "20260727150715",
+  "apiBase": "http://127.0.0.1:3000/api/chat/v1",
+  "startedAt": "2026-07-27T15:07:15.083Z",
+  "summary": {
+    "pass": 1,
+    "fail": 1,
+    "warn": 0,
+    "skipped": 0
+  },
+  "tests": [
+    {
+      "name": "server reachable",
+      "status": "pass",
+      "latencyMs": 219
+    },
+    {
+      "name": "qa harness fatal error",
+      "status": "fail",
+      "message": "fetch failed",
+      "stack": "TypeError: fetch failed\n    at node:internal/deps/undici/undici:13484:13\n    at async requestJson (F:\\pomelo-chat\\qa\\qa-full-test.js:49:18)\n    at async makeUser (F:\\pomelo-chat\\qa\\qa-full-test.js:85:20)\n    at async F:\\pomelo-chat\\qa\\qa-full-test.js:201:21"
+    }
+  ],
+  "metrics": {},
+  "evidence": {},
+  "finishedAt": "2026-07-27T15:07:15.689Z"
+}

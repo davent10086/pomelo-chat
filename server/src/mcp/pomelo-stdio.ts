@@ -16,6 +16,8 @@ const parseUserId = (): number => {
 	return userId;
 };
 
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
 export const createPomeloMcpServer = (context: PomeloToolContext): McpServer => {
 	const server = new McpServer(
 		{
@@ -69,8 +71,8 @@ if (require.main === module) {
 				console.error(`[pomelo-mcp] ${error.message}`);
 			}
 		});
-	} catch (err: any) {
-		console.error(`[pomelo-mcp] ${err.message}`);
+	} catch (err: unknown) {
+		console.error(`[pomelo-mcp] ${errorMessage(err)}`);
 		process.exit(1);
 	}
 }

@@ -23,6 +23,7 @@ export interface ReconnectingWebSocketOptions {
 
 export class ReconnectingWebSocket {
 	private url: string;
+	private protocols?: string | string[];
 	private ws: WebSocket | null = null;
 	private options: Required<ReconnectingWebSocketOptions>;
 
@@ -44,8 +45,9 @@ export class ReconnectingWebSocket {
 	/** 重连次数耗尽时触发 */
 	public onMaxRetriesReached: (() => void) | null = null;
 
-	constructor(url: string, options?: ReconnectingWebSocketOptions) {
+	constructor(url: string, options?: ReconnectingWebSocketOptions, protocols?: string | string[]) {
 		this.url = url;
+		this.protocols = protocols;
 		this.options = {
 			initialDelay: options?.initialDelay ?? 1000,
 			maxDelay: options?.maxDelay ?? 30000,
@@ -110,7 +112,7 @@ export class ReconnectingWebSocket {
 	private createConnection(): void {
 		this.cleanupTimers();
 
-		this.ws = new WebSocket(this.url);
+		this.ws = this.protocols ? new WebSocket(this.url, this.protocols) : new WebSocket(this.url);
 		this.startConnectTimeout();
 
 		this.ws.onopen = (e: Event) => {

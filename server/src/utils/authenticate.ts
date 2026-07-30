@@ -31,6 +31,11 @@ better_chat.on('error', err => {
 	console.error('[redis] 连接异常:', err.message);
 });
 
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+const isAuthenticatedPayload = (value: JwtPayload): value is JwtPayload & { id: number | string; username: string } =>
+	(typeof value.id === 'number' || typeof value.id === 'string') && typeof value.username === 'string';
+
 // 校验 Bearer token 格式并提取纯 token
 export const extractToken = (authHeader?: string): string | null => {
 	if (!authHeader) return null;
@@ -53,13 +58,17 @@ export const authenticateToken: RequestHandler = (req: Request, res: Response, n
 		// 校验 Redis 白名单：token 必须在 Redis 中存在（实现真正的登出失效）
 		try {
 			const payload = decoded as JwtPayload;
+			if (!isAuthenticatedPayload(payload)) {
+				return RespError(res, CommonStatus.TOKEN_ERR);
+			}
 			const cached = await better_chat.get(`token:${payload.username}`);
 			if (cached !== token) {
 				return RespError(res, CommonStatus.TOKEN_ERR);
 			}
 			// 挂载到 req.user 供后续处理使用
-			(req as any).user = payload;
-		} catch (redisErr: any) {
+			req.user = payload;
+		} catch (caught: unknown) {
+			const redisErr = caught instanceof Error ? caught : new Error(String(caught));
 			// Redis 不可用时降级放行（避免 Redis 故障导致全站不可用），并记录日志
 			// eslint-disable-next-line no-console
 			console.error('[auth] Redis 校验失败，降级放行:', redisErr.message);
@@ -88,7 +97,8 @@ export const verifyTokenWithSession = async (token?: string): Promise<JwtPayload
 	if (!pure || !decoded?.username) return null;
 	try {
 		return (await better_chat.get(`token:${decoded.username}`)) === pure ? decoded : null;
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[auth] WebSocket Redis validation failed:', err.message);
 		return null;
 	}
@@ -103,6 +113,10 @@ export const authenticateUploadAccess: RequestHandler = async (req: Request, res
 		res.status(401).end();
 		return;
 	}
-	(req as any).user = payload;
+	if (!isAuthenticatedPayload(payload)) {
+		res.status(401).end();
+		return;
+	}
+	req.user = payload;
 	next();
 };

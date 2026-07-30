@@ -24,6 +24,7 @@ export interface IGroupMember {
 export type MessageType = 'text' | 'image' | 'video' | 'file';
 // 发送消息的类型 —— 在 client\src\pages\chat\index.tsx 中也被引用
 export interface ISendMessage {
+	clientMsgId?: string;
 	sender_id: number;
 	receiver_id: number;
 	type: MessageType;
@@ -50,11 +51,13 @@ export interface IChatToolProps {
 	// 发送消息的回调函数
 	sendMessage: (message: ISendMessage) => void;
 	// 最近的对话消息（用于上下文理解与补全），数组按时间顺序（旧->新）
-	recentMessages?: any[];
+	recentMessages?: IMessageItem[];
 	// 当前用户画像/配置信息（可选），用于定制化补全风格
-	userProfile?: any;
+	userProfile?: IUserInfo;
 	// M2: 从外部插入文本（替代 window.dispatchEvent）
 	onInsertText?: (text: string) => void;
 	// 从父组件触发插入文本到输入框，id 变化时执行
 	externalInsertText?: { id: number; text: string };
 }
+import type { IMessageItem } from '@/components/MessageShow/type';
+import type { IUserInfo } from '@/utils/storage';

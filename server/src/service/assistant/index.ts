@@ -30,6 +30,20 @@ interface ValidationResult {
 	reason?: number;
 }
 
+interface UpstreamChatResponse {
+	choices?: Array<{ message?: { content?: unknown } }>;
+}
+
+const upstreamContent = (value: unknown): string => {
+	if (!value || typeof value !== 'object') return '';
+	const response = value as UpstreamChatResponse;
+	const content = response.choices?.[0]?.message?.content;
+	return typeof content === 'string' ? content : '';
+};
+
+const isAbortError = (error: unknown): boolean =>
+	error instanceof Error && error.name === 'AbortError';
+
 /**
  * 漏洞1+8: 消息深度校验
  * 校验 messages 数组中每条消息的 role 和 content 合法性，并限制总长度
@@ -156,14 +170,14 @@ export const chat = async (req: Request, res: Response): Promise<void> => {
 			RespError(res, CommonStatus.SERVER_ERR);
 			return;
 		}
-		const data: any = await resp.json();
-		const text = data?.choices?.[0]?.message?.content || '';
+		const data: unknown = await resp.json();
+		const text = upstreamContent(data);
 		// 漏洞2: sanitize AI 返回内容
 		RespData(res, { content: sanitizeContent(text) });
-	} catch (err: any) {
+	} catch (err: unknown) {
 		// 漏洞7: 不泄露内部错误细节
 		logError('chat', err);
-		if (err?.name === 'AbortError') {
+		if (isAbortError(err)) {
 			RespError(res, AssistantStatus.UPSTREAM_TIMEOUT);
 		} else {
 			RespError(res, CommonStatus.SERVER_ERR);
@@ -234,10 +248,10 @@ export const chatStream = async (req: Request, res: Response): Promise<void> => 
 			}
 		}
 		res.end();
-	} catch (err: any) {
+	} catch (err: unknown) {
 		// 漏洞7: 不泄露 err.message
 		logError('chatStream', err);
-		if (err?.name === 'AbortError') {
+		if (isAbortError(err)) {
 			// 可能是客户端断开或超时，静默结束
 			res.end();
 		} else {
@@ -290,18 +304,18 @@ export const nextSteps = async (req: Request, res: Response): Promise<void> => {
 			RespError(res, CommonStatus.SERVER_ERR);
 			return;
 		}
-		const data: any = await resp.json();
-		const text = data?.choices?.[0]?.message?.content || '';
+		const data: unknown = await resp.json();
+		const text = upstreamContent(data);
 		// 漏洞2: sanitize AI 返回内容
 		const lines = sanitizeContent(text)
 			.split('\n')
 			.map(s => s.trim().replace(/^[-•\d.\s]+/, ''))
 			.filter(s => s.length > 0);
 		RespData(res, { steps: lines.slice(0, count) });
-	} catch (err: any) {
+	} catch (err: unknown) {
 		// 漏洞7: 不泄露内部错误细节
 		logError('nextSteps', err);
-		if (err?.name === 'AbortError') {
+		if (isAbortError(err)) {
 			RespError(res, AssistantStatus.UPSTREAM_TIMEOUT);
 		} else {
 			RespError(res, CommonStatus.SERVER_ERR);

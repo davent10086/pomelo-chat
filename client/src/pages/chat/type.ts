@@ -22,3 +22,11 @@ export interface IChatListProps {
 export interface IChatRef {
 	refreshChatList: () => Promise<void> | void;
 }
+
+export interface AssistantMemoryItem {
+	id: number;
+	category: string;
+	content: string;
+	created_at?: string;
+	updated_at?: string;
+}

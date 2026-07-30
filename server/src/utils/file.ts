@@ -14,11 +14,53 @@ export const getFileSuffixByName = (filename: string): 'video' | 'image' | 'file
 		case 'jpg':
 		case 'gif':
 		case 'webp':
-		case 'svg':
 			return 'image';
 		default:
 			return 'file';
 	}
+};
+
+const allowedExtensions = new Set([
+	'png',
+	'jpeg',
+	'jpg',
+	'gif',
+	'webp',
+	'mp4',
+	'mov',
+	'webm',
+	'pdf',
+	'txt',
+	'md',
+	'doc',
+	'docx',
+	'xls',
+	'xlsx',
+	'ppt',
+	'pptx',
+	'zip',
+	'rar',
+	'7z'
+]);
+
+export const isAllowedUploadMime = (mime: unknown): boolean => {
+	if (typeof mime !== 'string') return true;
+	return (
+		mime.startsWith('image/') ||
+		mime.startsWith('video/') ||
+		mime === 'application/pdf' ||
+		mime === 'text/plain' ||
+		mime === 'text/markdown' ||
+		mime === 'application/zip' ||
+		mime === 'application/x-7z-compressed' ||
+		mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+		mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+		mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+		mime === 'application/msword' ||
+		mime === 'application/vnd.ms-excel' ||
+		mime === 'application/vnd.ms-powerpoint' ||
+		mime === 'application/octet-stream'
+	);
 };
 
 export const normalizeUploadMetadata = (fileHash: unknown, extension: unknown) => {
@@ -26,5 +68,6 @@ export const normalizeUploadMetadata = (fileHash: unknown, extension: unknown) =
 	if (typeof extension !== 'string') return null;
 	const ext = extension.replace(/^\./, '').toLowerCase();
 	if (!/^[a-z0-9]{1,10}$/.test(ext)) return null;
+	if (!allowedExtensions.has(ext)) return null;
 	return { fileHash: fileHash.toLowerCase(), ext, suffix: getFileSuffixByName(ext) };
 };

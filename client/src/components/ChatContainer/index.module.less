@@ -28,6 +28,27 @@
 	background-color: @primary-border_bg-color;
 }
 
+.history_load_more {
+	display: flex;
+	justify-content: center;
+	padding: 0.12rem 0;
+
+	button {
+		border: 1px solid @primary-border_bg-color;
+		background: @deeply-border_bg-color;
+		color: fade(@font-color, 78%);
+		border-radius: 0.06rem;
+		padding: 0.05rem 0.14rem;
+		cursor: pointer;
+		font-size: 0.12rem;
+	}
+
+	button:disabled {
+		cursor: not-allowed;
+		opacity: 0.6;
+	}
+}
+
 :global {
 	.ant-image-preview-img-wrapper {
 		img {

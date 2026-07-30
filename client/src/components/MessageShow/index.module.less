@@ -31,6 +31,46 @@
 		}
 	}
 
+	.message_status {
+		align-self: center;
+		margin-right: 0.08rem;
+		color: @font-color-lightest;
+		font-size: 0.12rem;
+		white-space: nowrap;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.03rem;
+	}
+
+	.status_failed {
+		color: #cf1322;
+	}
+
+	.message_bubble_wrap {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		max-width: 3.4rem;
+	}
+
+	.message_actions {
+		position: absolute;
+		top: -0.3rem;
+		display: none;
+		align-items: center;
+		gap: 0.02rem;
+		padding: 0.02rem;
+		border: 1px solid @primary-border_bg-color;
+		border-radius: 0.06rem;
+		background: @primary-color;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+		z-index: 2;
+	}
+
+	.message_bubble_wrap:hover .message_actions {
+		display: flex;
+	}
+
 	.content_text {
 		display: block;
 		position: relative;
@@ -70,7 +110,24 @@
 		}
 	}
 
-	.content_file {
+	.play_button {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		padding: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.play_button:focus-visible {
+		outline: 2px solid @primary-antd-color;
+		outline-offset: 2px;
+	}
+
+.content_file {
+	border: 0;
+	text-align: left;
+	font: inherit;
 		width: 1.8rem;
 		height: 0.7rem;
 		display: flex;
@@ -160,7 +217,6 @@
 
 	.content_text {
 		background: @primary-color;
-		margin-left: 0.1rem;
 	}
 
 	.content_text::before {
@@ -169,11 +225,20 @@
 	}
 
 	.content_video {
-		margin-left: 0.1rem;
+		margin-left: 0;
 	}
 
 	.content_file {
+		margin-left: 0;
+	}
+
+	.message_bubble_wrap {
 		margin-left: 0.1rem;
+		align-items: flex-start;
+	}
+
+	.message_actions {
+		left: 0;
 	}
 
 	.content_file::before {
@@ -197,7 +262,6 @@
 
 	.content_text {
 		background: @cur-primary-color;
-		margin-right: 0.1rem;
 	}
 
 	.content_text::before {
@@ -212,11 +276,20 @@
 	}
 
 	.content_video {
-		margin-right: 0.1rem;
+		margin-right: 0;
 	}
 
 	.content_file {
+		margin-right: 0;
+	}
+
+	.message_bubble_wrap {
 		margin-right: 0.1rem;
+		align-items: flex-end;
+	}
+
+	.message_actions {
+		right: 0;
 	}
 
 	.content_file::before {

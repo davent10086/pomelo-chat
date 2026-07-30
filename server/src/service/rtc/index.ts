@@ -1,4 +1,4 @@
-import type { WebSocket } from 'ws';
+import type { RawData, WebSocket } from 'ws';
 import type { Request, Response } from 'express';
 
 import { CommonStatus } from '../../utils/status';
@@ -6,7 +6,74 @@ import { RespData, RespError } from '../../utils/resp';
 import { Query } from '../../utils/query';
 import { verifyTokenWithSession } from '../../utils/authenticate';
 
-const canAccessRoom = async (userId: number | string, room: string, type: string): Promise<boolean> => {
+type ChatType = 'private' | 'group';
+type RtcSignalName = 'create_room' | 'new_peer' | 'offer' | 'answer' | 'ice_candidate' | 'reject';
+
+interface AccessRow {
+	'1': number;
+}
+
+interface FriendRow {
+	avatar: string | null;
+	remark: string | null;
+}
+
+interface RtcRecipient {
+	username: string;
+	avatar?: string | null;
+	alias?: string | null;
+}
+
+interface IncomingRtcMessage {
+	name: RtcSignalName;
+	mode?: unknown;
+	data?: unknown;
+	receiver?: string;
+	callReceiverList: RtcRecipient[];
+}
+
+interface OutboundRtcMessage {
+	name: RtcSignalName;
+	room?: string;
+	mode?: unknown;
+	data?: unknown;
+	sender?: string;
+	callReceiverList?: RtcRecipient[];
+}
+
+const isChatType = (value: string): value is ChatType => value === 'private' || value === 'group';
+
+const parseRtcMessage = (data: RawData | string): IncomingRtcMessage | null => {
+	try {
+		const raw = typeof data === 'string'
+			? data
+			: Array.isArray(data)
+			? Buffer.concat(data).toString('utf8')
+			: Buffer.isBuffer(data)
+				? data.toString('utf8')
+				: Buffer.from(new Uint8Array(data)).toString('utf8');
+		const value: unknown = JSON.parse(raw);
+		if (!value || typeof value !== 'object') return null;
+		const message = value as Record<string, unknown>;
+		if (!['create_room', 'new_peer', 'offer', 'answer', 'ice_candidate', 'reject'].includes(String(message.name))) return null;
+		const recipients = Array.isArray(message.callReceiverList)
+			? message.callReceiverList.filter((item): item is RtcRecipient =>
+					!!item && typeof item === 'object' && typeof (item as { username?: unknown }).username === 'string'
+				)
+			: [];
+		return {
+			name: message.name as RtcSignalName,
+			mode: message.mode,
+			data: message.data,
+			receiver: typeof message.receiver === 'string' ? message.receiver : undefined,
+			callReceiverList: recipients
+		};
+	} catch {
+		return null;
+	}
+};
+
+const canAccessRoom = async (userId: number | string, room: string, type: ChatType): Promise<boolean> => {
 	const sql =
 		type === 'group'
 			? `SELECT 1 FROM group_chat gc JOIN group_members gm ON gm.group_id = gc.id WHERE gc.room = ? AND gm.user_id = ? LIMIT 1`
@@ -14,7 +81,7 @@ const canAccessRoom = async (userId: number | string, room: string, type: string
 				? `SELECT 1 FROM friend f JOIN friend_group fg ON fg.id = f.group_id WHERE f.room = ? AND fg.user_id = ? LIMIT 1`
 				: '';
 	if (!sql) return false;
-	const rows: any = await Query(sql, [room, userId]);
+	const rows = await Query<AccessRow[]>(sql, [room, userId]);
 	return rows.length > 0;
 };
 
@@ -27,10 +94,15 @@ const ChatRTCRooms: Record<string, Record<string, WebSocket>> = {}; // 全局变
  * @param msg - 要发送的消息对象
  * @param isNeedCalling - 是否需要接收方正在通话状态才发送消息
  */
+const sendToRtcUser = (room: string, username: string | undefined, message: OutboundRtcMessage): void => {
+	if (!username) return;
+	ChatRTCRooms[room]?.[username]?.send(JSON.stringify(message));
+};
+
 const broadcastSocket = (
 	username: string,
 	room: string,
-	msg: any,
+	msg: OutboundRtcMessage,
 	isNeedCalling = true
 ): void => {
 	for (const key in ChatRTCRooms[room]) {
@@ -54,7 +126,7 @@ const broadcastSocket = (
 const getFriendByUsername = async (
 	friend_username: string,
 	self_username: string
-): Promise<any | undefined> => {
+): Promise<FriendRow | undefined> => {
 	try {
 		const sql = `
 			SELECT
@@ -72,7 +144,7 @@ const getFriendByUsername = async (
 					username = ?
 			)
 		`;
-		const results: any = await Query(sql, [friend_username, self_username]);
+		const results = await Query<FriendRow[]>(sql, [friend_username, self_username]);
 		if (results.length !== 0) {
 			return results[0];
 		}
@@ -95,7 +167,7 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 	const token = params.get('token') || '';
 	const decoded = await verifyTokenWithSession(token);
 	if (
-		!(room && username && type) ||
+		!(room && username && isChatType(type)) ||
 		!decoded ||
 		decoded.username !== username ||
 		!(await canAccessRoom(decoded.id as string | number, room, type))
@@ -104,19 +176,29 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 		ws.close(4001, 'unauthorized');
 		return;
 	}
-	if (!['private', 'group'].includes(type)) {
-		ws.close();
-		return;
-	}
 	try {
 		if (!ChatRTCRooms[room]) {
 			ChatRTCRooms[room] = {};
 		}
 		ChatRTCRooms[room][username] = ws;
-		ws.on('message', async (data: any) => {
+		ws.on('message', async (data: RawData | string) => {
+			const message = parseRtcMessage(data);
+			if (!message) {
+				ws.send(JSON.stringify({ name: 'connect_fail', reason: 'invalid message' }));
+				return;
+			}
+			/*
+			if (typeof data !== 'string') {
+				data = Array.isArray(data)
+					? Buffer.concat(data).toString('utf8')
+					: Buffer.isBuffer(data)
+						? data.toString('utf8')
+						: Buffer.from(new Uint8Array(data)).toString('utf8');
+			}
 			const message = JSON.parse(data); // 服务端接收到的 message 包含 name、mode、callReceiverList、data、receiver，其中只有 name 指令名称是必须收到的，mode 和 callReceiverList 是 create_room 时收到的，data、receiver 是 offer、answer、ice_candidate 时收到的
+			*/
 			const { callReceiverList } = message;
-			let msg: any;
+			let msg: OutboundRtcMessage;
 			switch (message.name) {
 				/**
 				 * create_room：邀请人发送邀请，被邀请人接收邀请
@@ -186,14 +268,14 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 						}
 						// 每个被邀请人都要拿到聊天房间内其它人的信息（即将当前的 callReceiverList 进行处理：排除自己和加上邀请方），方便后续用到
 						const newCallReceiverList = callReceiverList.filter(
-							(item: any) => item.username !== receiver_username
+							(item: RtcRecipient) => item.username !== receiver_username
 						);
 						if (type === 'private') {
 							const friendInfo = await getFriendByUsername(username, receiver_username); // 此时邀请方是当前 receiver 的好友
 							newCallReceiverList.push({
 								username: username,
-								avatar: friendInfo.avatar,
-								alias: friendInfo.remark
+							avatar: friendInfo?.avatar,
+							alias: friendInfo?.remark
 							});
 						}
 						msg = {
@@ -226,7 +308,7 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 						data: message.data,
 						sender: username
 					};
-					ChatRTCRooms[room][message.receiver].send(JSON.stringify(msg));
+					sendToRtcUser(room, message.receiver, msg);
 					break;
 				/**
 				 * answer：此时已收到并设置对方发送过来的 SDP 后，也发送自己的 SDP 给对方
@@ -237,7 +319,7 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 						data: message.data,
 						sender: username
 					};
-					ChatRTCRooms[room][message.receiver].send(JSON.stringify(msg));
+					sendToRtcUser(room, message.receiver, msg);
 					break;
 				/**
 				 * ice_candidate：设置对方的 candidate ———— 双方都可能收到，此时双方的 ICE 设置完毕，可以进行音视频通话
@@ -248,7 +330,7 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 						data: message.data,
 						sender: username
 					};
-					ChatRTCRooms[room][message.receiver].send(JSON.stringify(msg));
+					sendToRtcUser(room, message.receiver, msg);
 					break;
 				/**
 				 * 拒绝 / 挂断通话
@@ -273,10 +355,11 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 			}
 		});
 
-		ws.on('error', (err: any) => {
+		ws.on('error', (err: Error) => {
 			console.error(`[RTC管道] 连接出错 room=${room} username=${username}:`, err.message);
 		});
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[RTC管道] connectRTC 异常:', err.message);
 		ws.send(
 			JSON.stringify({
@@ -316,7 +399,8 @@ export const getRoomMembers = async (req: Request, res: Response): Promise<void>
 			data.push(key);
 		}
 		RespData(res, data);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[rtc] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}

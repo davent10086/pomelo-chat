@@ -10,11 +10,13 @@
 
 .container {
 	z-index: 10;
-	width: 9rem;
-	height: 6rem;
+	width: min(1180px, calc(100vw - 48px));
+	height: min(760px, calc(100vh - 48px));
 	display: flex;
-	margin: 0.5rem;
+	margin: 24px;
 	overflow: hidden;
+	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+	border-radius: 4px;
 
 	.leftContainer {
 		flex: 1;
@@ -49,8 +51,11 @@
 				flex-direction: column;
 				align-items: center;
 
-				li {
+				button {
 					margin: 0.1rem 0;
+					border: 0;
+					padding: 0;
+					background: transparent;
 					font-size: 0.2rem;
 					cursor: pointer;
 					width: 0.44rem;
@@ -60,7 +65,8 @@
 					border-radius: 0.08rem;
 				}
 
-				li:hover {
+				button:hover,
+				button:focus-visible {
 					background-color: @item-hover-bg-color; // 悬停浅灰背景
 				}
 			}
@@ -69,6 +75,8 @@
 
 	.rightContainer {
 		flex: 17;
+		min-width: 0;
+		height: 100%;
 	}
 }
 

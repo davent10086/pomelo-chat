@@ -22,7 +22,7 @@ const ChatTool = (props: IChatToolProps) => {
 		curChatInfo,
 		sendMessage,
 		recentMessages = [],
-		userProfile = {},
+		userProfile,
 		onInsertText,
 		externalInsertText
 	} = props;
@@ -55,9 +55,9 @@ const ChatTool = (props: IChatToolProps) => {
 	const heuristicSuggestions = (prefix: string, count = 3) => {
 		const lastMsg =
 			recentMessages && recentMessages.length
-				? ((recentMessages[recentMessages.length - 1] as { content?: string }).content || '')
+				? recentMessages[recentMessages.length - 1].content
 				: '';
-		const userPref = (user && (user as { pref?: string }).pref) || '';
+		const userPref = user && typeof user.pref === 'string' ? user.pref : '';
 		const base = lastMsg || prefix || '关于这个话题';
 		const items = [
 			`${base}，我觉得可以这样说：`,
@@ -335,14 +335,15 @@ const ChatTool = (props: IChatToolProps) => {
 		() => (
 			<div className={styles.emoji_list}>
 				{EmojiList.map(item => (
-					<span
+					<button
+						type="button"
 						key={item}
 						className={styles.emoji_item}
 						onClick={() => addEmoji(item)}
-						style={{ cursor: 'default' }}
+						aria-label={`插入表情 ${item}`}
 					>
 						{item}
-					</span>
+					</button>
 				))}
 			</div>
 		),
@@ -392,24 +393,23 @@ const ChatTool = (props: IChatToolProps) => {
 							title={index === 0 ? emojiList : item.text}
 							arrow={false}
 						>
-							<li
+							<button
+								type="button"
 								className={`iconfont ${item.icon}`}
+								aria-label={item.text}
 								onClick={() => {
 									if (item.icon !== 'icon-biaoqing') {
 										handleIconClick(item.icon);
 									}
 								}}
-							></li>
+							></button>
 						</Tooltip>
 					))}
 				</ul>
 				<ul className={styles.rightIcons}>
 					{ChatIconList.slice(3, 6).map(item => (
 						<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-							<li
-								className={`iconfont ${item.icon}`}
-								onClick={() => handleIconClick(item.icon)}
-							></li>
+							<button type="button" className={`iconfont ${item.icon}`} aria-label={item.text} onClick={() => handleIconClick(item.icon)}></button>
 						</Tooltip>
 					))}
 				</ul>
@@ -435,6 +435,8 @@ const ChatTool = (props: IChatToolProps) => {
 						onChange={e => changeInputValue(e)}
 						onKeyDown={handleKeyDown}
 						value={inputValue}
+						placeholder="输入消息，Enter 发送，Shift + Enter 换行"
+						aria-label="消息输入框"
 					></textarea>
 				</Spin>
 			</div>
@@ -458,13 +460,13 @@ const ChatTool = (props: IChatToolProps) => {
 					</div>
 					<ul>
 						{suggestions.map((s, idx) => (
-							<li
+							<button type="button"
 								key={idx}
 								className={idx === selectedIndex ? styles.selected : ''}
 								onClick={() => handleSuggestionClick(s)}
 							>
 								{s}
-							</li>
+							</button>
 						))}
 					</ul>
 					<div className={styles.preview}>{previewText}</div>

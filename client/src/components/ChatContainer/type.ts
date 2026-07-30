@@ -7,4 +7,7 @@ import { IMessageItem } from '@/components/MessageShow/type';
 export interface IChatContainerProps {
 	historyMsg: IMessageItem[] | undefined;
 	newMsg: IMessageItem[] | undefined;
+	hasMoreHistory?: boolean;
+	onLoadMoreHistory?: () => Promise<void> | void;
+	historyLoading?: boolean;
 }

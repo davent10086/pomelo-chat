@@ -184,6 +184,17 @@ const Login = () => {
 							</Button>
 						</Form.Item>
 					</Form>
+					<div className={styles.demoAccounts}>
+						<div>结束乐队测试账号 · 密码：AnimeDemo123!</div>
+						<div className={styles.demoAccountList}>
+							{[
+								['后藤一里', 'bocchi_hitori'], ['伊地知虹夏', 'bocchi_nijika'],
+								['山田凉', 'bocchi_ryo'], ['喜多郁代', 'bocchi_kita']
+							].map(([name, username]) => (
+								<button key={username} type="button" onClick={() => loginFormInstance.setFieldsValue({ username, password: 'AnimeDemo123!' })}>{name}</button>
+							))}
+						</div>
+					</div>
 					<div className={styles.link}>
 						<Link to="/register"> 立即注册 </Link>
 					</div>

@@ -6,13 +6,39 @@ import { RespData, RespSuccess, RespError } from '../../utils/resp';
 import { NotificationUser } from '../../utils/notification';
 import { Query } from '../../utils/query';
 
+interface GroupMemberRow {
+	user_id: number;
+	avatar: string | null;
+	username: string;
+	name: string | null;
+	nickname: string | null;
+	created_at: Date | string;
+	lastMessageTime: Date | string | null;
+}
+
+interface ExistsRow { '1': number; }
+interface WriteResult { affectedRows: number; insertId?: number; }
+interface GroupChatRow { id: number; name: string; avatar: string | null; announcement: string | null; room: string; creator_id: number; created_at: Date | string; }
+interface GroupSearchItem { name: string; avatar: string | null; number: number; status: boolean; group_id: number; }
+interface GroupInfoRow extends GroupChatRow { creator_username: string; }
+interface GroupInfo extends GroupInfoRow { members: GroupMemberRow[]; }
+interface InvitationInput { user_id: number | string; username: string; }
+interface InvitationInsert { group_id: number | string; user_id: number | string; nickname: string; }
+interface GroupIdRow { id: number; }
+interface GroupRoomRow { name?: string; room: string; }
+
+const isInvitationInput = (value: unknown): value is InvitationInput =>
+	typeof value === 'object' && value !== null &&
+	(typeof (value as { user_id?: unknown }).user_id === 'number' || typeof (value as { user_id?: unknown }).user_id === 'string') &&
+	typeof (value as { username?: unknown }).username === 'string';
+
 /**
  * 查询群聊成员信息
  * 1. 根据 group_id 查询 group_members 表获取群成员的 user_id、nickname 和 created_at
  * 2. 并查询 user 表获取成员 username、name 和 avatar
  * 3. 使用 left join 根据 sender_id 和 room 查询 message 表获取用户的最后一次发消息时间
  */
-const getGroupMembers = async (group_id: number | string, room: string): Promise<any[]> => {
+const getGroupMembers = async (group_id: number | string, room: string): Promise<GroupMemberRow[]> => {
 	try {
 		const sql = `
 			SELECT
@@ -39,7 +65,7 @@ const getGroupMembers = async (group_id: number | string, room: string): Promise
 				) AS m
 				ON m.sender_id = s.user_id
 		`;
-		const results: any = await Query(sql, [group_id, room]);
+		const results = await Query<GroupMemberRow[]>(sql, [group_id, room]);
 		return results;
 	} catch {
 		throw new Error('查询失败');
@@ -47,7 +73,7 @@ const getGroupMembers = async (group_id: number | string, room: string): Promise
 };
 
 const canAccessGroup = async (userId: number | string, groupId: number | string): Promise<boolean> => {
-	const rows: any = await Query(
+	const rows = await Query<ExistsRow[]>(
 		`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ? LIMIT 1`,
 		[groupId, userId]
 	);
@@ -80,7 +106,7 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 		};
 
 		const sql_group = `INSERT INTO group_chat SET ?`;
-		const results_group: any = await Query(sql_group, group_chat);
+		const results_group = await Query<WriteResult>(sql_group, group_chat);
 		if (results_group.affectedRows === 1) {
 			// 发送固定消息
 			const message = {
@@ -123,7 +149,8 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 			}
 			RespSuccess(res);
 		}
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -156,9 +183,10 @@ export const getGroupChatList = async (req: Request, res: Response): Promise<voi
 					LEFT JOIN group_chat AS gct ON gmb.group_id = gct.id
 				)
 		`;
-		const results: any = await Query(sql, [id]);
+		const results = await Query<GroupChatRow[]>(sql, [id]);
 		RespData(res, results);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -177,14 +205,14 @@ export const searchGroupChat = async (req: Request, res: Response): Promise<void
 	}
 	try {
 		const sql_group = `SELECT * FROM group_chat WHERE name LIKE ?`;
-		const results_group: any = await Query(sql_group, [`%${name}%`]);
-		const searchList: any[] = [];
+		const results_group = await Query<GroupChatRow[]>(sql_group, [`%${name}%`]);
+		const searchList: GroupSearchItem[] = [];
 		if (results_group.length !== 0) {
 			const { id } = req.user!;
 			const sql_members = `SELECT user_id FROM group_members WHERE group_id = ?`;
 			for (const item of results_group) {
 				let status = false;
-				const results_members: any = await Query(sql_members, [item.id]);
+				const results_members = await Query<Array<{ user_id: number | string }>>(sql_members, [item.id]);
 				for (const member of results_members) {
 					if (member.user_id === id) {
 						status = true;
@@ -201,7 +229,8 @@ export const searchGroupChat = async (req: Request, res: Response): Promise<void
 			}
 		}
 		RespData(res, searchList);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -212,7 +241,7 @@ export const searchGroupChat = async (req: Request, res: Response): Promise<void
  * 需要获取群介绍, 群主, 所有群成员
  */
 export const getGroupChatInfo = async (req: Request, res: Response): Promise<void> => {
-	const group_id = (req.query as any).group_id;
+	const group_id = typeof req.query.group_id === 'string' ? req.query.group_id : undefined;
 	if (!group_id) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
@@ -237,12 +266,12 @@ export const getGroupChatInfo = async (req: Request, res: Response): Promise<voi
 				ON gc.creator_id = u.id
 			WHERE gc.id = ?
 		`;
-		const results_group: any = await Query(sql, [group_id]);
+		const results_group = await Query<GroupInfoRow[]>(sql, [group_id]);
 		if (!results_group.length) {
 			RespError(res, CommonStatus.NOT_FOUND);
 			return;
 		}
-		const info: any = {
+		const info: GroupInfo = {
 			id: results_group[0].id,
 			name: results_group[0].name,
 			creator_id: results_group[0].creator_id,
@@ -258,7 +287,8 @@ export const getGroupChatInfo = async (req: Request, res: Response): Promise<voi
 			info.members.push({ ...member });
 		}
 		RespData(res, info);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -281,17 +311,19 @@ export const inviteFriendToGroupChat = async (req: Request, res: Response): Prom
 			RespError(res, CommonStatus.TOKEN_ERR);
 			return;
 		}
-		const userIdArr = invitationList.map((item: any) => item.user_id);
+		const invitations = invitationList.filter(isInvitationInput);
+		if (!invitations.length) return RespError(res, CommonStatus.PARAM_ERR);
+		const userIdArr = invitations.map(item => item.user_id);
 		const sql_check = `
 			SELECT user_id
 			FROM group_members
 			WHERE group_id = ? AND FIND_IN_SET(user_id, ?)
 		`;
-		const results_check: any = await Query(sql_check, [groupId, userIdArr.join(',')]);
+		const results_check = await Query<Array<{ user_id: number | string }>>(sql_check, [groupId, userIdArr.join(',')]);
 		// 过滤掉已经存在群里的用户
-		const invitationInfoList: any[] = [];
-		const hasInvitedUserIdArr = results_check.map((item: any) => item.user_id);
-		for (const item of invitationList) {
+		const invitationInfoList: InvitationInsert[] = [];
+		const hasInvitedUserIdArr = results_check.map(item => item.user_id);
+		for (const item of invitations) {
 			if (!hasInvitedUserIdArr.includes(item.user_id)) {
 				invitationInfoList.push({
 					group_id: groupId,
@@ -315,7 +347,8 @@ export const inviteFriendToGroupChat = async (req: Request, res: Response): Prom
 			});
 		}
 		RespSuccess(res);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -336,7 +369,7 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
 	try {
 		// 检查是否已经加入了该群聊
 		const sql_check = `SELECT id FROM group_members WHERE group_id = ? AND user_id = ?`;
-		const results_check: any = await Query(sql_check, [group_id, sender.id]);
+		const results_check = await Query<GroupIdRow[]>(sql_check, [group_id, sender.id]);
 		if (results_check.length !== 0) {
 			RespError(res, GroupStatus.EXIT_GROUP_ERR);
 			return;
@@ -350,7 +383,7 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
 		const sql_set = `INSERT INTO group_members SET ?`;
 		await Query(sql_set, info);
 		const sql_get = `SELECT name, room FROM group_chat WHERE id = ?`;
-		const results_get: any = await Query(sql_get, [group_id]);
+		const results_get = await Query<GroupRoomRow[]>(sql_get, [group_id]);
 		if (!results_get.length) {
 			RespError(res, CommonStatus.NOT_FOUND);
 			return;
@@ -366,7 +399,8 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
 			name: 'groupChatList'
 		});
 		RespData(res, options);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}
@@ -376,7 +410,8 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
  * 获取群聊成员信息
  */
 export const getGroupMemberList = async (req: Request, res: Response): Promise<void> => {
-	const { group_id, room } = (req.query as any) || {};
+	const group_id = typeof req.query.group_id === 'string' ? req.query.group_id : undefined;
+	const room = typeof req.query.room === 'string' ? req.query.room : undefined;
 	if (!(group_id && room)) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
@@ -386,14 +421,15 @@ export const getGroupMemberList = async (req: Request, res: Response): Promise<v
 			RespError(res, CommonStatus.TOKEN_ERR);
 			return;
 		}
-		const group: any = await Query(`SELECT room FROM group_chat WHERE id = ?`, [group_id]);
+		const group = await Query<GroupRoomRow[]>(`SELECT room FROM group_chat WHERE id = ?`, [group_id]);
 		if (!group.length || group[0].room !== room) {
 			RespError(res, CommonStatus.PARAM_ERR);
 			return;
 		}
 		const results = await getGroupMembers(group_id, room);
 		RespData(res, results);
-	} catch (err: any) {
+	} catch (caught: unknown) {
+		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[group] 异常:', err.message);
 		RespError(res, CommonStatus.SERVER_ERR);
 	}

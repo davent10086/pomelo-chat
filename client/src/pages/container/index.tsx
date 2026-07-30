@@ -196,8 +196,10 @@ const Container = () => {
 						<ul className={styles.topIcons}>
 							{MenuIconList.filter(item => item.text !== '退出登录').map(item => (
 								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-									<li
+									<button
+										type="button"
 										className={`iconfont ${item.icon}`}
+										aria-label={item.text}
 										onClick={() => {
 											if (item.text === '聊天' || item.text === '通讯录') {
 												setCurrentIcon(item.icon);
@@ -207,15 +209,17 @@ const Container = () => {
 										style={{
 											color: currentIcon === item.icon ? '#07c160' : '#979797'
 										}}
-									></li>
+									></button>
 								</Tooltip>
 							))}
 						</ul>
 						<ul className={styles.bottomIcons}>
 							{MenuIconList.filter(item => item.text === '退出登录').map(item => (
 								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-									<li
+									<button
+										type="button"
 										className={`iconfont ${item.icon}`}
+										aria-label={item.text}
 										onClick={() => {
 											setCurrentIcon(item.icon);
 											confirmLogout();
@@ -223,7 +227,7 @@ const Container = () => {
 										style={{
 											color: currentIcon === item.icon ? '#07c160' : '#979797'
 										}}
-									></li>
+									></button>
 								</Tooltip>
 							))}
 						</ul>

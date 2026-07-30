@@ -26,6 +26,48 @@ interface PomeloToolSpec extends PomeloToolDefinition {
 	run: (context: PomeloToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
 
+interface RoomAccessRow {
+	ok: 1;
+}
+
+interface RecentMessageRow {
+	sender_id: number;
+	receiver_id: number;
+	content: string;
+	media_type: 'text' | 'image' | 'video' | 'file';
+	created_at: Date | string;
+	sender_username: string | null;
+	sender_name: string | null;
+}
+
+interface ContactRow {
+	user_id: number;
+	username: string;
+	remark: string | null;
+	room: string;
+	name: string | null;
+	signature: string | null;
+}
+
+interface GroupRow {
+	id: number;
+	name: string;
+	room: string;
+	announcement: string | null;
+}
+
+interface AssistantMemoryRow {
+	id: number;
+	category: string;
+	content: string;
+	created_at: Date | string;
+	updated_at: Date | string;
+}
+
+interface WriteResult {
+	affectedRows: number;
+}
+
 const recentMessagesSchema = z.object({
 	room: z.string().optional().describe('Chat room id. Defaults to the current room.'),
 	limit: z.number().optional().describe('Message count. Defaults to 30, maximum 80.')
@@ -66,7 +108,7 @@ const canAccessRoom = async (userId: number, room: string): Promise<boolean> => 
 		WHERE fg.user_id = ? AND f.room = ?
 		LIMIT 1
 	`;
-	const privateRows: any = await Query(sql, [userId, room]);
+	const privateRows = await Query<RoomAccessRow[]>(sql, [userId, room]);
 	if (privateRows.length > 0) return true;
 
 	const groupSql = `
@@ -76,7 +118,7 @@ const canAccessRoom = async (userId: number, room: string): Promise<boolean> => 
 		WHERE gm.user_id = ? AND gc.room = ?
 		LIMIT 1
 	`;
-	const groupRows: any = await Query(groupSql, [userId, room]);
+	const groupRows = await Query<RoomAccessRow[]>(groupSql, [userId, room]);
 	return groupRows.length > 0;
 };
 
@@ -84,7 +126,7 @@ const getRecentMessagesForRoom = async (
 	userId: number,
 	room: string,
 	limit = 30
-): Promise<any[]> => {
+): Promise<RecentMessageRow[]> => {
 	if (!room || !(await canAccessRoom(userId, room))) {
 		return [];
 	}
@@ -104,7 +146,7 @@ const getRecentMessagesForRoom = async (
 		ORDER BY m.created_at DESC
 		LIMIT ?
 	`;
-	const rows: any[] = await Query(sql, [room, safeLimit]);
+	const rows = await Query<RecentMessageRow[]>(sql, [room, safeLimit]);
 	return rows.reverse();
 };
 
@@ -167,7 +209,7 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 				WHERE fg.user_id = ? AND (f.username LIKE ? OR f.remark LIKE ? OR u.name LIKE ?)
 				LIMIT 10
 			`;
-			const rows: any = await Query(sql, [context.userId, keyword, keyword, keyword]);
+			const rows = await Query<ContactRow[]>(sql, [context.userId, keyword, keyword, keyword]);
 			return { contacts: rows };
 		}
 	},
@@ -192,7 +234,7 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 				WHERE gm.user_id = ? AND gc.name LIKE ?
 				LIMIT 10
 			`;
-			const rows: any = await Query(sql, [context.userId, keyword]);
+			const rows = await Query<GroupRow[]>(sql, [context.userId, keyword]);
 			return { groups: rows };
 		}
 	},
@@ -270,7 +312,7 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 				ORDER BY updated_at DESC
 				LIMIT ?
 			`;
-			const rows: any[] = await Query(sql, [context.userId, query, like, like, limit]);
+			const rows = await Query<AssistantMemoryRow[]>(sql, [context.userId, query, like, like, limit]);
 			return { memories: rows };
 		}
 	},
@@ -309,7 +351,7 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 		schema: memoryForgetSchema,
 		run: async (context, args) => {
 			const query = asText(args.query).trim();
-			const result: any = await Query('DELETE FROM assistant_memory WHERE user_id = ? AND content LIKE ?', [context.userId, `%${query}%`]);
+			const result = await Query<WriteResult>('DELETE FROM assistant_memory WHERE user_id = ? AND content LIKE ?', [context.userId, `%${query}%`]);
 			return { deleted: result.affectedRows || 0 };
 		}
 	}

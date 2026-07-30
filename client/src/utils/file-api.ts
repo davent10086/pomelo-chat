@@ -59,6 +59,6 @@ export const uploadChunk = async (params: IUploadChunkParams) => {
 
 // 文件合并
 export const mergeFile = async (params: IMergeFileParams) => {
-	const res = await Request.post<IMergeFileParams>('/file/merge_chunk', params);
+	const res = await Request.post<IMergeFileParams, IVertifyRes>('/file/merge_chunk', params);
 	return res.data;
 };

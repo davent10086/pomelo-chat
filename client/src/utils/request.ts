@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 
 import type {
@@ -73,18 +72,18 @@ export class Request {
 		);
 	}
 
-	public request(config: AxiosRequestConfig): Promise<any> {
-		return this.instance.request(config);
+	public request<TResponse = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<TResponse>> {
+		return this.instance.request<TResponse>(config);
 	}
 
-	public get<TResponse = any>(
+	public get<TResponse = unknown>(
 		url: string,
 		config?: AxiosRequestConfig
 	): Promise<AxiosResponse<ApiResponse<TResponse>>> {
 		return this.instance.get(url, config);
 	}
 
-	public post<TRequest = any, TResponse = any>(
+	public post<TRequest = unknown, TResponse = unknown>(
 		url: string,
 		data?: TRequest,
 		config?: AxiosRequestConfig
@@ -92,7 +91,7 @@ export class Request {
 		return this.instance.post(url, data, config);
 	}
 
-	public put<TRequest = any, TResponse = any>(
+	public put<TRequest = unknown, TResponse = unknown>(
 		url: string,
 		data?: TRequest,
 		config?: AxiosRequestConfig
@@ -100,7 +99,7 @@ export class Request {
 		return this.instance.put(url, data, config);
 	}
 
-	public delete<TResponse = any>(
+	public delete<TResponse = unknown>(
 		url: string,
 		config?: AxiosRequestConfig
 	): Promise<AxiosResponse<ApiResponse<TResponse>>> {

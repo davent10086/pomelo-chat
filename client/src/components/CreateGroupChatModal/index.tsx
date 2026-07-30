@@ -17,6 +17,12 @@ import { ImageUpload } from '@/components/ImageUpload';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 
+const isFriendItem = (value: unknown): value is IFriendItem => {
+	if (!value || typeof value !== 'object') return false;
+	const item = value as Partial<IFriendItem>;
+	return typeof item.user_id === 'number' && typeof item.username === 'string' && typeof item.avatar === 'string';
+};
+
 const CreateGroupModal = (props: ICreateGroupModal) => {
 	const showMessage = useShowMessage();
 	const { openmodal, handleModal, type, groupChatInfo } = props;
@@ -96,15 +102,14 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 	};
 
 	// 创建群聊
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const handleCreateGroup = async (values: any) => {
+	const handleCreateGroup = async (values: ICreateGroupForm) => {
 		setLoading(true);
 		// 将第一步的好友数据筛选并作格式转化
 		const selectedFriends: IGroupMemberItem[] = [];
 		checkedFriends.map(item => {
 			try {
-				const parsedItem = JSON.parse(item);
-				if (parsedItem.username) {
+			const parsedItem: unknown = JSON.parse(item);
+			if (isFriendItem(parsedItem)) {
 					selectedFriends.push({
 						user_id: parsedItem.user_id,
 						username: parsedItem.username,

@@ -21,7 +21,7 @@ const BUFFER_SIZE = 10;
  * L2: isAtBottomRef 改为 state 镜像，确保重渲染
  */
 const ChatContainer = (props: IChatContainerProps) => {
-	const { historyMsg, newMsg } = props;
+	const { historyMsg, newMsg, hasMoreHistory, onLoadMoreHistory, historyLoading } = props;
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const messagesWrapRef = useRef<HTMLDivElement>(null);
 	const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
@@ -261,6 +261,13 @@ const ChatContainer = (props: IChatContainerProps) => {
 					<div className={`${styles.summary_display}`}>
 						<h4>AI 总结</h4>
 						<p>{summary}</p>
+					</div>
+				)}
+				{hasMoreHistory && (
+					<div className={styles.history_load_more}>
+						<button type="button" onClick={onLoadMoreHistory} disabled={historyLoading}>
+							{historyLoading ? '加载中...' : '加载更早消息'}
+						</button>
 					</div>
 				)}
 				<div ref={messagesWrapRef}>
