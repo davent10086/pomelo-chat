@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 
 import { CommonStatus } from './status';
 import { RespError } from './resp';
+import { Query } from './query';
 
 // 密钥从环境变量读取，未配置时给出明确错误（不内置默认值以防误用）
 export const secretKey: string | undefined = process.env.JWT_SECRET;
@@ -115,6 +116,27 @@ export const authenticateUploadAccess: RequestHandler = async (req: Request, res
 	}
 	if (!isAuthenticatedPayload(payload)) {
 		res.status(401).end();
+		return;
+	}
+	const storagePath = `/uploads${req.path}`;
+	try {
+		const rows = await Query<Array<{ ok: number }>>(
+			`SELECT 1 AS ok FROM file_metadata f
+			 WHERE f.storage_path = ? AND f.status = 'ready' AND (
+				f.owner_id = ? OR EXISTS (
+					SELECT 1 FROM message m LEFT JOIN friend fr ON fr.room = m.room LEFT JOIN friend_group fg ON fg.id = fr.group_id LEFT JOIN group_chat gc ON gc.room = m.room LEFT JOIN group_members gm ON gm.group_id = gc.id
+					WHERE m.content LIKE CONCAT('%', f.storage_path, '%') AND (fg.user_id = ? OR gm.user_id = ?)
+				)
+			 ) LIMIT 1`,
+			[storagePath, payload.id, payload.id, payload.id]
+		);
+		if (!rows.length) {
+			res.status(404).end();
+			return;
+		}
+	} catch (error: unknown) {
+		console.error('[upload] authorization lookup failed:', errorMessage(error));
+		res.status(503).end();
 		return;
 	}
 	req.user = payload;

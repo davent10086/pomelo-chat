@@ -18,6 +18,7 @@ interface IVertifyRes {
 	message: string;
 	// 文件路径
 	filePath?: string;
+	uploadToken?: string;
 }
 
 // 文件分片上传接口请求参数
@@ -30,6 +31,7 @@ interface IUploadChunkParams {
 	fileHash: string;
 	// 文件后缀名
 	extname: string;
+	uploadToken: string;
 }
 
 // 通知后端合并文件接口请求参数
@@ -38,6 +40,7 @@ interface IMergeFileParams {
 	fileHash: string;
 	// 文件后缀名
 	extname: string;
+	uploadToken: string;
 }
 
 // 验证上传的文件状态
@@ -53,6 +56,7 @@ export const uploadChunk = async (params: IUploadChunkParams) => {
 	formData.append('chunkIndex', params.chunkIndex.toString());
 	formData.append('fileHash', params.fileHash);
 	formData.append('extname', params.extname);
+	formData.append('uploadToken', params.uploadToken);
 	const res = await Request.post('/file/upload_chunk', formData);
 	return res.data;
 };

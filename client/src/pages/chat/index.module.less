@@ -224,9 +224,40 @@
 		border-left: 0.005rem solid @primary-border_bg-color;
 	}
 
+	.agentPanelClose {
+		display: none;
+	}
+
 	@media (max-width: 900px) {
 		.leftContainer { flex-basis: 240px; min-width: 220px; }
-		.agentPanel { flex-basis: 280px; width: 280px; }
+
+		.chat_window .agentPanelOpen .chat_main {
+			display: none;
+		}
+
+		.agentPanel {
+			flex: 1 1 auto;
+			width: auto;
+			border-left: 0;
+		}
+
+		.agentPanelClose {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			margin-bottom: 0.12rem;
+			padding: 0.05rem 0.09rem;
+			border: 1px solid fade(@primary-antd-color, 35%);
+			border-radius: 4px;
+			background: fade(@primary-antd-color, 8%);
+			color: @primary-antd-color;
+			cursor: pointer;
+
+			&:focus-visible {
+				outline: 2px solid @primary-antd-color;
+				outline-offset: 2px;
+			}
+		}
 	}
 
 	.agentPanelToggle {
@@ -443,33 +474,6 @@
 	margin-bottom: 12px;
 	color: @font-color-lightest;
 	font-size: 13px;
-}
-
-.agentPanelFloating {
-	position: fixed;
-	z-index: 1100;
-	// 与主软件窗口的右边缘对齐；空间不足时退回浏览器右侧。
-	top: max(24px, calc((100vh - 760px) / 2));
-	right: max(0px, calc((100vw - min(1180px, calc(100vw - 48px))) / 2 - 360px));
-	width: 360px;
-	height: min(760px, calc(100vh - 48px));
-	box-sizing: border-box;
-	overflow: auto;
-	padding: 16px;
-	background: @primary-color;
-	border: 1px solid @primary-border_bg-color;
-	border-radius: 8px 0 0 8px;
-	box-shadow: -10px 0 28px fade(#000, 16%);
-}
-
-@media (max-width: 900px) {
-	.agentPanelFloating {
-		top: 12px;
-		right: 12px;
-		width: min(320px, calc(100vw - 24px));
-		height: calc(100vh - 24px);
-		border-radius: 6px 0 0 6px;
-	}
 }
 
 .memoryList {

@@ -382,8 +382,10 @@ const runLangChainAgent = async (
 	input: string,
 	room?: string,
 	context?: AgentContext,
-	onEvent?: (event: AgentEvent) => void
+	onEvent?: (event: AgentEvent) => void,
+	signal?: AbortSignal
 ): Promise<AgentResult> => {
+	if (signal?.aborted) throw new DOMException('Client disconnected', 'AbortError');
 	const agentPlan = await runAgentOrchestrator({ userId, input, room, context, onEvent });
 	let memoryContext: Record<string, unknown> = { memories: [] };
 	if (context?.memoryEnabled !== false) {
@@ -443,7 +445,7 @@ const runLangChainAgent = async (
 				})
 			}
 		]
-	});
+	}, { signal });
 	const result = parseAgentInvocation(rawResult);
 	const messages = Array.isArray(result?.messages) ? result.messages : [];
 	const lastAiMessage = [...messages]
@@ -528,6 +530,9 @@ export const agentStream = async (req: Request, res: Response): Promise<void> =>
 	res.setHeader('Cache-Control', 'no-cache');
 	res.setHeader('Connection', 'keep-alive');
 	res.flushHeaders();
+	const controller = new AbortController();
+	const onClientClose = () => controller.abort();
+	res.once('close', onClientClose);
 	try {
 		const userId = Number(req.user!.id);
 		if (!Number.isFinite(userId)) {
@@ -538,15 +543,19 @@ export const agentStream = async (req: Request, res: Response): Promise<void> =>
 		const request = normalizeAgentRequest(room, context);
 		const result = await runLangChainAgent(userId, input, request.room, request.context, event => {
 			if (!res.writableEnded) res.write(`event: agent\ndata: ${JSON.stringify(event)}\n\n`);
-		});
+		}, controller.signal);
 		res.write(`data: ${JSON.stringify(result)}\n\n`);
 		res.write('data: [DONE]\n\n');
 		res.end();
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[assistant-agent] agentStream 异常:', err.message);
-		res.write(`data: ${JSON.stringify({ error: 'internal error' })}\n\n`);
-		res.end();
+		if (!controller.signal.aborted) {
+			res.write(`data: ${JSON.stringify({ error: 'internal error' })}\n\n`);
+			res.end();
+		}
+	} finally {
+		res.removeListener('close', onClientClose);
 	}
 };
 
@@ -556,7 +565,7 @@ export const listAgentTools = async (_req: Request, res: Response): Promise<void
 };
 
 export const callAgentTool = async (req: Request, res: Response): Promise<void> => {
-	const { name, args, room, confirmed } = req.body || {};
+	const { name, args, room } = req.body || {};
 	if (!name || typeof name !== 'string' || (args && typeof args !== 'object')) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
@@ -568,8 +577,11 @@ export const callAgentTool = async (req: Request, res: Response): Promise<void> 
 			RespError(res, CommonStatus.TOKEN_ERR);
 			return;
 		}
-		const result = name.startsWith('mcp_')
-			? await externalMcpManager.callTool(name, args || {}, confirmed === true, userId)
+		const externalWrite = name.startsWith('mcp_') && await externalMcpManager.isWriteTool(name);
+		const result = externalWrite
+			? await createPendingAction(userId, 'external_mcp', { name, args: args || {} })
+			: name.startsWith('mcp_')
+			? await externalMcpManager.executeConfirmedTool(name, args || {}, userId)
 			: await executePomeloTool(
 					{ userId, currentRoom: typeof room === 'string' ? room : undefined },
 					{ name, args: args || {}, room }

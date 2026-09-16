@@ -14,6 +14,7 @@ interface IUploadChunkParams {
 	chunkIndex: number;
 	fileHash: string;
 	extname: string;
+	uploadToken: string;
 }
 
 // M9: 最大并发数
@@ -136,14 +137,17 @@ async function handleFile(
 	const allChunkList = chunkList;
 	let neededChunkList: number[] = [];
 	let progress = 0;
+	let uploadToken: string;
 	try {
 		const params = { fileHash, totalCount: allChunkList.length, extname };
 		const res = await vertifyFile(params);
+		const responseUploadToken = res.data.uploadToken;
 
 		if (res.code === HttpStatus.FILE_EXIST) {
 			return { success: true, filePath: res.data.filePath, message: res.data.message || '' };
 		} else if (res.code === HttpStatus.ALL_CHUNK_UPLOAD) {
-			const mergeParams = { fileHash, extname };
+			if (!responseUploadToken) throw new Error('上传会话无效');
+			const mergeParams = { fileHash, extname, uploadToken: responseUploadToken };
 			try {
 				const mergeRes = await mergeFile(mergeParams);
 				if (mergeRes.code === HttpStatus.SUCCESS) {
@@ -154,7 +158,9 @@ async function handleFile(
 				throw new Error('文件合并失败');
 			}
 		} else if (res.code === HttpStatus.SUCCESS) {
-			const { neededFileList, message } = res.data;
+		const { neededFileList, message } = res.data;
+		if (!responseUploadToken) throw new Error('上传会话无效');
+			uploadToken = responseUploadToken;
 			if (!neededFileList.length) {
 				return { success: true, filePath: res.data.filePath, message: message || '' };
 			}
@@ -176,7 +182,7 @@ async function handleFile(
 	const tasks: (() => Promise<void>)[] = allChunkList.map((chunk: ArrayBuffer, index: number) => {
 		return async () => {
 			if (neededChunkList.includes(index + 1)) {
-				const params = { chunk, chunkIndex: index + 1, fileHash, extname };
+				const params = { chunk, chunkIndex: index + 1, fileHash, extname, uploadToken };
 				try {
 					await uploadChunkWithRetry(params, maxRetries, retryDelay);
 					progress += Math.ceil(100 / allChunkList.length);
@@ -192,7 +198,7 @@ async function handleFile(
 	try {
 		await runWithConcurrency(tasks, MAX_CONCURRENCY);
 		// 发送合并请求
-		const params = { fileHash, extname };
+		const params = { fileHash, extname, uploadToken };
 		const mergeRes = await mergeFile(params);
 		if (mergeRes.code === HttpStatus.SUCCESS) {
 			return { success: true, filePath: mergeRes.data.filePath, message: mergeRes.data.message || '' };

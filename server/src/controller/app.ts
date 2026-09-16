@@ -82,7 +82,7 @@ const apiRateLimit = createRateLimiter({
 	name: 'api',
 	windowSeconds: Number(process.env.API_RATE_LIMIT_WINDOW_SECONDS || 60),
 	max: Number(process.env.API_RATE_LIMIT_MAX || 240),
-	skip: req => req.path.includes('/file/upload_chunk') || req.path.includes('/assistant/chat/stream') || req.path.includes('/assistant/agent/stream')
+	skip: req => req.path.includes('/assistant/chat/stream') || req.path.includes('/assistant/agent/stream')
 });
 
 /**

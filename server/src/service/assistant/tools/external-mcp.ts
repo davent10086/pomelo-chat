@@ -212,26 +212,23 @@ class ExternalMcpManager {
 		);
 	}
 
-	async callTool(name: string, args: Record<string, unknown>, confirmed = false, userId?: number) {
-		const remote = (await this.getTools()).find(item => item.definition.name === name);
+	async getTool(name: string) {
+		return (await this.getTools()).find(item => item.definition.name === name);
+	}
+
+	async isWriteTool(name: string): Promise<boolean> {
+		return (await this.getTool(name))?.requiresConfirmation === true;
+	}
+
+	async executeConfirmedTool(name: string, args: Record<string, unknown>, userId?: number) {
+		const remote = await this.getTool(name);
 		if (!remote) throw new Error(`Unknown external MCP tool: ${name}`);
-		if (remote.requiresConfirmation && !confirmed) {
-			await auditMcpTool('mcp_tool_confirmation_required', {
-				tool: name,
-				server: remote.serverName,
-				userId,
-				requiresConfirmation: true,
-				confirmed: false,
-				status: 'pending'
-			});
-			return { requiresConfirmation: true, tool: name, message: 'This MCP operation changes external data. Confirm before executing.' };
-		}
 		await auditMcpTool('mcp_tool_call', {
 			tool: name,
 			server: remote.serverName,
 			userId,
 			requiresConfirmation: remote.requiresConfirmation,
-			confirmed,
+			confirmed: remote.requiresConfirmation,
 			status: 'started'
 		});
 		try {
@@ -241,7 +238,7 @@ class ExternalMcpManager {
 				server: remote.serverName,
 				userId,
 				requiresConfirmation: remote.requiresConfirmation,
-				confirmed,
+				confirmed: remote.requiresConfirmation,
 				status: 'success'
 			});
 			return result;
@@ -251,7 +248,7 @@ class ExternalMcpManager {
 				server: remote.serverName,
 				userId,
 				requiresConfirmation: remote.requiresConfirmation,
-				confirmed,
+				confirmed: remote.requiresConfirmation,
 				status: 'error',
 				errorMessage: errorMessage(error)
 			});

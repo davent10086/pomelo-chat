@@ -9,6 +9,7 @@ import { better_chat, verifyTokenWithSession } from '../../utils/authenticate';
 import { Query, withTransaction } from '../../utils/query';
 
 const ChatRooms: Record<string, Record<string, WebSocket>> = {};
+const roomWriteTails = new Map<string, Promise<void>>();
 const MESSAGE_FANOUT_CHANNEL = 'pomelo:message:fanout';
 const INSTANCE_ID = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -25,6 +26,24 @@ const isMediaType = (value: unknown): value is MediaType =>
 	value === 'text' || value === 'image' || value === 'video' || value === 'file';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
+
+/**
+ * Preserves message order within a room and prevents concurrent transactions
+ * from racing on the conversation sequence row.
+ */
+const enqueueRoomWrite = <T>(room: string, task: () => Promise<T>): Promise<T> => {
+	const previous = roomWriteTails.get(room) || Promise.resolve();
+	const result = previous.catch(() => undefined).then(task);
+	const tail = result.then(
+		() => undefined,
+		() => undefined
+	);
+	roomWriteTails.set(room, tail);
+	void tail.finally(() => {
+		if (roomWriteTails.get(room) === tail) roomWriteTails.delete(room);
+	});
+	return result;
+};
 
 interface ConversationRow {
 	id: number;
@@ -155,9 +174,11 @@ const subscribeRoomFanout = (): void => {
 
 subscribeRoomFanout();
 
-const parseIncomingMessage = (data: RawData): IncomingMessage | null => {
+const parseIncomingMessage = (data: RawData | string): IncomingMessage | null => {
 	try {
-		const raw = Array.isArray(data)
+		const raw = typeof data === 'string'
+			? data
+			: Array.isArray(data)
 			? Buffer.concat(data).toString('utf8')
 			: Buffer.isBuffer(data)
 				? data.toString('utf8')
@@ -517,10 +538,9 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		}
 		ChatRooms[room] ||= {};
 		ChatRooms[room][id] = ws;
-		const history = await fetchHistoryMessages(decoded.id as UserId, room, type, undefined, HISTORY_PAGE_SIZE);
-		ws.send(JSON.stringify({ name: 'history', messages: history?.messages || [], hasMore: history?.hasMore, nextBeforeId: history?.nextBeforeId }));
-		await markRoomRead(id, room, type);
-
+		// Register message handling before the initial history frame. A client may
+		// send immediately after receiving that frame, so registering it afterwards
+		// creates a race that silently drops the first message.
 		ws.on('message', async (data: RawData) => {
 			try {
 				const message = parseIncomingMessage(data);
@@ -530,28 +550,30 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 				}
 				const mediaType = isMediaType(message.type) ? message.type : 'text';
 				const clientMsgId = normalizeClientMsgId(message.clientMsgId);
-				const outbound = await writeAndSend(
-					type,
-					room,
-					{
-						sender_id: decoded.id as UserId,
-						receiver_id: authorized.receiverId,
-						content: message.content,
-						room,
+				const outbound = await enqueueRoomWrite(room, () =>
+					writeAndSend(
 						type,
-						media_type: mediaType,
-						file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0,
-						status: 0,
-						client_msg_id: clientMsgId
-					},
-					{
-						sender_id: decoded.id as UserId,
-						receiver_id: authorized.receiverId,
-						content: message.content,
 						room,
-						type: mediaType,
-						file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0
-					}
+						{
+							sender_id: decoded.id as UserId,
+							receiver_id: authorized.receiverId,
+							content: message.content,
+							room,
+							type,
+							media_type: mediaType,
+							file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0,
+							status: 0,
+							client_msg_id: clientMsgId
+						},
+						{
+							sender_id: decoded.id as UserId,
+							receiver_id: authorized.receiverId,
+							content: message.content,
+							room,
+							type: mediaType,
+							file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0
+						}
+					)
 				);
 				ws.send(JSON.stringify({ name: 'ack', id: outbound.id, client_msg_id: outbound.client_msg_id, room_seq: outbound.room_seq }));
 			} catch (err: unknown) {
@@ -566,6 +588,9 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		ws.on('error', (err: Error) => {
 			console.error(`[message] ws error room=${room} id=${id}:`, err.message);
 		});
+		const history = await fetchHistoryMessages(decoded.id as UserId, room, type, undefined, HISTORY_PAGE_SIZE);
+		ws.send(JSON.stringify({ name: 'history', messages: history?.messages || [], hasMore: history?.hasMore, nextBeforeId: history?.nextBeforeId }));
+		await markRoomRead(id, room, type);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error('[message] connectChat error:', message);

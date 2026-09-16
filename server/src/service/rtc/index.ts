@@ -85,6 +85,13 @@ const canAccessRoom = async (userId: number | string, room: string, type: ChatTy
 	return rows.length > 0;
 };
 
+const getRoomRecipients = async (userId: number | string, room: string, type: ChatType): Promise<RtcRecipient[]> => {
+	const sql = type === 'group'
+		? `SELECT u.username, u.avatar FROM group_chat gc JOIN group_members gm ON gm.group_id = gc.id JOIN user u ON u.id = gm.user_id WHERE gc.room = ? AND gm.user_id <> ?`
+		: `SELECT u.username, u.avatar FROM friend f JOIN friend_group fg ON fg.id = f.group_id JOIN user u ON u.id = f.user_id WHERE f.room = ? AND fg.user_id = ?`;
+	return Query<RtcRecipient[]>(sql, [room, userId]);
+};
+
 const ChatRTCRooms: Record<string, Record<string, WebSocket>> = {}; // 全局变量存储聊天室房间，每个房间是一个对象，对象的键是用户名 username，值是 WebSocket 实例
 
 /**
@@ -197,13 +204,19 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 			}
 			const message = JSON.parse(data); // 服务端接收到的 message 包含 name、mode、callReceiverList、data、receiver，其中只有 name 指令名称是必须收到的，mode 和 callReceiverList 是 create_room 时收到的，data、receiver 是 offer、answer、ice_candidate 时收到的
 			*/
-			const { callReceiverList } = message;
+			let { callReceiverList } = message;
 			let msg: OutboundRtcMessage;
 			switch (message.name) {
 				/**
 				 * create_room：邀请人发送邀请，被邀请人接收邀请
 				 */
 				case 'create_room':
+					// The client may choose presentation data, never the call recipients.
+					callReceiverList = await getRoomRecipients(decoded.id as string | number, room, type);
+					if (!callReceiverList.length) {
+						ws.send(JSON.stringify({ name: 'connect_fail', reason: '当前没有可以通话的人!!!' }));
+						return;
+					}
 					if (!LoginRooms[username]) {
 						ws.send(
 							JSON.stringify({
@@ -252,7 +265,7 @@ export const connectRTC = async (ws: WebSocket, req: Request): Promise<void> => 
 							}
 						}
 						// 如果此时没有可以通话的人 (即此时的 callReceiverList 里只有邀请方自己)
-						if (callReceiverList.length === 1) {
+						if (callReceiverList.length === 0) {
 							ws.send(JSON.stringify({ name: 'connect_fail', reason: '当前没有可以通话的人!!!' }));
 							return;
 						}

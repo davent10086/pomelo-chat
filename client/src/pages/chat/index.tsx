@@ -1,6 +1,5 @@
 import { Tooltip } from 'antd';
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import AgentPanel from './AgentPanel';
 import { getChatHistory, getChatList, markChatRead } from './api';
@@ -528,7 +527,11 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									</button>
 								)}
 							</div>
-									<div className={styles.chat_body}>
+									<div
+										className={`${styles.chat_body} ${
+											agentPanelOpen && isAssistantListItem(curChatInfo) ? styles.agentPanelOpen : ''
+										}`}
+									>
 										<div className={styles.chat_main}>
 									<div className={styles.chat_content}>
 										<ChatContainer
@@ -549,8 +552,15 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											/>
 										</div>
 									</div>
-										{false && agentPanelOpen && isAssistantListItem(curChatInfo) && (
+										{agentPanelOpen && isAssistantListItem(curChatInfo) && (
 											<aside className={styles.agentPanel} aria-label="AI Copilot 助手面板">
+												<button
+													type="button"
+													className={styles.agentPanelClose}
+													onClick={() => setAgentPanelOpen(false)}
+												>
+													关闭 Copilot
+												</button>
 												<AgentPanel
 													result={agentResult}
 													tasks={assistantTasks}
@@ -580,24 +590,6 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 				onMemoryEnabledChange={handleMemoryEnabledChange}
 				 onDelete={deleteMemory}
 			/>
-			{agentPanelOpen && curChatInfo && isAssistantListItem(curChatInfo) && createPortal(
-				<aside className={styles.agentPanelFloating} aria-label="AI Copilot 助手面板">
-					<AgentPanel
-						result={agentResult}
-						tasks={assistantTasks}
-						tasksLoading={taskLoading}
-						memoryEnabled={memoryEnabled}
-						pendingActionId={pendingActionId}
-						onMemoryEnabledChange={handleMemoryEnabledChange}
-						onOpenMemoryManager={openMemoryManager}
-						onInsertText={insertAgentText}
-						onConfirmAction={confirmAgentAction}
-						onCancelAction={cancelAgentAction}
-						onUpdateTask={updateAssistantTask}
-					/>
-				</aside>,
-				document.body
-			)}
 		</>
 	);
 });

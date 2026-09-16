@@ -191,7 +191,7 @@ const fileMetadataTableSQL = () => `
     status ENUM('uploading', 'ready', 'deleted') NOT NULL DEFAULT 'ready',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_file_hash_ext (file_hash, ext),
+    UNIQUE KEY uniq_file_owner_hash_ext (owner_id, file_hash, ext),
     INDEX idx_file_owner (owner_id, created_at),
     INDEX idx_file_status (status, updated_at),
     FOREIGN KEY (owner_id) REFERENCES user(id) ON DELETE CASCADE
@@ -320,7 +320,8 @@ const runCompatibilityMigrations = async (): Promise<void> => {
 		['friend_idx_room', 'ALTER TABLE friend ADD INDEX idx_friend_room (room)'],
 		['friend_idx_group_user', 'ALTER TABLE friend ADD INDEX idx_friend_group_user (group_id, user_id)'],
 		['group_chat_idx_room', 'ALTER TABLE group_chat ADD INDEX idx_group_chat_room (room)'],
-		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)']
+		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)'],
+		['file_metadata_owner_hash_unique', 'ALTER TABLE file_metadata DROP INDEX uniq_file_hash_ext, ADD UNIQUE KEY uniq_file_owner_hash_ext (owner_id, file_hash, ext)']
 	];
 	for (const [name, sql] of migrations) {
 		await runMigrationSql(name, sql);

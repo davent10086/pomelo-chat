@@ -26,6 +26,7 @@ interface InvitationInput { user_id: number | string; username: string; }
 interface InvitationInsert { group_id: number | string; user_id: number | string; nickname: string; }
 interface GroupIdRow { id: number; }
 interface GroupRoomRow { name?: string; room: string; }
+interface UserIdentityRow { id: number; username: string; }
 
 const isInvitationInput = (value: unknown): value is InvitationInput =>
 	typeof value === 'object' && value !== null &&
@@ -80,6 +81,31 @@ const canAccessGroup = async (userId: number | string, groupId: number | string)
 	return rows.length > 0;
 };
 
+/** Only existing reciprocal contacts may be added without a separate invite workflow. */
+const validateInvitees = async (ownerId: number | string, values: unknown[]): Promise<InvitationInput[] | null> => {
+	const requested = values.filter(isInvitationInput);
+	if (requested.length !== values.length || !requested.length) return null;
+	const ids = [...new Set(requested.map(item => Number(item.user_id)))];
+	if (ids.length !== requested.length) return null;
+	if (ids.some(id => !Number.isInteger(id) || id <= 0)) return null;
+	const users = await Query<UserIdentityRow[]>(`SELECT id, username FROM user WHERE id IN (?)`, [ids]);
+	if (users.length !== ids.length) return null;
+	const byId = new Map(users.map(user => [user.id, user]));
+	for (const item of requested) {
+		const user = byId.get(Number(item.user_id));
+		if (!user || user.username !== item.username) return null;
+	}
+	const nonSelf = ids.filter(id => String(id) !== String(ownerId));
+	if (nonSelf.length) {
+		const contacts = await Query<Array<{ user_id: number }>>(
+			`SELECT f.user_id FROM friend f INNER JOIN friend_group fg ON fg.id = f.group_id WHERE fg.user_id = ? AND f.user_id IN (?)`,
+			[ownerId, nonSelf]
+		);
+		if (contacts.length !== nonSelf.length) return null;
+	}
+	return requested.map(item => ({ user_id: Number(item.user_id), username: item.username }));
+};
+
 /**
  * 创建群聊
  * 1. 服务端拿到创建群聊所需要的信息后在群聊表 (group_chat) 新建一个群聊
@@ -96,6 +122,8 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 		return;
 	}
 	try {
+		const invited = await validateInvitees(req.user!.id, groupInfo.members);
+		if (!invited) return RespError(res, CommonStatus.PARAM_ERR);
 		const uuid = uuidv4();
 		const group_chat = {
 			name: groupInfo.name,
@@ -125,7 +153,7 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 
 			// 插入自己
 			const members = [
-				...groupInfo.members,
+				...invited,
 				{
 					user_id: req.user!.id,
 					username: req.user!.name,
@@ -311,8 +339,8 @@ export const inviteFriendToGroupChat = async (req: Request, res: Response): Prom
 			RespError(res, CommonStatus.TOKEN_ERR);
 			return;
 		}
-		const invitations = invitationList.filter(isInvitationInput);
-		if (!invitations.length) return RespError(res, CommonStatus.PARAM_ERR);
+		const invitations = await validateInvitees(req.user!.id, invitationList);
+		if (!invitations) return RespError(res, CommonStatus.PARAM_ERR);
 		const userIdArr = invitations.map(item => item.user_id);
 		const sql_check = `
 			SELECT user_id

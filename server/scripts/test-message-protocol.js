@@ -23,6 +23,12 @@ assertIncludes('server/src/controller/routes/message.ts', "router.post('/read'",
 assertIncludes('server/src/service/message/index.ts', 'MESSAGE_FANOUT_CHANNEL', 'redis fanout channel');
 assertIncludes('server/src/service/message/index.ts', 'client_msg_id', 'idempotent message handling');
 assertIncludes('server/src/service/message/index.ts', "name: 'ack'", 'server ack frame');
+assertIncludes('server/src/service/message/index.ts', 'enqueueRoomWrite', 'per-room message write serialization');
+assertIncludes(
+  'server/src/service/message/index.ts',
+  /ws\.on\('message'[\s\S]*ws\.send\(JSON\.stringify\(\{ name: 'history'/,
+  'message listener registered before initial history frame'
+);
 assertIncludes('client/src/pages/chat/useChatSocket.ts', "message.name === 'ack'", 'client ack handling');
 assertIncludes('client/src/pages/chat/useChatSocket.ts', "ok: false", 'client failed send handling');
 assertIncludes('client/src/pages/chat/index.tsx', 'markChatRead', 'frontend read cursor reporting');

@@ -209,6 +209,9 @@ const percentile = (arr, p) => {
     record('multi-device second login behavior', 'warn', { message: 'second login is blocked by single-session policy', body: secondLogin.body });
   } else {
     record('multi-device second login behavior', secondLogin.body?.code === 200 ? 'pass' : 'fail', { body: secondLogin.body });
+    if (secondLogin.body?.code === 200 && secondLogin.body.data?.token) {
+      users.new_a.token = secondLogin.body.data.token;
+    }
   }
 
   const authless = await get('/message/chat_list');

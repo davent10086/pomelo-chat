@@ -6,12 +6,13 @@ import { Query } from '../../utils/query';
 import { RespData, RespError } from '../../utils/resp';
 import { CommonStatus } from '../../utils/status';
 import { sendConfirmedTextMessage } from '../message';
+import { externalMcpManager } from './tools/external-mcp';
 
 const ACTION_TTL_SECONDS = 10 * 60;
 const actionPrefix = 'assistant:pending-action:';
 const resultPrefix = 'assistant:action-result:';
 
-export type PendingActionType = 'create_tasks' | 'send_message';
+export type PendingActionType = 'create_tasks' | 'send_message' | 'external_mcp';
 
 export interface AgentAction {
 	type: PendingActionType | 'reply_suggestion';
@@ -162,6 +163,13 @@ const createTasks = async (userId: number, payload: Record<string, unknown>, ind
 
 const executePendingAction = async (action: PendingAction, selection?: unknown): Promise<Record<string, unknown>> => {
 	if (action.type === 'create_tasks') return createTasks(action.userId, action.payload, selection);
+	if (action.type === 'external_mcp') {
+		const name = typeof action.payload.name === 'string' ? action.payload.name : '';
+		const args = action.payload.args;
+		if (!name || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid external MCP action');
+		const result = await externalMcpManager.executeConfirmedTool(name, args as Record<string, unknown>, action.userId);
+		return { type: 'external_mcp', name, result: result as Record<string, unknown> };
+	}
 	const room = typeof action.payload.room === 'string' ? action.payload.room : '';
 	const chatType = action.payload.chatType === 'private' || action.payload.chatType === 'group' ? action.payload.chatType : null;
 	const content = typeof action.payload.content === 'string' ? action.payload.content : '';
