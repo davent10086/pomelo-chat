@@ -34,7 +34,7 @@ flowchart LR
 - 群创建、群成员查询、邀请入群。
 - 文件分片上传、合并与受控访问。
 - LiveKit SFU 音视频通话（本地演示配置）。
-- AI 助手问答、SSE 流式接口、Agent 执行链路、短长期记忆表。
+- AI 助手问答、SSE 流式接口、Agent 执行链路、用户隔离的助手记忆、确认式动作与个人任务。
 - 本地 MCP stdio server，以及外部 MCP 配置加载。
 
 ## 技术栈
@@ -65,6 +65,10 @@ flowchart LR
 │   ├── src/mcp/              # Pomelo MCP stdio server
 │   └── scripts/              # Agent/MCP/安全回归脚本
 ├── qa/                      # QA 自动化、Postman、AI 评测集
+├── tests/                   # Node 单元与数据库安全边界测试
+├── .github/workflows/       # GitHub Actions CI
+├── pnpm-workspace.yaml      # pnpm workspace 定义
+├── pnpm-lock.yaml           # 唯一依赖锁文件
 └── README.md
 ```
 
@@ -77,10 +81,10 @@ flowchart LR
 | `/auth` | 用户认证、用户信息、用户 WebSocket channel |
 | `/friend` | 好友、好友分组、搜索、添加 |
 | `/group` | 群列表、群信息、建群、邀请、成员 |
-| `/message` | 聊天列表、聊天 WebSocket |
+| `/message` | 聊天列表、历史分页、已读游标、聊天 WebSocket |
 | `/file` | 文件校验、分片上传、合并 |
 | `/rtc` | 音视频通话信令 |
-| `/assistant` | AI 聊天、流式聊天、Agent、工具列表、工具调用 |
+| `/assistant` | AI 聊天、流式聊天、Agent、工具调用、确认/取消动作、个人任务 |
 
 ## 本地多人音视频（LiveKit）
 
@@ -104,7 +108,7 @@ sequenceDiagram
   participant D as MySQL
   participant R as Redis
 
-  C->>W: connect_chat?room&id&type&token
+  C->>W: connect_chat?room&id&type (Sec-WebSocket-Protocol token)
   W->>A: verify JWT
   A->>R: check token whitelist
   A-->>W: user context
@@ -113,7 +117,7 @@ sequenceDiagram
   C->>W: message JSON
   W->>D: insert message
   W->>D: update message statistics
-  W-->>C: broadcast message
+  W-->>C: ack + broadcast message
 ```
 
 ## AI Agent 与 MCP
@@ -150,6 +154,8 @@ flowchart TB
 
 外部 MCP 配置由 `MCP_SERVERS_JSON` 读取，实现在 `server/src/service/assistant/tools/external-mcp.ts`。本地 stdio MCP server 位于 `server/src/mcp/pomelo-stdio.ts`，启动脚本为 `pnpm --filter pomelo-chat-server mcp:stdio`。
 
+Agent 产生的发消息草稿、任务创建和外部 MCP 写操作都必须经用户确认。确认状态保存在 Redis，服务端会再次校验用户、聊天目标与动作有效期；确认后可通过 `/assistant/tasks` 查看和更新个人任务。
+
 ## 数据模型
 
 启动后端时，`server/src/model/db.ts` 会按顺序创建以下 MySQL 表：
@@ -163,6 +169,9 @@ erDiagram
   user ||--o{ group_members : joins
   user ||--o{ message : sends
   user ||--o{ assistant_memory : owns
+  user ||--o{ assistant_task : owns
+  conversation ||--o{ conversation_read : tracks
+  conversation ||--o{ message : sequences
 
   user {
     int id
@@ -187,7 +196,24 @@ erDiagram
     varchar category
     varchar content
   }
+  conversation {
+    int id
+    varchar room
+    bigint last_seq
+  }
+  conversation_read {
+    int conversation_id
+    int user_id
+    bigint last_read_seq
+  }
+  assistant_task {
+    int user_id
+    varchar title
+    enum status
+  }
 ```
+
+此外还有 `message_statistics`、`file_metadata`、`schema_migrations` 和 `mcp_audit_log`，分别用于消息计数、受控文件元数据、兼容迁移记录和 MCP 操作审计。
 
 ## 环境变量
 
@@ -208,6 +234,16 @@ REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_DB=0
+REDIS_KEY_PREFIX=
+
+CORS_ORIGINS=http://localhost:5173
+REQUEST_LOGS=true
+API_RATE_LIMIT_WINDOW_SECONDS=60
+API_RATE_LIMIT_MAX=240
+JSON_BODY_LIMIT=2mb
+FORM_BODY_LIMIT=2mb
+MAX_UPLOAD_CHUNKS=100
+MAX_UPLOAD_SIZE_BYTES=104857600
 
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -216,6 +252,18 @@ DEEPSEEK_MODEL=deepseek-chat
 MCP_SERVERS_JSON=[]
 POMELO_MCP_USER_ID=1
 POMELO_MCP_ROOM=
+
+LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_HTTP_URL=http://127.0.0.1:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+测试运行必须使用隔离服务，不能使用生产数据库或 Redis：
+
+```env
+DATABASE_URL_TEST=mysql://root:password@127.0.0.1:3306/pomelo_chat_test
+REDIS_URL_TEST=redis://127.0.0.1:6379/15
 ```
 
 前端常用配置：
@@ -248,6 +296,10 @@ pnpm run build
 ## 测试与 QA
 
 ```powershell
+pnpm lint
+pnpm test:all
+pnpm audit --prod --audit-level=high
+
 pnpm --filter pomelo-chat-server test:agent-routing
 pnpm --filter pomelo-chat-server test:agent
 pnpm --filter pomelo-chat-server test:mcp
@@ -255,6 +307,8 @@ pnpm --filter pomelo-chat-server test:security
 
 node qa/unit-agent-logic.test.js
 node qa/ai-eval.js
+$env:DATABASE_URL_TEST='mysql://root:password@127.0.0.1:3306/pomelo_chat_test'
+$env:REDIS_URL_TEST='redis://127.0.0.1:6379/15'
 pnpm test:qa
 ```
 
@@ -267,28 +321,19 @@ pnpm test:qa
 - `qa/playwright/ai-assistant.e2e.spec.ts`
 - `qa/ai-eval-cases.json`
 
-`qa/qa-full-test.js` 依赖运行中的后端、MySQL、Redis 和可用 AI/MCP 配置。Playwright E2E spec 已生成，但仓库当前没有安装 Playwright 依赖。
+`pnpm test:qa` 会启动测试模式后端，要求显式传入名称含 `test` 的 MySQL URL 和测试 Redis URL；它使用 runId 前缀创建数据，并在结束时清理数据库、Redis key 和临时文件。默认不调用真实 LLM；设置 `QA_RUN_LIVE_AI=true` 并提供隔离凭据才会执行真实模型检查。Playwright E2E spec 已生成，但仓库当前没有安装 Playwright 依赖。
 
 ## 当前已知限制
 
-- 登录逻辑使用 Redis token 白名单，同一账号重复登录会被拦截，当前不是多设备在线模型。
+- 登录使用 Redis token 白名单；重复登录会签发新 token 并使旧 token 失效，因此当前仍不是多设备并行在线模型。
 - Agent stream 接口返回 Agent 事件和最终内容，不是严格 token 级逐字流。
 - MySQL 建表在服务启动时执行，当前没有独立 migration 框架。
 - 外部 MCP 写工具需要显式确认路径，自动 Agent 不直接暴露写工具。
 - 前端生产构建存在 Vite chunk size warning，功能不受影响，但后续可做代码分包。
 
-## 测试账号
+## 测试数据
 
-本地 QA 脚本曾创建以下测试账号和群聊数据，具体是否存在取决于当前数据库：
-
-| 账号 | 密码 | 用途 |
-| --- | --- | --- |
-| `test_alice` | `Pomelo123` | 好友、群聊、AI 助手测试 |
-| `test_bob` | `Pomelo123` | 好友互发消息 |
-| `test_carol` | `Pomelo123` | 群聊成员 |
-| `test_dave` | `Pomelo123` | 群聊成员 |
-
-测试群名：`测试群-Pomelo-2026-07-21`。
+QA 不依赖静态账号。每次运行创建 `qa_<runId>_*` 用户、好友关系和群聊数据，并在结束时清理；不要将 QA 连接串指向生产数据库。
 
 ## License
 
