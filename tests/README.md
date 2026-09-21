@@ -16,14 +16,18 @@ LiveKit server plus isolated test users and rooms; production credentials and ro
 Commands:
 
 ```powershell
-npm run test:unit
-npm run test:database
-npm run test:api
-npm run test:integration
-npm run test:security
-npm run test:coverage
-npm run test:all
+pnpm test:unit
+pnpm test:database
+pnpm test:api
+pnpm test:integration
+pnpm test:security
+pnpm test:coverage
+pnpm test:all
+pnpm test:qa
 ```
 
 Real LLM, browser media, TURN/NAT, WebSocket load, and performance tests are intentionally not part of
 `test:all`: they require their respective isolated services and cost/device/network controls.
+
+`pnpm test:qa` starts an isolated test server and requires `DATABASE_URL_TEST` and `REDIS_URL_TEST`.
+It creates only `qa_<runId>_*` records and deletes its database, Redis, and temporary artifacts on exit.

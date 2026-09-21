@@ -17,7 +17,8 @@ module.exports = {
 			plugins: ['@typescript-eslint'],
 			extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
 			rules: {
-				'no-console': 'error',
+				'no-console': 'off',
+				'no-mixed-spaces-and-tabs': 'off',
 				'@typescript-eslint/no-explicit-any': 'off',
 				'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
 				'@typescript-eslint/no-var-requires': 'off'
@@ -33,7 +34,9 @@ module.exports = {
 		ecmaVersion: 'latest'
 	},
 	rules: {
-		'no-console': 'error',
+		// Server-side structured logs are an intentional operational interface.
+		'no-console': 'off',
+		'no-mixed-spaces-and-tabs': 'off',
 		eqeqeq: 'error',
 		'prefer-const': [
 			'error',

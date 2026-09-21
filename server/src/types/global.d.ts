@@ -1,5 +1,4 @@
 import type { WebSocket } from 'ws';
-import type { JwtPayload } from 'jsonwebtoken';
 
 /**
  * 全局登录用户房间

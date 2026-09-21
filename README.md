@@ -148,7 +148,7 @@ flowchart TB
 - `save_memory`
 - `forget_memory`
 
-外部 MCP 配置由 `MCP_SERVERS_JSON` 读取，实现在 `server/src/service/assistant/tools/external-mcp.ts`。本地 stdio MCP server 位于 `server/src/mcp/pomelo-stdio.ts`，启动脚本为 `npm --prefix server run mcp:stdio`。
+外部 MCP 配置由 `MCP_SERVERS_JSON` 读取，实现在 `server/src/service/assistant/tools/external-mcp.ts`。本地 stdio MCP server 位于 `server/src/mcp/pomelo-stdio.ts`，启动脚本为 `pnpm --filter pomelo-chat-server mcp:stdio`。
 
 ## 数据模型
 
@@ -232,31 +232,30 @@ VITE_SERVER_PORT=3000
 ## 本地运行
 
 ```powershell
-npm install
-npm --prefix server install
-npm --prefix client install
+corepack enable
+pnpm install --frozen-lockfile
 
-npm run dev:server
-npm run dev:client
+pnpm run dev:server
+pnpm run dev:client
 ```
 
 构建：
 
 ```powershell
-npm run build
+pnpm run build
 ```
 
 ## 测试与 QA
 
 ```powershell
-npm --prefix server run test:agent-routing
-npm --prefix server run test:agent
-npm --prefix server run test:mcp
-npm --prefix server run test:security
+pnpm --filter pomelo-chat-server test:agent-routing
+pnpm --filter pomelo-chat-server test:agent
+pnpm --filter pomelo-chat-server test:mcp
+pnpm --filter pomelo-chat-server test:security
 
 node qa/unit-agent-logic.test.js
 node qa/ai-eval.js
-node qa/qa-full-test.js
+pnpm test:qa
 ```
 
 补充产物：

@@ -2521,19 +2521,13 @@ Streaming
 
 Node：
 
-npm run test  
-npm run test:unit  
-npm run test:integration  
-npm run test:e2e  
-npm run test:rtc  
-npm run test:webrtc  
-npm run test:llm  
-npm run test:agent  
-npm run test:security  
-npm run test:coverage  
-npm run test:all
-
-pnpm 项目使用对应 pnpm 命令。
+pnpm run test
+pnpm run test:unit
+pnpm run test:integration
+pnpm run test:security
+pnpm run test:coverage
+pnpm run test:all
+pnpm run test:qa
 
 Go：
 

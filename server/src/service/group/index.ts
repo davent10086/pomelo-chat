@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 
 import { CommonStatus, GroupStatus } from '../../utils/status';
@@ -129,7 +129,7 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 			{ user_id: req.user!.id, username: req.user!.name || req.user!.username }
 		];
 		await withTransaction(async query => {
-			const uuid = uuidv4();
+			const uuid = randomUUID();
 			const group = await query<WriteResult>('INSERT INTO group_chat SET ?', {
 				name: groupInfo.name.trim(), creator_id: req.user!.id, avatar: groupInfo.avatar, announcement: groupInfo.announcement, room: uuid
 			});

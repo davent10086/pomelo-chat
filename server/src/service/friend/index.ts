@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 
 import { CommonStatus, FriendStatus } from '../../utils/status';
@@ -39,7 +39,6 @@ interface UserSearchRow { id: number; name: string | null; username: string; ava
 interface FriendSearchItem extends UserSearchRow { status: boolean; }
 interface FriendGroupListItem { name: string; online_counts: number; friend: FriendRow[]; }
 interface WriteResult { affectedRows: number; insertId?: number; }
-type NewFriendRecord = Omit<FriendRow, 'id'>;
 
 /**
  * 根据分组ID查询好友信息
@@ -70,23 +69,6 @@ const getFriendByUser = async (user_id: number | string): Promise<FriendRow[]> =
 		return friends;
 	} catch {
 		throw new Error('查询失败');
-	}
-};
-
-/**
- * 添加好友记录
- */
-const addFriendRecord = async (friend_info: NewFriendRecord): Promise<string> => {
-	try {
-		const sql = `INSERT INTO friend SET ?`;
-		const results = await Query<WriteResult>(sql, friend_info);
-		if (results.affectedRows === 1) {
-			return '添加成功';
-		} else {
-			throw new Error('添加失败');
-		}
-	} catch {
-		throw new Error('添加失败');
 	}
 };
 
@@ -156,7 +138,7 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 		return;
 	}
 	try {
-		const uuid = uuidv4();
+		const uuid = randomUUID();
 		const outcome = await withTransaction(async query => {
 			const targetRows = await query<Array<{ id: number; username: string; avatar: string | null; name: string | null }>>(
 				'SELECT id, username, avatar, name FROM user WHERE id = ? AND username = ? FOR UPDATE',

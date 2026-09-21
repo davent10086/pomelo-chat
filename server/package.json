@@ -23,7 +23,8 @@
 		"test:message-protocol": "node scripts/test-message-protocol.js",
 		"test:mcp": "node scripts/test-mcp-stdio.js",
 		"mcp:stdio": "ts-node --files src/mcp/pomelo-stdio.ts",
-		"eslint": "eslint --fix --max-warnings=0",
+		"lint": "eslint . --ext .ts --max-warnings=0",
+		"lint:fix": "eslint . --ext .ts --max-warnings=0 --fix",
 		"prettier": "prettier --write \"src/**/*.ts\""
 	},
 	"dependencies": {
@@ -43,7 +44,6 @@
 		"livekit-server-sdk": "^2.19.0",
 		"multer": "1.4.5-lts.1",
 		"mysql": "^2.18.1",
-		"uuid": "^9.0.0",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
@@ -55,10 +55,9 @@
 		"@types/multer": "^1.4.11",
 		"@types/mysql": "^2.15.26",
 		"@types/node": "^20.11.30",
-		"@types/uuid": "^9.0.8",
 		"@typescript-eslint/eslint-plugin": "^7.4.0",
 		"@typescript-eslint/parser": "^7.4.0",
-		"eslint": "8.38.0",
+		"eslint": "^8.57.1",
 		"lint-staged": "^15.2.2",
 		"nodemon": "^3.1.7",
 		"prettier": "^3.2.5",
@@ -67,7 +66,7 @@
 	},
 	"lint-staged": {
 		"**/*.ts": [
-			"npm run eslint"
+			"pnpm run lint:fix"
 		]
 	}
 }

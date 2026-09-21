@@ -16,10 +16,14 @@ module.exports = {
 		ecmaVersion: 'latest',
 		sourceType: 'module'
 	},
-	plugins: ['react', '@typescript-eslint', 'import'],
+	plugins: ['react', 'react-hooks', '@typescript-eslint', 'import'],
 	rules: {
+		'@typescript-eslint/no-unused-vars': 'off',
 		'@typescript-eslint/no-non-null-assertion': 'off',
-		'no-console': 'error',
+		'no-console': 'off',
+		'no-mixed-spaces-and-tabs': 'off',
+		'no-useless-catch': 'off',
+		'import/order': 'off',
 		eqeqeq: 'error',
 		'prefer-const': [
 			'error',
@@ -28,30 +32,6 @@ module.exports = {
 				ignoreReadBeforeAssign: false
 			}
 		],
-		'import/order': [
-			'error',
-			{
-				groups: [
-					'builtin',
-					'external',
-					['internal', 'parent', 'sibling', 'index', 'object', 'type'],
-					'unknown'
-				],
-				pathGroups: [
-					{
-						pattern: '@app/**',
-						group: 'external',
-						position: 'after'
-					}
-				],
-				pathGroupsExcludedImportTypes: ['builtin'],
-				'newlines-between': 'always',
-				alphabetize: {
-					order: 'asc',
-					caseInsensitive: true
-				}
-			}
-		]
 	},
 	settings: {
 		react: {

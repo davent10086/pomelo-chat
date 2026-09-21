@@ -112,14 +112,6 @@ type UnknownRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is UnknownRecord =>
 	typeof value === 'object' && value !== null;
 
-const stringProperty = (value: UnknownRecord, key: string): string => {
-	const property = value[key];
-	return typeof property === 'string' ? property : '';
-};
-
-const recordArray = (value: unknown): UnknownRecord[] =>
-	Array.isArray(value) ? value.filter(isRecord) : [];
-
 interface ToolPayload {
 	isError?: boolean;
 	content?: unknown;
