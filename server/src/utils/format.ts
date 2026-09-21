@@ -1,6 +1,6 @@
 // 文件大小转换
 export const formatBytes = (bytes: number, decimals = 2): string => {
-	if (bytes === 0) return '0B';
+	if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
 
 	const k = 1024;
 	const dm = decimals < 0 ? 0 : decimals;

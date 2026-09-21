@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 require('ts-node/register/transpile-only');
 
 const { classifyIntent, chooseAgents } = require('../src/service/assistant/agent-orchestrator');
@@ -38,6 +40,10 @@ assert.deepEqual(normalizeAgentRequest('x'.repeat(129), { currentChatType: 'inva
 	context: { currentChatType: undefined, currentReceiverId: undefined, recentMessagesText: undefined, memoryEnabled: true }
 });
 assert.equal(normalizeAgentRequest('room-1', { memoryEnabled: false }).context.memoryEnabled, false);
+
+const agentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'service', 'assistant', 'agent.ts'), 'utf8');
+assert.match(agentSource, /const AGENT_RECURSION_LIMIT = 12/);
+assert.match(agentSource, /recursionLimit: AGENT_RECURSION_LIMIT/);
 
 console.log('[agent-routing-test] all assertions passed');
 process.exit(0);

@@ -33,7 +33,7 @@ flowchart LR
 - 单聊和群聊消息，WebSocket 实时收发，MySQL 持久化。
 - 群创建、群成员查询、邀请入群。
 - 文件分片上传、合并与受控访问。
-- RTC 信令相关路由。
+- LiveKit SFU 音视频通话（本地演示配置）。
 - AI 助手问答、SSE 流式接口、Agent 执行链路、短长期记忆表。
 - 本地 MCP stdio server，以及外部 MCP 配置加载。
 
@@ -81,6 +81,18 @@ flowchart LR
 | `/file` | 文件校验、分片上传、合并 |
 | `/rtc` | 音视频通话信令 |
 | `/assistant` | AI 聊天、流式聊天、Agent、工具列表、工具调用 |
+
+## 本地多人音视频（LiveKit）
+
+通话使用 LiveKit SFU，而不是浏览器之间的 Mesh P2P。启动本地媒体服务：
+
+```bash
+docker compose -f docker-compose.livekit.yml up -d
+```
+
+默认地址是 `ws://127.0.0.1:7880`，服务端默认 key/secret 为 `devkey`/`secret`，仅可用于本地演示。前后端启动后，用三个独立浏览器配置文件登录同一群聊即可联调语音或视频通话。媒体 UDP 端口范围为 `50000-50100`，HTTP/WebSocket 为 `7880`，RTC TCP 回退端口为 `7881`。
+
+可通过环境变量覆盖服务端连接信息：`LIVEKIT_URL`、`LIVEKIT_HTTP_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`。`POST /rtc/join-token` 会在验证当前用户是该私聊/群聊成员后，返回仅限对应房间、10 分钟有效的发布与订阅 token；`POST /rtc/invite` 仅投递业务邀请，不转发 SDP 或 ICE candidate。
 
 ## 消息链路
 

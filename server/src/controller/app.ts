@@ -74,7 +74,7 @@ const securityHeaders: RequestHandler = (_req, res, next) => {
 	res.setHeader('X-Frame-Options', 'DENY');
 	res.setHeader('Referrer-Policy', 'no-referrer');
 	res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
-	res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+	res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
 	next();
 };
 
@@ -128,6 +128,22 @@ export const registerAppRoutes = (): void => {
 	app.use('/api/chat/v1/rtc', cors, rtcRouter());
 	app.use('/api/chat/v1/file', cors, fileRouter());
 	app.use('/api/chat/v1/assistant', cors, assistantRouter());
+	app.use('/api/chat/v1', (_req, res) => {
+		res.status(404).json({ code: 1007, data: '', message: '资源不存在' });
+	});
+	app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+		const status = typeof (error as { status?: unknown })?.status === 'number'
+			&& (error as { status: number }).status >= 400
+			&& (error as { status: number }).status < 500
+			? (error as { status: number }).status
+			: 500;
+		if (status >= 500) console.error('[http] unhandled request error:', error);
+		res.status(status).json({
+			code: status === 400 ? 1003 : 1001,
+			data: '',
+			message: status === 400 ? '参数错误' : '服务有误'
+		});
+	});
 };
 
 export default app;

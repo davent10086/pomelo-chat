@@ -12,7 +12,7 @@ const invoke = async (handler, userId, body) => {
 	let response;
 	await handler(
 		{ user: { id: userId }, body },
-		{ json: value => { response = value; } }
+		{ status: () => ({ json: value => { response = value; } }) }
 	);
 	return response;
 };

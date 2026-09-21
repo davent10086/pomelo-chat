@@ -115,10 +115,10 @@ export const verifyFile = async (req: Request, res: Response): Promise<void> => 
  * 上传文件块
  */
 export const uploadChunk = async (req: Request, res: Response): Promise<void> => {
-	const chunk = req.file!.buffer;
-	const chunkIndex = parseInt(req.body.chunkIndex, 10);
-	const fileHash = req.body.fileHash;
-	const extname = req.body.extname;
+	const chunk = req.file?.buffer;
+	const chunkIndex = parseInt(req.body?.chunkIndex, 10);
+	const fileHash = req.body?.fileHash;
+	const extname = req.body?.extname;
 
 	const paths = getUploadPaths(req.user!.id, fileHash, extname);
 	if (!paths || !Number.isInteger(chunkIndex) || chunkIndex < 1 || !chunk || !isAllowedUploadMime(req.file?.mimetype)) {

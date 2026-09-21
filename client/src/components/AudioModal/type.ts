@@ -1,13 +1,6 @@
 /**
  * 接口参数类型定义
  */
-// 建立音视频通话的 websocket 连接所需要传递的参数类型
-export interface IConnectParams {
-	room: string;
-	username: string;
-	type: 'private' | 'group';
-}
-
 /**
  * 组件中用到的其它类型定义
  */
@@ -35,14 +28,6 @@ export enum CallStatus {
 	CALLING = 'calling'
 }
 export type callStatusType = 'initiate' | 'receive' | 'calling';
-// 音视频通话对象涉及的信息类型
-export interface ICallList {
-	[username: string]: {
-		PC: RTCPeerConnection | null;
-		alias: string; // 好友备注或群昵称
-		avatar: string;
-	};
-}
 // 在当前房间内正在通话的所有人的信息
 export interface IRoomMembersItem {
 	username: string;

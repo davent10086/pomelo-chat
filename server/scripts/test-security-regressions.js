@@ -41,6 +41,9 @@ assert.match(message, /verifyTokenWithSession/);
 assert.match(message, /authorizeChatRoom/);
 
 const rtc = readSource('service', 'rtc', 'index.ts');
-assert.match(rtc, /verifyTokenWithSession/);
+const rtcRoutes = readSource('controller', 'routes', 'rtc.ts');
+assert.match(rtcRoutes, /router\.post\('\/join-token', authenticateToken, rtc\.createJoinToken\)/);
+assert.match(rtcRoutes, /router\.post\('\/invite', authenticateToken, rtc\.invite\)/);
+assert.match(rtc, /await canAccessRoom\(req\.user\.id, room, type\)/);
 
 console.log('Security regression checks passed.');

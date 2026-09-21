@@ -25,6 +25,7 @@ const API_BASE = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').r
 const API_KEY = process.env.DEEPSEEK_API_KEY || '';
 const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const UPSTREAM_TIMEOUT_MS = 30000;
+const AGENT_RECURSION_LIMIT = 12;
 const MAX_INPUT_LENGTH = 8000;
 const MAX_CONTEXT_LENGTH = 20000;
 const MAX_ROOM_LENGTH = 128;
@@ -445,7 +446,7 @@ const runLangChainAgent = async (
 				})
 			}
 		]
-	}, { signal });
+	}, { signal, recursionLimit: AGENT_RECURSION_LIMIT });
 	const result = parseAgentInvocation(rawResult);
 	const messages = Array.isArray(result?.messages) ? result.messages : [];
 	const lastAiMessage = [...messages]

@@ -13,6 +13,27 @@ let port = parseInt(process.env.DB_PORT || '3306', 10);
 let user = process.env.DB_USER || 'root';
 let password = process.env.DB_PASSWORD || '';
 let database = process.env.DB_NAME || 'pomelo-chat';
+const testDatabaseUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;
+
+/** Test databases must be unmistakably named so an accidental test run cannot write production data. */
+export const assertTestDatabaseTarget = (databaseName: string): void => {
+	if (!/(^|[_-])test([_-]|$)|[_-]test$/i.test(databaseName)) {
+		throw new Error(`Refusing to run tests against non-test database: ${databaseName}. Configure DATABASE_URL_TEST.`);
+	}
+};
+
+if (testDatabaseUrl) {
+	try {
+		const parsed = new URL(testDatabaseUrl);
+		host = parsed.hostname;
+		port = Number(parsed.port || 3306);
+		user = decodeURIComponent(parsed.username);
+		password = decodeURIComponent(parsed.password);
+		database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+	} catch {
+		throw new Error('DATABASE_URL_TEST must be a valid MySQL connection URL');
+	}
+}
 
 const configPaths = [
 	path.join(process.cwd(), './config.json'),
@@ -23,11 +44,11 @@ if (configPath) {
 	try {
 		const res = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 		// 仅在环境变量未设置时使用配置文件的值
-		if (!process.env.DB_HOST) host = res.host || host;
-		if (!process.env.DB_PORT) port = res.port || port;
-		if (!process.env.DB_USER) user = res.user || user;
-		if (!process.env.DB_PASSWORD) password = res.password || password;
-		if (!process.env.DB_NAME) database = res.database || database;
+		if (!process.env.DB_HOST && !testDatabaseUrl) host = res.host || host;
+		if (!process.env.DB_PORT && !testDatabaseUrl) port = res.port || port;
+		if (!process.env.DB_USER && !testDatabaseUrl) user = res.user || user;
+		if (!process.env.DB_PASSWORD && !testDatabaseUrl) password = res.password || password;
+		if (!process.env.DB_NAME && !testDatabaseUrl) database = res.database || database;
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
 		// eslint-disable-next-line no-console
@@ -50,13 +71,19 @@ const db = mysql.createPool({
 	connectionLimit: 10
 });
 
+const assertSafeTestDatabaseConfiguration = (): void => {
+	if (process.env.NODE_ENV !== 'test' && process.env.APP_ENV !== 'test') return;
+	if (!testDatabaseUrl) throw new Error('DATABASE_URL_TEST (or TEST_DATABASE_URL) is required when running database tests');
+	assertTestDatabaseTarget(database);
+};
+
 /**
  * 3. 建表
  * L4: 改为串行化建表，保证外键依赖顺序
  */
-const runSql = (sql: string): Promise<void> =>
+const runSql = <T = unknown>(sql: string, values?: unknown): Promise<T> =>
 	new Promise((resolve, reject) => {
-		db.query(sql, error => (error ? reject(error) : resolve()));
+		db.query(sql, values, (error, results) => (error ? reject(error) : resolve(results as T)));
 	});
 
 const runMigrationSql = async (name: string, sql: string): Promise<void> => {
@@ -71,6 +98,15 @@ const runMigrationSql = async (name: string, sql: string): Promise<void> => {
 		console.error(`[db:migration] ${name} failed:`, err.message || String(caught));
 		throw caught;
 	}
+};
+
+const isMigrationApplied = async (name: string): Promise<boolean> => {
+	const rows = await runSql<Array<{ id: string }>>('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1', [name]);
+	return rows.length > 0;
+};
+
+const recordMigration = async (name: string): Promise<void> => {
+	await runSql('INSERT INTO schema_migrations (id) VALUES (?)', [name]);
 };
 
 // 表结构定义（独立函数，仅返回 SQL）
@@ -279,6 +315,7 @@ const mcpAuditLogTableSQL = () => `
 // L4: 串行建表，保证外键依赖顺序
 export const initDatabase = async (): Promise<void> => {
 	try {
+		assertSafeTestDatabaseConfiguration();
 		// 顺序：user → friend_group → friend → group_chat → group_members → message → message_statistics
 		await runSql(userTableSQL());
 		await runSql(friendGroupTableSQL());
@@ -302,6 +339,7 @@ export const initDatabase = async (): Promise<void> => {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
 		// eslint-disable-next-line no-console
 		console.error('MySQL 数据表初始化/迁移失败:', err.message);
+		throw err;
 	}
 };
 
@@ -320,12 +358,29 @@ const runCompatibilityMigrations = async (): Promise<void> => {
 		['friend_idx_room', 'ALTER TABLE friend ADD INDEX idx_friend_room (room)'],
 		['friend_idx_group_user', 'ALTER TABLE friend ADD INDEX idx_friend_group_user (group_id, user_id)'],
 		['group_chat_idx_room', 'ALTER TABLE group_chat ADD INDEX idx_group_chat_room (room)'],
-		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)'],
-		['file_metadata_owner_hash_unique', 'ALTER TABLE file_metadata DROP INDEX uniq_file_hash_ext, ADD UNIQUE KEY uniq_file_owner_hash_ext (owner_id, file_hash, ext)']
+		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)']
 	];
 	for (const [name, sql] of migrations) {
+		if (await isMigrationApplied(name)) continue;
 		await runMigrationSql(name, sql);
-		await runMigrationSql(`record_${name}`, `INSERT IGNORE INTO schema_migrations (id) VALUES ('${name}')`);
+		await recordMigration(name);
+	}
+
+	const fileMetadataMigration = 'file_metadata_owner_hash_unique';
+	if (!await isMigrationApplied(fileMetadataMigration)) {
+		const desiredIndex = await runSql<Array<{ Key_name: string }>>(
+			'SHOW INDEX FROM file_metadata WHERE Key_name = ?',
+			['uniq_file_owner_hash_ext']
+		);
+		if (!desiredIndex.length) {
+			const legacyIndex = await runSql<Array<{ Key_name: string }>>(
+				'SHOW INDEX FROM file_metadata WHERE Key_name = ?',
+				['uniq_file_hash_ext']
+			);
+			if (legacyIndex.length) await runMigrationSql(fileMetadataMigration, 'ALTER TABLE file_metadata DROP INDEX uniq_file_hash_ext');
+			await runMigrationSql(fileMetadataMigration, 'ALTER TABLE file_metadata ADD UNIQUE KEY uniq_file_owner_hash_ext (owner_id, file_hash, ext)');
+		}
+		await recordMigration(fileMetadataMigration);
 	}
 };
 
@@ -347,8 +402,9 @@ const backfillCompatibilityData = async (): Promise<void> => {
 		]
 	];
 	for (const [name, sql] of backfills) {
+		if (await isMigrationApplied(name)) continue;
 		await runMigrationSql(name, sql);
-		await runMigrationSql(`record_${name}`, `INSERT IGNORE INTO schema_migrations (id) VALUES ('${name}')`);
+		await recordMigration(name);
 	}
 };
 
@@ -357,21 +413,14 @@ const backfillCompatibilityData = async (): Promise<void> => {
  */
 export const assertDatabaseConnection = (): Promise<void> =>
 	new Promise((resolve, reject) => {
+		try {
+			assertSafeTestDatabaseConfiguration();
+		} catch (error) {
+			reject(error);
+			return;
+		}
 		db.query('select 1', error => (error ? reject(error) : resolve()));
 	});
-
-if (process.env.POMELO_SKIP_AUTO_DB_INIT !== 'true') {
-	db.query('select 1', async error => {
-		if (error) {
-			// eslint-disable-next-line no-console
-			console.error('MySQL 连接失败', error.message);
-			process.exit(1);
-		}
-		// eslint-disable-next-line no-console
-		console.log('MySQL 连接成功');
-		await initDatabase();
-	});
-}
 
 /**
  * 5、将连接好的数据库对象向外导出, 供外界使用

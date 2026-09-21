@@ -16,7 +16,18 @@ const respHttp = (res: Response, respCode: number, data?: unknown): void => {
 	resp.code = respCode;
 	resp.data = data || '';
 	resp.message = StatusMap[respCode] || 'success';
-	res.json(resp);
+	const httpStatus = respCode === SUCCESS_CODE
+		? 200
+		: respCode === 1002
+			? 401
+			: respCode === 1006
+				? 403
+				: respCode === 1007
+					? 404
+					: respCode === 1001
+						? 500
+						: 400;
+	res.status(httpStatus).json(resp);
 };
 
 // 请求成功
