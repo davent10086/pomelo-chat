@@ -20,18 +20,18 @@ assertIncludes('server/src/model/db.ts', 'export const initDatabase', 'explicit 
 assertIncludes('server/package.json', '"db:migrate"', 'db migration script');
 assertIncludes('server/src/controller/routes/message.ts', "router.get('/history'", 'history route');
 assertIncludes('server/src/controller/routes/message.ts', "router.post('/read'", 'read route');
-assertIncludes('server/src/service/message/index.ts', 'MESSAGE_FANOUT_CHANNEL', 'redis fanout channel');
-assertIncludes('server/src/service/message/index.ts', 'client_msg_id', 'idempotent message handling');
-assertIncludes('server/src/service/message/index.ts', "name: 'ack'", 'server ack frame');
-assertIncludes('server/src/service/message/index.ts', 'enqueueRoomWrite', 'per-room message write serialization');
+assertIncludes('server/src/service/message/delivery.ts', 'MESSAGE_FANOUT_CHANNEL', 'redis fanout channel');
+assertIncludes('server/src/service/message/writes.ts', 'client_msg_id', 'idempotent message handling');
+assertIncludes('server/src/service/message/socket.ts', "name: 'ack'", 'server ack frame');
+assertIncludes('server/src/service/message/socket.ts', 'enqueueRoomWrite', 'per-room message write serialization');
 assertIncludes(
-  'server/src/service/message/index.ts',
-  /ws\.on\('message'[\s\S]*ws\.send\(JSON\.stringify\(\{ name: 'history'/,
+  'server/src/service/message/socket.ts',
+  /ws\.on\('message'[\s\S]*sendFrame\(ws,\s*\{\s*name: 'history'/,
   'message listener registered before initial history frame'
 );
 assertIncludes('client/src/pages/chat/useChatSocket.ts', "message.name === 'ack'", 'client ack handling');
-assertIncludes('client/src/pages/chat/useChatSocket.ts', "ok: false", 'client failed send handling');
-assertIncludes('client/src/pages/chat/index.tsx', 'markChatRead', 'frontend read cursor reporting');
+assertIncludes('client/src/pages/chat/useChatSocket.ts', "return false", 'client failed send handling');
+assertIncludes('client/src/pages/chat/useReadReceipt.ts', 'markChatRead', 'frontend read cursor reporting');
 assertIncludes('client/src/components/MessageShow/index.tsx', '发送失败', 'failed send indicator');
 assertIncludes('server/src/utils/rate-limit.ts', 'createRateLimiter', 'generic API rate limiter');
 assertIncludes('server/src/controller/app.ts', 'apiRateLimit', 'API rate limiter mounted');

@@ -59,6 +59,8 @@ export async function uploadFile(
 	retryDelay?: number,
 	progress_cb?: (progress: number) => void
 ): Promise<IUploadFileRes> {
+	if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('文件大小需在 1B 到 100MB 之间');
+	if (!Number.isFinite(baseChunkSize) || baseChunkSize < 1 || baseChunkSize > 10) throw new Error('分片大小无效');
 	return new Promise((resolve, reject) => {
 		const chunkList: ArrayBuffer[] = [];
 		let fileHash = '';

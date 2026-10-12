@@ -24,3 +24,6 @@ Thumbs.db
 
 # Generated test artifacts
 tmp/
+
+test-results/
+playwright-report/

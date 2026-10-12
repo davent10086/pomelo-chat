@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { CommonStatus, FriendStatus } from '../../utils/status';
 import { RespData, RespSuccess, RespError } from '../../utils/resp';
 import { NotificationUser } from '../../utils/notification';
+import { getNotificationSocket } from '../../utils/notification-connections';
 import { Query, withTransaction } from '../../utils/query';
 
 interface FriendRow {
@@ -17,9 +18,17 @@ interface FriendRow {
 	room: string;
 }
 
-interface FriendGroupIdRow { id: number; user_id?: number | string; }
-interface FriendGroupRow extends FriendGroupIdRow { name: string; }
-interface FriendGroupRecord extends FriendGroupRow { user_id: number | string; username: string; }
+interface FriendGroupIdRow {
+	id: number;
+	user_id?: number | string;
+}
+interface FriendGroupRow extends FriendGroupIdRow {
+	name: string;
+}
+interface FriendGroupRecord extends FriendGroupRow {
+	user_id: number | string;
+	username: string;
+}
 interface FriendDetailRow {
 	friend_id: number;
 	friend_user_id: number;
@@ -35,10 +44,24 @@ interface FriendDetailRow {
 	name: string | null;
 	signature: string | null;
 }
-interface UserSearchRow { id: number; name: string | null; username: string; avatar: string | null; }
-interface FriendSearchItem extends UserSearchRow { status: boolean; }
-interface FriendGroupListItem { name: string; online_counts: number; friend: FriendRow[]; }
-interface WriteResult { affectedRows: number; insertId?: number; }
+interface UserSearchRow {
+	id: number;
+	name: string | null;
+	username: string;
+	avatar: string | null;
+}
+interface FriendSearchItem extends UserSearchRow {
+	status: boolean;
+}
+interface FriendGroupListItem {
+	name: string;
+	online_counts: number;
+	friend: FriendRow[];
+}
+interface WriteResult {
+	affectedRows: number;
+	insertId?: number;
+}
 
 /**
  * 根据分组ID查询好友信息
@@ -133,17 +156,26 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 	const sender = req.user!;
 	const { id, username } = req.body || {};
 	const targetId = Number(id);
-	if (!sender || !Number.isInteger(targetId) || targetId <= 0 || typeof username !== 'string' || !username.trim() || targetId === Number(sender.id)) {
+	if (
+		!sender ||
+		!Number.isInteger(targetId) ||
+		targetId <= 0 ||
+		typeof username !== 'string' ||
+		!username.trim() ||
+		targetId === Number(sender.id)
+	) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
 	try {
 		const uuid = randomUUID();
 		const outcome = await withTransaction(async query => {
-			const targetRows = await query<Array<{ id: number; username: string; avatar: string | null; name: string | null }>>(
-				'SELECT id, username, avatar, name FROM user WHERE id = ? AND username = ? FOR UPDATE',
-				[targetId, username.trim()]
-			);
+			const targetRows = await query<
+				Array<{ id: number; username: string; avatar: string | null; name: string | null }>
+			>('SELECT id, username, avatar, name FROM user WHERE id = ? AND username = ? FOR UPDATE', [
+				targetId,
+				username.trim()
+			]);
 			if (!targetRows.length) return 'invalid';
 			const groups = await query<FriendGroupIdRow[]>(
 				'SELECT id, user_id FROM friend_group WHERE user_id IN (?, ?) ORDER BY user_id, id FOR UPDATE',
@@ -153,25 +185,41 @@ export const addFriend = async (req: Request, res: Response): Promise<void> => {
 			const targetGroup = groups.find(group => String(group.user_id) === String(targetId));
 			if (!senderGroup || !targetGroup) throw new Error('default friend group missing');
 			const existing = await query<Array<{ id: number }>>(
-				'SELECT id FROM friend WHERE (group_id = ? AND user_id = ?) OR (group_id = ? AND user_id = ?) FOR UPDATE',
-				[senderGroup.id, targetId, targetGroup.id, sender.id]
+				'SELECT id FROM friend WHERE (owner_id = ? AND user_id = ?) OR (owner_id = ? AND user_id = ?) FOR UPDATE',
+				[sender.id, targetId, targetId, sender.id]
 			);
 			if (existing.length) return 'exists';
 			const target = targetRows[0];
 			await query('INSERT INTO friend SET ?', {
-				user_id: target.id, username: target.username, avatar: target.avatar,
-				online_status: LoginRooms[target.username] ? 'online' : 'offline', remark: target.username, group_id: senderGroup.id, room: uuid
+				owner_id: sender.id,
+				user_id: target.id,
+				username: target.username,
+				avatar: target.avatar,
+				online_status: getNotificationSocket(target.username) ? 'online' : 'offline',
+				remark: target.username,
+				group_id: senderGroup.id,
+				room: uuid
 			});
 			await query('INSERT INTO friend SET ?', {
-				user_id: sender.id, username: sender.username, avatar: sender.avatar,
-				online_status: LoginRooms[sender.username] ? 'online' : 'offline', remark: sender.name, group_id: targetGroup.id, room: uuid
+				owner_id: targetId,
+				user_id: sender.id,
+				username: sender.username,
+				avatar: sender.avatar,
+				online_status: getNotificationSocket(sender.username) ? 'online' : 'offline',
+				remark: sender.name,
+				group_id: targetGroup.id,
+				room: uuid
 			});
 			return 'created';
 		});
 		if (outcome === 'invalid') return RespError(res, CommonStatus.NOT_FOUND);
 		if (outcome === 'exists') return RespError(res, FriendStatus.FRIEND_ALREADY_ADDED);
-		void NotificationUser({ receiver_username: username.trim(), name: 'friendList' }).catch(error => console.error('[friend] notification failed:', error));
-		void NotificationUser({ receiver_username: sender.username, name: 'friendList' }).catch(error => console.error('[friend] notification failed:', error));
+		void NotificationUser({ receiver_username: username.trim(), name: 'friendList' }).catch(error =>
+			console.error('[friend] notification failed:', error)
+		);
+		void NotificationUser({ receiver_username: sender.username, name: 'friendList' }).catch(error =>
+			console.error('[friend] notification failed:', error)
+		);
 		RespSuccess(res);
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
@@ -195,7 +243,11 @@ export const getFriendList = async (req: Request, res: Response): Promise<void> 
 		if (results.length !== 0) {
 			// 获取每个分组下的好友
 			for (const result of results) {
-				const groupFriends: FriendGroupListItem = { name: result.name, online_counts: 0, friend: [] };
+				const groupFriends: FriendGroupListItem = {
+					name: result.name,
+					online_counts: 0,
+					friend: []
+				};
 				const friends = await getFriendByGroup(result.id);
 				// 在线好友数量
 				for (const friend of friends) {
@@ -253,6 +305,8 @@ export const getFriendById = async (req: Request, res: Response): Promise<void> 
 		const results = await Query<FriendDetailRow[]>(sql, [id, req.user!.id]);
 		if (results.length !== 0) {
 			RespData(res, results[0]);
+		} else {
+			RespError(res, CommonStatus.NOT_FOUND);
 		}
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
@@ -299,6 +353,8 @@ export const createFriendGroup = async (req: Request, res: Response): Promise<vo
 		});
 		if (results.affectedRows === 1) {
 			RespSuccess(res);
+		} else {
+			RespError(res, CommonStatus.UPDATE_ERR);
 		}
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
@@ -318,7 +374,14 @@ export const updateFriend = async (req: Request, res: Response): Promise<void> =
 	}
 	try {
 		const sql = `UPDATE friend AS f JOIN friend_group AS target ON target.id = ? AND target.user_id = ? JOIN friend_group AS owner ON owner.id = f.group_id AND owner.user_id = ? SET f.remark = ?, f.group_id = ? WHERE f.id = ?`;
-		const results = await Query<WriteResult>(sql, [group_id, req.user!.id, req.user!.id, remark, group_id, friend_id]);
+		const results = await Query<WriteResult>(sql, [
+			group_id,
+			req.user!.id,
+			req.user!.id,
+			remark,
+			group_id,
+			friend_id
+		]);
 		if (results.affectedRows === 1) {
 			RespSuccess(res);
 		}

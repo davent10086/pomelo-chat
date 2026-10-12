@@ -1,5 +1,5 @@
 @import '@/assets/styles/variables.less';
-@cur-primary-color: #b2e281;
+@cur-primary-color: #a9e77b;
 
 .chat_notice {
 	width: 100%;
@@ -28,6 +28,7 @@
 		img {
 			width: 0.35rem;
 			height: 0.35rem;
+			border-radius: 4px;
 		}
 	}
 
@@ -54,28 +55,22 @@
 	}
 
 	.message_actions {
-		position: absolute;
-		top: -0.3rem;
-		display: none;
-		align-items: center;
-		gap: 0.02rem;
-		padding: 0.02rem;
-		border: 1px solid @primary-border_bg-color;
-		border-radius: 0.06rem;
-		background: @primary-color;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-		z-index: 2;
-	}
-
-	.message_bubble_wrap:hover .message_actions {
-		display: flex;
-	}
+        display: flex;
+        align-items: center;
+        position: absolute;
+        top: 0;
+        right: -36px;
+        opacity: 0;
+        z-index: 2;
+        transition: opacity 120ms;
+        :global(.ant-btn) { min-width: 32px; min-height: 32px; }
+    }
 
 	.content_text {
 		display: block;
 		position: relative;
 		max-width: 3rem;
-		padding: 0.05rem;
+		padding: 8px 10px;
 		word-wrap: break-word;
 		white-space: pre-wrap;
 		border-radius: 0.04rem;
@@ -308,4 +303,34 @@
 			margin-right: 0.1rem;
 		}
 	}
+}
+
+.message_status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    overflow-wrap: anywhere;
+}
+.message_actions :global(.ant-btn):focus-visible {
+    outline: 2px solid @primary-antd-color;
+    outline-offset: -2px;
+}
+
+.chat_item_content .message_status {
+    align-self: flex-end;
+    white-space: normal;
+    margin: 4px 0 0;
+}
+.chat_item_content:hover .message_actions,
+.chat_item_content:focus-within .message_actions { opacity: 1; }
+.other .message_actions { left: auto; right: -36px; }
+.self .message_actions { right: auto; left: -36px; }
+@media (hover: none) { .chat_item_content .message_actions { opacity: 1; } }
+@media (max-width: 700px) {
+    .chat_item_content {
+        .message_bubble_wrap { min-width: 0; max-width: calc(100% - 65px); }
+        .content_text { max-width: 100%; overflow-wrap: anywhere; }
+        .content_file { max-width: 100%; }
+    }
 }

@@ -36,7 +36,7 @@ const authenticate = readSource('utils', 'authenticate.ts');
 assert.match(authenticate, /export const authenticateUploadAccess/);
 assert.match(authenticate, /verifyTokenWithSession\(token\)/);
 
-const message = readSource('service', 'message', 'index.ts');
+const message = readSource('service', 'message', 'socket.ts');
 assert.match(message, /verifyTokenWithSession/);
 assert.match(message, /authorizeChatRoom/);
 

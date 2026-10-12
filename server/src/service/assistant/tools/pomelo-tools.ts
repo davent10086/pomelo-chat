@@ -1,3 +1,5 @@
+import { accessibleRoomType } from '../../message/permissions';
+import { searchRoomMessages, contextRoomMessages, selectMessage, recentRoomMessages, type SearchRow } from '../../message/search';
 import { tool } from 'langchain';
 import { z } from 'zod';
 
@@ -6,6 +8,7 @@ import { Query } from '../../../utils/query';
 export interface PomeloToolContext {
 	userId: number;
 	currentRoom?: string;
+	confirmationId?: string;
 }
 
 export interface PomeloToolDefinition {
@@ -26,13 +29,11 @@ interface PomeloToolSpec extends PomeloToolDefinition {
 	run: (context: PomeloToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
 
-interface RoomAccessRow {
-	ok: 1;
-}
-
 interface RecentMessageRow {
-	sender_id: number;
-	receiver_id: number;
+	id: number;
+	room?: string;
+	sender_id: number | string;
+	receiver_id: number | string;
 	content: string;
 	media_type: 'text' | 'image' | 'video' | 'file';
 	created_at: Date | string;
@@ -64,6 +65,15 @@ interface AssistantMemoryRow {
 	updated_at: Date | string;
 }
 
+interface AssistantTaskRow {
+	id: number;
+	title: string;
+	assignee: string | null;
+	due: string | null;
+	status: 'open' | 'completed';
+	sourceRoom: string | null;
+}
+
 interface WriteResult {
 	affectedRows: number;
 }
@@ -71,6 +81,28 @@ interface WriteResult {
 const recentMessagesSchema = z.object({
 	room: z.string().optional().describe('Chat room id. Defaults to the current room.'),
 	limit: z.number().optional().describe('Message count. Defaults to 30, maximum 80.')
+});
+
+const searchMessagesSchema = z.object({
+	room: z.string().min(1).max(255).optional().describe('Room id; defaults to the current room.'),
+	query: z.string().trim().min(1).max(120).describe('Literal keyword to find in text messages.'),
+	since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('First date to include, YYYY-MM-DD.'),
+	until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Last date to include, YYYY-MM-DD.'),
+	beforeId: z.number().int().positive().optional().describe('Cursor from a previous result.'),
+	limit: z.number().int().min(1).max(20).optional().describe('At most 20 matches; defaults to 10.')
+});
+
+const messageContextSchema = z.object({
+	messageId: z.number().int().positive().describe('Id of the message to inspect.'),
+	before: z.number().int().min(0).max(5).optional().describe('Messages before, up to 5.'),
+	after: z.number().int().min(0).max(5).optional().describe('Messages after, up to 5.')
+});
+
+const listTasksSchema = z.object({
+	status: z.enum(['open', 'completed', 'all']).optional().describe('Defaults to open.'),
+	sourceRoom: z.string().min(1).max(255).optional().describe('Optional source room filter.'),
+	beforeId: z.number().int().positive().optional().describe('Cursor from a previous result.'),
+	limit: z.number().int().min(1).max(20).optional().describe('At most 20 tasks; defaults to 10.')
 });
 
 const searchSchema = z.object({
@@ -97,60 +129,28 @@ const memorySaveSchema = z.object({
 });
 
 const memoryForgetSchema = z.object({
-	query: z.string().min(1).describe('Exact or distinctive text identifying memories to delete.')
+	id: z.number().int().positive().describe('Exact memory id to delete.')
 });
 
-const canAccessRoom = async (userId: number, room: string): Promise<boolean> => {
-	const sql = `
-		SELECT 1 AS ok
-		FROM friend AS f
-		INNER JOIN friend_group AS fg ON fg.id = f.group_id
-		WHERE fg.user_id = ? AND f.room = ?
-		LIMIT 1
-	`;
-	const privateRows = await Query<RoomAccessRow[]>(sql, [userId, room]);
-	if (privateRows.length > 0) return true;
+export const canAccessRoom = async (userId: number, room: string): Promise<boolean> => Boolean(await accessibleRoomType(userId, room));
 
-	const groupSql = `
-		SELECT 1 AS ok
-		FROM group_chat AS gc
-		INNER JOIN group_members AS gm ON gm.group_id = gc.id
-		WHERE gm.user_id = ? AND gc.room = ?
-		LIMIT 1
-	`;
-	const groupRows = await Query<RoomAccessRow[]>(groupSql, [userId, room]);
-	return groupRows.length > 0;
-};
-
-const getRecentMessagesForRoom = async (
-	userId: number,
-	room: string,
-	limit = 30
-): Promise<RecentMessageRow[]> => {
-	if (!room || !(await canAccessRoom(userId, room))) {
-		return [];
-	}
-	const safeLimit = Math.max(1, Math.min(Number(limit) || 30, 80));
-	const sql = `
-		SELECT
-			m.sender_id,
-			m.receiver_id,
-			m.content,
-			m.media_type,
-			m.created_at,
-			u.username AS sender_username,
-			u.name AS sender_name
-		FROM message AS m
-		LEFT JOIN user AS u ON u.id = m.sender_id
-		WHERE m.room = ?
-		ORDER BY m.created_at DESC
-		LIMIT ?
-	`;
-	const rows = await Query<RecentMessageRow[]>(sql, [room, safeLimit]);
-	return rows.reverse();
+export const getRecentMessagesForRoom = async (userId: number, room: string, limit = 30): Promise<RecentMessageRow[]> => {
+ const type = await accessibleRoomType(userId, room);
+ if (!type) return [];
+ return recentRoomMessages(userId, room, type, limit);
 };
 
 const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+const presentMessage = (item: RecentMessageRow) => ({
+	id: item.id,
+	sender: item.sender_name || item.sender_username || item.sender_id,
+	content: item.media_type === 'text' ? item.content.slice(0, 500) : '',
+	type: item.media_type,
+	created_at: item.created_at
+});
+export const isSensitiveMemoryContent = (content: string): boolean =>
+	/(api[_ -]?key|token|password|secret|密钥|密码|口令)/i.test(content);
 
 const pomeloToolSpecs: PomeloToolSpec[] = [
 	{
@@ -173,12 +173,86 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 			);
 			return {
 				messages: messages.map(item => ({
+					id: item.id,
 					sender: item.sender_name || item.sender_username || item.sender_id,
 					content: item.content,
 					type: item.media_type,
 					created_at: item.created_at
 				}))
 			};
+		}
+	},
+	{
+		name: 'search_messages',
+		description: 'Search text messages in one room visible to the current user. Returns message ids and short excerpts for follow-up context lookup.',
+		kind: 'read',
+		inputSchema: {
+			type: 'object', required: ['query'],
+			properties: {
+				room: { type: 'string' }, query: { type: 'string' }, since: { type: 'string', description: 'YYYY-MM-DD' },
+				until: { type: 'string', description: 'YYYY-MM-DD' }, beforeId: { type: 'integer' }, limit: { type: 'integer', maximum: 20 }
+			}
+		},
+		schema: searchMessagesSchema,
+		run: async (context, args) => {
+			const room = asText(args.room) || context.currentRoom || '';
+            const type = await accessibleRoomType(context.userId, room);
+            if (!type) return { matches: [], hasMore: false };
+            const result = await searchRoomMessages(context.userId, room, type, {
+                query: asText(args.query), since: args.since as string | undefined, until: args.until as string | undefined,
+                beforeId: args.beforeId as number | undefined, limit: Number(args.limit) || 10
+            });
+            if (!result) return { matches: [], hasMore: false };
+            return { matches: result.messages.map(item => ({ ...presentMessage(item), content: item.content.slice(0, 240) })),
+                hasMore: result.hasMore, nextBeforeId: result.hasMore ? result.nextBeforeId : undefined };
+
+		}
+	},
+	{
+		name: 'get_message_context',
+		description: 'Read a message and nearby messages after checking access to its room. Use a message id from search_messages.',
+		kind: 'read',
+		inputSchema: {
+			type: 'object', required: ['messageId'],
+			properties: { messageId: { type: 'integer' }, before: { type: 'integer', maximum: 5 }, after: { type: 'integer', maximum: 5 } }
+		},
+		schema: messageContextSchema,
+		run: async (context, args) => {
+            const messageId = Number(args.messageId);
+            const target = await Query<SearchRow[]>(`${selectMessage} WHERE m.id = ? LIMIT 1`, [messageId]);
+            const room = target[0]?.room;
+            const type = room ? await accessibleRoomType(context.userId, room) : undefined;
+            if (!room || !type) return { found: false, messages: [] };
+            const result = await contextRoomMessages(context.userId, room, type, messageId, Number(args.before ?? 3), Number(args.after ?? 3));
+            return result ? { found: true, room, focusId: messageId, messages: result.messages.map(presentMessage) } : { found: false, messages: [] };
+
+		}
+	},
+	{
+		name: 'list_my_tasks',
+		description: 'List the current user\'s saved personal tasks. Never creates or changes tasks.',
+		kind: 'read',
+		inputSchema: {
+			type: 'object', properties: {
+				status: { type: 'string', enum: ['open', 'completed', 'all'] }, sourceRoom: { type: 'string' },
+				beforeId: { type: 'integer' }, limit: { type: 'integer', maximum: 20 }
+			}
+		},
+		schema: listTasksSchema,
+		run: async (context, args) => {
+			const limit = Number(args.limit) || 10;
+			const conditions = ['user_id = ?'];
+			const values: unknown[] = [context.userId];
+			if (args.status !== 'all') { conditions.push('status = ?'); values.push(args.status || 'open'); }
+			if (args.sourceRoom) { conditions.push('source_room = ?'); values.push(args.sourceRoom); }
+			if (args.beforeId) { conditions.push('id < ?'); values.push(args.beforeId); }
+			const rows = await Query<AssistantTaskRow[]>(
+				`SELECT id, title, assignee, due, status, source_room AS sourceRoom
+				 FROM assistant_task WHERE ${conditions.join(' AND ')} ORDER BY id DESC LIMIT ?`, [...values, limit + 1]
+			);
+			const tasks = rows.slice(0, limit);
+			return { tasks, hasMore: rows.length > limit,
+				nextBeforeId: rows.length > limit ? tasks[tasks.length - 1]?.id : undefined };
 		}
 	},
 	{
@@ -331,27 +405,31 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 		schema: memorySaveSchema,
 		run: async (context, args) => {
 			const content = asText(args.content).trim();
-			if (/(api[_ -]?key|token|password|secret|密钥|密码|口令)/i.test(content)) {
+			if (isSensitiveMemoryContent(content)) {
 				return { saved: false, reason: 'Secrets and credentials are not stored in memory.' };
 			}
 			const category = (asText(args.category).trim() || 'preference').slice(0, 32);
-			await Query('INSERT INTO assistant_memory (user_id, category, content) VALUES (?, ?, ?)', [context.userId, category, content]);
+			if (context.confirmationId) {
+				await Query('INSERT INTO assistant_memory (user_id, category, content, confirmation_id) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)',
+					[context.userId, category, content, context.confirmationId]);
+			} else {
+				await Query('INSERT INTO assistant_memory (user_id, category, content) VALUES (?, ?, ?)', [context.userId, category, content]);
+			}
 			return { saved: true, category, content };
 		}
 	},
 	{
 		name: 'forget_memory',
-		description: 'Delete the current user\'s saved memories matching the requested text. Use only when the user explicitly asks to forget or delete a memory.',
+		description: 'Delete one saved memory by id after user confirmation.',
 		kind: 'write',
 		inputSchema: {
 			type: 'object',
-			required: ['query'],
-			properties: { query: { type: 'string', description: 'Text identifying memories to delete.' } }
+			required: ['id'],
+			properties: { id: { type: 'integer', description: 'Exact memory id.' } }
 		},
 		schema: memoryForgetSchema,
 		run: async (context, args) => {
-			const query = asText(args.query).trim();
-			const result = await Query<WriteResult>('DELETE FROM assistant_memory WHERE user_id = ? AND content LIKE ?', [context.userId, `%${query}%`]);
+			const result = await Query<WriteResult>('DELETE FROM assistant_memory WHERE user_id = ? AND id = ?', [context.userId, args.id]);
 			return { deleted: result.affectedRows || 0 };
 		}
 	}
@@ -369,6 +447,9 @@ export const executePomeloTool = async (
 	if (!spec) {
 		throw new Error(`Unknown tool: ${call.name}`);
 	}
+	if (spec.kind === 'write' && !context.confirmationId) {
+		throw new Error(`Tool ${call.name} requires a confirmed action`);
+	}
 	const args = spec.schema.parse({
 		...(call.args || {}),
 		...(call.room ? { room: call.room } : {})
@@ -381,7 +462,7 @@ export const buildPomeloChatTools = (
 	options: { exclude?: string[] } = {}
 ) =>
 	pomeloToolSpecs
-		.filter(spec => !options.exclude?.includes(spec.name))
+		.filter(spec => spec.kind !== 'write' && !options.exclude?.includes(spec.name))
 		.map(spec =>
 		tool(
 			async args => {

@@ -1,8 +1,10 @@
 packages:
   - server
   - client
+  - desktop
 
 onlyBuiltDependencies:
   - '@swc/core'
   - bcrypt
   - esbuild
+  - electron

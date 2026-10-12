@@ -55,60 +55,36 @@ const hashFile = async (filePath: string, algorithm: 'md5' | 'sha256'): Promise<
 /**
  * 检验文件的上传状态：是否已上传、已上传的文件块
  */
-export const verifyFile = async (req: Request, res: Response): Promise<void> => {
-	const { fileHash, totalCount, extname } = req.body || {};
-	if (!fileHash || !totalCount || !extname) {
-		RespError(res, CommonStatus.PARAM_ERR);
-		return;
-	}
-	const paths = getUploadPaths(req.user!.id, fileHash, extname);
-	const count = Number(totalCount);
-	if (!paths || !Number.isInteger(count) || count < 1 || count > MAX_CHUNK_COUNT) {
-		RespError(res, CommonStatus.PARAM_ERR);
-		return;
-	}
-	const { dirPath, filePath, fileDBPath } = paths;
-	const metadata = await Query<Array<{ storage_path: string }>>('SELECT storage_path FROM file_metadata WHERE owner_id = ? AND file_hash = ? AND ext = ? AND status = \'ready\' LIMIT 1', [req.user!.id, paths.fileHash, paths.ext]);
-	if (metadata.length) return RespData(res, { neededFileList: [], message: '该文件已被上传', filePath: metadata[0].storage_path }, FileStatus.FILE_EXIST);
-	const uploadToken = randomUUID();
-	await better_chat.set(uploadSessionKey(req.user!.id, paths.fileHash, paths.ext), JSON.stringify({ totalCount: count, uploadToken }), 'EX', UPLOAD_SESSION_TTL_SECONDS);
-	let resArr: number[] = Array(count)
-		.fill(0)
-		.map((_, index) => index + 1);
+const registerFile = async (userId: number | string, paths: NonNullable<ReturnType<typeof getUploadPaths>>) => {
+ const stat = await fs.promises.stat(paths.filePath);
+ if (stat.size <= 0 || stat.size > MAX_UPLOAD_SIZE || await hashFile(paths.filePath, paths.fileHash.length === 64 ? 'sha256' : 'md5') !== paths.fileHash) throw new Error('Invalid stored upload');
+ await Query(`INSERT INTO file_metadata (owner_id, file_hash, ext, media_type, storage_path, size, mime, status)
+ VALUES (?, ?, ?, ?, ?, ?, ?, 'ready') ON DUPLICATE KEY UPDATE storage_path = VALUES(storage_path), size = VALUES(size), status = 'ready', updated_at = CURRENT_TIMESTAMP`,
+ [userId,paths.fileHash,paths.ext,paths.suffix,paths.fileDBPath,stat.size,null]);
+};
 
-	try {
-		// 读取文件状态
-		await fs.statSync(filePath);
-		// 读取成功，即秒传
-		const data = { neededFileList: [], message: '该文件已被上传', filePath: fileDBPath };
-		RespData(res, data, FileStatus.FILE_EXIST);
-	} catch (fileError) {
-		try {
-			await fs.statSync(dirPath);
-			const files = await fs.promises.readdir(dirPath);
-			if (files.length < totalCount) {
-				// 计算待上传序列
-				resArr = resArr.filter(fileIndex => {
-					return !files.includes(`chunk-${fileIndex}`);
-				});
-		const data = { neededFileList: resArr, uploadToken };
-				RespData(res, data);
-			} else {
-				// 已上传所有分块但未进行合并, 通知前端合并文件
-				const data = {
-					neededFileList: [],
-					message: '已完成所有分片上传，请合并文件',
-					filePath: fileDBPath,
-					uploadToken
-				};
-				RespData(res, data, FileStatus.ALL_CHUNK_UPLOAD);
-			}
-		} catch (dirError) {
-			// 读取文件夹失败，返回全序列
-		const data = { neededFileList: resArr, uploadToken };
-			RespData(res, data);
-		}
-	}
+export const verifyFile = async (req: Request, res: Response): Promise<void> => {
+ const {fileHash,totalCount,extname} = req.body || {};
+ const paths = getUploadPaths(req.user!.id,fileHash,extname);
+ const count = Number(totalCount);
+ if (!paths || !Number.isInteger(count) || count < 1 || count > MAX_CHUNK_COUNT) return RespError(res,CommonStatus.PARAM_ERR);
+ try {
+  const exists = await fs.promises.stat(paths.filePath).then(stat => stat.isFile()).catch(() => false);
+  if (exists) {
+   await registerFile(req.user!.id,paths);
+   return RespData(res,{neededFileList: [],filePath: paths.fileDBPath},FileStatus.FILE_EXIST);
+  }
+  await Query("UPDATE file_metadata SET status = 'uploading' WHERE owner_id = ? AND file_hash = ? AND ext = ?", [req.user!.id,paths.fileHash,paths.ext]);
+  const key = uploadSessionKey(req.user!.id,paths.fileHash,paths.ext);
+  const candidate = JSON.stringify({totalCount: count,uploadToken: randomUUID()});
+  await better_chat.set(key,candidate,'EX',UPLOAD_SESSION_TTL_SECONDS,'NX');
+  const session = JSON.parse((await better_chat.get(key)) || candidate) as UploadSession;
+  if (session.totalCount !== count) return RespError(res,CommonStatus.PARAM_ERR);
+  await better_chat.expire(key,UPLOAD_SESSION_TTL_SECONDS);
+  const files = await fs.promises.readdir(paths.dirPath).catch(() => [] as string[]);
+  const neededFileList = Array.from({length: count},(_,i) => i+1).filter(i => !files.includes('chunk-'+i));
+  RespData(res,{neededFileList,uploadToken: session.uploadToken}, neededFileList.length ? undefined : FileStatus.ALL_CHUNK_UPLOAD);
+ } catch (err) { console.error('[file] verify failed:',err); RespError(res,CommonStatus.SERVER_ERR); }
 };
 
 /**
@@ -116,7 +92,7 @@ export const verifyFile = async (req: Request, res: Response): Promise<void> => 
  */
 export const uploadChunk = async (req: Request, res: Response): Promise<void> => {
 	const chunk = req.file?.buffer;
-	const chunkIndex = parseInt(req.body?.chunkIndex, 10);
+	const chunkIndex = Number(req.body?.chunkIndex);
 	const fileHash = req.body?.fileHash;
 	const extname = req.body?.extname;
 
@@ -170,6 +146,7 @@ export const mergeFile = async (req: Request, res: Response): Promise<void> => {
 	try {
 		// 检查文件是否已存在
 		await fs.promises.access(filePath);
+		await registerFile(req.user!.id, paths);
 		const data = { message: '文件已存在', filePath: fileDBPath };
 		RespData(res, data);
 		return;
@@ -202,29 +179,12 @@ export const mergeFile = async (req: Request, res: Response): Promise<void> => {
 		if (lockAcquired) await fs.promises.rm(lockPath, { force: true }).catch(() => undefined);
 	}
 
-	// 删除保存分块的文件夹
-	try {
-		await removeDir(dirPath);
-	} catch {
-		/* empty */
-	}
-
-	try {
-		const stat = await fs.promises.stat(filePath);
-		await Query(
-			`INSERT INTO file_metadata (owner_id, file_hash, ext, media_type, storage_path, size, mime, status)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')
-			 ON DUPLICATE KEY UPDATE storage_path = VALUES(storage_path), size = VALUES(size), status = 'ready', updated_at = CURRENT_TIMESTAMP`,
-			[req.user!.id, paths.fileHash, paths.ext, paths.suffix, fileDBPath, stat.size, null]
-		);
-	} catch (caught: unknown) {
-		const err = caught instanceof Error ? caught : new Error(String(caught));
-		console.error('[file] metadata write failed:', err.message);
-	}
-
-	await better_chat.del(uploadSessionKey(req.user!.id, paths.fileHash, paths.ext));
-	const data = { message: '文件合并成功', filePath: fileDBPath };
-	RespData(res, data);
+ try {
+  await registerFile(req.user!.id,paths);
+ } catch (err) { console.error('[file] metadata write failed:',err); return RespError(res,CommonStatus.SERVER_ERR); }
+ await removeDir(dirPath);
+ await better_chat.del(uploadSessionKey(req.user!.id,paths.fileHash,paths.ext)).catch(err => console.error('[file] session cleanup:',err));
+ RespData(res,{message: '文件合并成功',filePath: fileDBPath});
 };
 
 /**

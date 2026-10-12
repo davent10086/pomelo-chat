@@ -31,7 +31,7 @@ export const createPomeloMcpServer = (context: PomeloToolContext): McpServer => 
 		}
 	);
 
-	for (const definition of pomeloToolDefinitions) {
+	for (const definition of pomeloToolDefinitions.filter(item => item.kind !== 'write')) {
 		server.registerTool(
 			definition.name,
 			{

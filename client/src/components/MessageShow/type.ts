@@ -5,6 +5,8 @@ import { MessageType } from '@/components/ChatTool/type';
  */
 // 给右侧显示消息项组件传递的参数类型
 export interface IMessageShowProps {
+	onCancelRetry?: (message: IMessageItem) => void;
+	onRetry?: (message: IMessageItem) => void;
 	showTime: boolean;
 	message: IMessageItem;
 }
@@ -14,6 +16,7 @@ export interface IMessageItem {
 	client_msg_id?: string | null;
 	clientMsgId?: string;
 	room_seq?: number;
+	failureReason?: string;
 	status?: 'pending' | 'sent' | 'failed';
 	sender_id: number;
 	sender_name?: string;

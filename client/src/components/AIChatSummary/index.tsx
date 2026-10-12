@@ -1,5 +1,5 @@
 import { Button, Modal, Spin, message } from 'antd';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { apiBaseURL } from '@/config';
 import { sanitizeAiContent } from '@/utils/sanitize';
@@ -16,6 +16,7 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const streamingRef = useRef<boolean>(false);
+  useEffect(() => () => { abortRef.current?.abort(); streamingRef.current = false; }, []);
 
   // 流式读取 SSE（DeepSeek 兼容 OpenAI 风格）
   const summarizeChat = async () => {
@@ -50,7 +51,7 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }]
+          messages: [{ role: 'user', content: prompt.slice(-7000) }]
         }),
         signal: controller.signal
       });

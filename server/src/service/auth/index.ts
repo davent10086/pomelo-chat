@@ -6,9 +6,23 @@ import type { Request, Response } from 'express';
 
 import { AuthStatus, CommonStatus } from '../../utils/status';
 import { RespData, RespSuccess, RespError } from '../../utils/resp';
-import { secretKey, better_chat, verifyTokenWithSession } from '../../utils/authenticate';
+import {
+	secretKey,
+	better_chat,
+	verifyTokenWithSession,
+	notifySessionChanged,
+	extractToken
+} from '../../utils/authenticate';
 import { NotificationUser } from '../../utils/notification';
-import { Query } from '../../utils/query';
+import {
+	notificationUsers,
+	registerNotificationSocket,
+	removeNotificationSocket
+} from '../../utils/notification-connections';
+import { Query, withTransaction } from '../../utils/query';
+import { assertOwnedAvatar } from '../../utils/attachments';
+import { getCall, transitionCall } from '../rtc/calls';
+import { registerSessionSocket, validateSessionSocket } from '../../utils/socket-session';
 
 // bcrypt 计算 cost
 const BCRYPT_SALT_ROUNDS = 10;
@@ -61,10 +75,20 @@ const buildInfo = (user: UserRow) => ({
 });
 
 // 签发 JWT 并写入 Redis 白名单
-const issueToken = async (user: UserRow): Promise<string> => {
+const releaseUserCall = async (username: string): Promise<void> => {
+	const id = await better_chat.get(`rtc:busy:${username}`);
+	if (id && (await getCall(id))) await transitionCall(id, username, 'leave');
+};
+
+const issueToken = async (user: UserRow, endPreviousCall = false): Promise<string> => {
+	if (endPreviousCall) await releaseUserCall(user.username);
 	const payload = buildPayload(user);
-	const token = jwt.sign(payload, secretKey as jwt.Secret, { expiresIn: JWT_EXPIRES_IN });
+	const token = jwt.sign(payload, secretKey as jwt.Secret, {
+		expiresIn: JWT_EXPIRES_IN,
+		jwtid: crypto.randomUUID()
+	});
 	await better_chat.set(`token:${payload.username}`, token, 'EX', 60 * 60 * 24 * 14); // 14 天
+	await notifySessionChanged(payload.username, token);
 	return token;
 };
 
@@ -74,7 +98,13 @@ const issueToken = async (user: UserRow): Promise<string> => {
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
 	const { username, password } = req.body || {};
-	if (!(username && password)) {
+	if (
+		typeof username !== 'string' ||
+		!username.trim() ||
+		typeof password !== 'string' ||
+		!password ||
+		Buffer.byteLength(password) > 72
+	) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
@@ -109,7 +139,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 			await Query(`UPDATE user SET password = ? WHERE id = ?`, [newHash, user.id]);
 		}
 		// 签发 token。允许重复登录：新 token 会覆盖 Redis 中旧 token，旧会话后续请求自然失效。
-		const token = await issueToken(user);
+		const token = await issueToken(user, true);
 		// 更新好友在线状态
 		const sqlUpdate = `UPDATE friend SET online_status = ? WHERE username = ?`;
 		await Query(sqlUpdate, ['online', username]);
@@ -133,7 +163,14 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 	try {
 		const sql = `UPDATE friend SET online_status = ? WHERE username = ?`;
 		await Query(sql, ['offline', username]);
-		await better_chat.del(`token:${username}`);
+		await better_chat.eval(
+			"if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0",
+			1,
+			`token:${username}`,
+			extractToken(req.headers.authorization) || ''
+		);
+		await notifySessionChanged(username);
+		await releaseUserCall(username);
 		RespSuccess(res);
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
@@ -147,11 +184,22 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
  */
 export const register = async (req: Request, res: Response): Promise<void> => {
 	const { username, password, phone, avatar } = req.body || {};
-	if (!(username && password && phone)) {
+	if (
+		typeof username !== 'string' ||
+		!username.trim() ||
+		username.length > 50 ||
+		typeof password !== 'string' ||
+		!password ||
+		Buffer.byteLength(password) > 72 ||
+		typeof phone !== 'string' ||
+		!/^1[3-9]\d{9}$/.test(phone) ||
+		(typeof avatar === 'string' && avatar.startsWith('/uploads'))
+	) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
 	try {
+		await assertOwnedAvatar(0, avatar);
 		const sql_check = `SELECT username, phone FROM user WHERE username = ? OR phone = ?`;
 		const results_check = await Query<ExistingUserRow[]>(sql_check, [username, phone]);
 		if (results_check.length !== 0) {
@@ -169,17 +217,17 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 			signature: '',
 			salt: '' // 保留字段以兼容旧表结构，bcrypt 不需要
 		};
-		const sql_set_user = `INSERT INTO user SET ?`;
-		const results_set_user = await Query<WriteResult>(sql_set_user, user);
-		if (results_set_user.affectedRows === 1) {
-			const sql_get_user = `SELECT * FROM user WHERE username = ?`;
-			const results_get_user = await Query<UserRow[]>(sql_get_user, [username]);
-			const info: UserRow = results_get_user[0];
-			// 创建默认分组
-			const friend_group = { user_id: info.id, username, name: '我的好友' };
-			await Query(`INSERT INTO friend_group SET ?`, friend_group);
-			RespData(res, { info: buildInfo(info) });
-		}
+		const info = await withTransaction(async query => {
+			const result = await query<{ insertId: number }>('INSERT INTO user SET ?', user);
+			await query('INSERT INTO friend_group SET ?', {
+				user_id: result.insertId,
+				username,
+				name: '我的好友'
+			});
+			const rows = await query<UserRow[]>('SELECT * FROM user WHERE id = ?', [result.insertId]);
+			return rows[0];
+		});
+		RespData(res, { info: buildInfo(info) });
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
 		console.error('[auth] register 异常:', err.message);
@@ -193,7 +241,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 export const forgetPassword = async (req: Request, res: Response): Promise<void> => {
 	const { currentPassword, password } = req.body || {};
 	const userId = req.user?.id;
-	if (!(userId && currentPassword && password) || typeof currentPassword !== 'string' || typeof password !== 'string') {
+	if (
+		!(userId && currentPassword && password) ||
+		typeof currentPassword !== 'string' ||
+		typeof password !== 'string' ||
+		Buffer.byteLength(password) > 72
+	) {
 		RespError(res, CommonStatus.PARAM_ERR);
 		return;
 	}
@@ -214,6 +267,8 @@ export const forgetPassword = async (req: Request, res: Response): Promise<void>
 		const results_set = await Query<WriteResult>(sql_set, [hash, userId]);
 		if (results_set.affectedRows === 1) {
 			await better_chat.del(`token:${req.user!.username}`);
+			await notifySessionChanged(req.user!.username);
+			await releaseUserCall(req.user!.username);
 			RespSuccess(res);
 			return;
 		}
@@ -242,6 +297,7 @@ export const updateInfo = async (req: Request, res: Response): Promise<void> => 
 			RespError(res, AuthStatus.PHONE_EXIT_ERR);
 			return;
 		}
+		await assertOwnedAvatar(req.user!.id, avatar);
 		const info = { avatar, name, phone, signature };
 		const sql_set = `UPDATE user SET ? WHERE username = ?`;
 		const results_set = await Query<WriteResult>(sql_set, [info, username]);
@@ -264,35 +320,77 @@ export const updateInfo = async (req: Request, res: Response): Promise<void> => 
  * H3: 增加 token 认证，防止身份冒充
  */
 export const initUserNotification = async (ws: WebSocket, req: Request): Promise<void> => {
-	const url = req.url!.split('?')[1];
-	const params = new URLSearchParams(url);
-	const curUsername = params.get('username') || '';
-	const token = params.get('token') || '';
-	// 校验 token
-	const decoded = await verifyTokenWithSession(token);
-	if (!decoded || decoded.username !== curUsername) {
-		ws.send(JSON.stringify({ name: 'error', message: '认证失败' }));
-		ws.close(4001, 'unauthorized');
-		return;
-	}
-	LoginRooms[curUsername] = {
-		ws: ws,
-		status: false
-	};
-	for (const username in LoginRooms) {
-		if (username === curUsername) continue;
-		NotificationUser({ receiver_username: username, name: 'friendList' });
-	}
-	ws.on('close', () => {
-		if (LoginRooms[curUsername]) {
-			delete LoginRooms[curUsername];
-			for (const username in LoginRooms) {
-				NotificationUser({ receiver_username: username, name: 'friendList' });
-			}
+	try {
+		const url = req.url!.split('?')[1];
+		const params = new URLSearchParams(url);
+		const curUsername = params.get('username') || '';
+		const token = params.get('token') || '';
+		// 校验 token
+		const decoded = await verifyTokenWithSession(token);
+		if (!decoded || decoded.username !== curUsername) {
+			ws.send(JSON.stringify({ name: 'error', message: '认证失败' }));
+			ws.close(4001, 'unauthorized');
+			return;
 		}
-	});
+		registerSessionSocket(ws, curUsername, token, verifyTokenWithSession);
+		const presenceLease = crypto.randomUUID();
+		await better_chat.set(`presence:${curUsername}`, presenceLease, 'EX', 30);
+		let present = true;
+		const heartbeat = setInterval(() => {
+			void validateSessionSocket(ws)
+				.then(valid =>
+					valid && present && ws.readyState === 1
+						? better_chat.set(`presence:${curUsername}`, presenceLease, 'EX', 30)
+						: undefined
+				)
+				.catch(err => console.error('[auth] presence:', err));
+		}, 15000);
+		heartbeat.unref();
+		const cleanupPresence = async () => {
+			present = false;
+			clearInterval(heartbeat);
+			const removed = await better_chat
+				.eval(
+					"if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0",
+					1,
+					`presence:${curUsername}`,
+					presenceLease
+				)
+				.catch(err => console.error('[auth] presence cleanup:', err));
+			if (removed === 1)
+				await Query('UPDATE friend SET online_status = ? WHERE username = ?', [
+					'offline',
+					curUsername
+				]).catch(err => console.error('[auth] offline update:', err));
+		};
+		if (ws.readyState !== 1) {
+			await cleanupPresence();
+			return;
+		}
+		registerNotificationSocket(curUsername, ws, cleanupPresence);
+		for (const username of notificationUsers()) {
+			if (username === curUsername) continue;
+			void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
+				console.error('[auth] notification:', err)
+			);
+		}
 
-	ws.on('error', (err: Error) => {
-		console.error(`[通知管道] 连接出错 username=${curUsername}:`, err.message);
-	});
+		ws.on('close', () => {
+			if (removeNotificationSocket(curUsername, ws)) {
+				for (const username of notificationUsers()) {
+					void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
+						console.error('[auth] notification:', err)
+					);
+				}
+			}
+		});
+
+		ws.on('error', (err: Error) => {
+			console.error(`[通知管道] 连接出错 username=${curUsername}:`, err.message);
+		});
+		await Query('UPDATE friend SET online_status = ? WHERE username = ?', ['online', curUsername]);
+	} catch (err) {
+		console.error('[auth] notification channel failed:', err);
+		ws.close(4001, 'notification channel unavailable');
+	}
 };

@@ -6,12 +6,11 @@ import { handleLogin } from './api';
 import styles from './index.module.less';
 import { ILoginForm } from './type';
 
-import { BgImage } from '@/assets/images';
 import { IUserInfo } from '@/components/ChangePerInfoModal/type';
 import ChangePwdModal from '@/components/ChangePwdModal';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import { generateRandomString, encrypt, decryptLegacy } from '@/utils/encryption';
+import { encrypt, decryptLegacy } from '@/utils/encryption';
 import { tokenStorage, userStorage } from '@/utils/storage';
 
 /**
@@ -74,14 +73,7 @@ const Login = () => {
 	// 无则向后台发起请求，同时判断是否勾选了记住密码，勾选了则将用户信息存储到本地
 	const handleSubmit = async (values: ILoginForm) => {
 		const { username, password } = values;
-		const res = await getUserInfo();
-		if (res && res.info.username === username) {
-			tokenStorage.setItem(res.token);
-			userStorage.setItem(res.info);
-			showMessage('success', '登录成功');
-			navigate('/');
-			return;
-		} else {
+		{
 			setLoading(true);
 			try {
 				const params = {
@@ -128,7 +120,7 @@ const Login = () => {
 			if (res) {
 				loginFormInstance.setFieldsValue({
 					username: res.info.username,
-					password: generateRandomString()
+					password: ''
 				});
 				setIsRemember(true);
 			} else {
@@ -144,7 +136,7 @@ const Login = () => {
 
 	return (
 		<>
-			<div className={styles.bgContainer} style={{ backgroundImage: `url(${BgImage})` }}>
+			<div className={styles.bgContainer}>
 				<div className={styles.loginContainer}>
 					<div className={styles.text}>
 						<h2>欢迎登录</h2>

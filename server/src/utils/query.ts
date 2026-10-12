@@ -1,11 +1,10 @@
 import db from '../model/db';
-import type { QueryOptions } from 'mysql';
-import type { PoolConnection } from 'mysql';
+import type { PoolConnection, QueryValues } from 'mysql2';
 
 // 封装统一的 sql 语句执行函数
 export const Query = <T>(sql: string, info?: unknown): Promise<T> => {
 	return new Promise((resolve, reject) => {
-		db.query(sql, info as QueryOptions, (err, results) => {
+		db.query(sql, info as QueryValues, (err, results) => {
 			if (err) return reject(err);
 			resolve(results as T);
 		});
@@ -20,7 +19,7 @@ export const withTransaction = async <T>(
 	});
 	const query = <R>(sql: string, info?: unknown): Promise<R> =>
 		new Promise((resolve, reject) => {
-			connection.query(sql, info as QueryOptions, (err, results) => {
+			connection.query(sql, info as QueryValues, (err, results) => {
 				if (err) return reject(err);
 				resolve(results as R);
 			});

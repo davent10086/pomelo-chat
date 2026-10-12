@@ -1,4 +1,4 @@
-import * as mysql from 'mysql';
+import * as mysql from 'mysql2';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -81,9 +81,10 @@ const assertSafeTestDatabaseConfiguration = (): void => {
  * 3. 建表
  * L4: 改为串行化建表，保证外键依赖顺序
  */
+let migrationConnection: mysql.PoolConnection | undefined;
 const runSql = <T = unknown>(sql: string, values?: unknown): Promise<T> =>
 	new Promise((resolve, reject) => {
-		db.query(sql, values, (error, results) => (error ? reject(error) : resolve(results as T)));
+		(migrationConnection || db).query(sql, values as mysql.QueryValues, (error, results) => (error ? reject(error) : resolve(results as T)));
 	});
 
 const runMigrationSql = async (name: string, sql: string): Promise<void> => {
@@ -272,10 +273,12 @@ const assistantMemoryTableSQL = () => `
     user_id INT(11) NOT NULL,
     category VARCHAR(32) NOT NULL DEFAULT 'preference',
     content VARCHAR(1000) NOT NULL,
+	confirmation_id VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_assistant_memory_user (user_id),
-    INDEX idx_assistant_memory_category (user_id, category)
+	INDEX idx_assistant_memory_category (user_id, category),
+	UNIQUE KEY uniq_assistant_memory_action (user_id, confirmation_id)
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
 const assistantTaskTableSQL = () => `
@@ -283,6 +286,8 @@ const assistantTaskTableSQL = () => `
     id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_id INT(11) NOT NULL,
     source_room VARCHAR(255) NULL,
+    confirmation_id VARCHAR(64) NULL,
+    source_index INT NULL,
     title VARCHAR(500) NOT NULL,
     assignee VARCHAR(255) NULL,
     due VARCHAR(255) NULL,
@@ -291,6 +296,24 @@ const assistantTaskTableSQL = () => `
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_assistant_task_user_status (user_id, status),
     INDEX idx_assistant_task_source_room (user_id, source_room),
+    UNIQUE KEY uniq_assistant_task_action (user_id, confirmation_id, source_index),
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+  ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+`;
+const assistantActionTableSQL = () => `
+  CREATE TABLE IF NOT EXISTS assistant_action (
+    id VARCHAR(64) NOT NULL PRIMARY KEY,
+    user_id INT(11) NOT NULL,
+    type VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    selection JSON NULL,
+    result JSON NULL,
+    status ENUM('pending', 'executing', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    expires_at DATETIME NOT NULL,
+    lease_until DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_assistant_action_user (user_id, created_at),
     FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
@@ -316,6 +339,9 @@ const mcpAuditLogTableSQL = () => `
 export const initDatabase = async (): Promise<void> => {
 	try {
 		assertSafeTestDatabaseConfiguration();
+		migrationConnection = await new Promise<mysql.PoolConnection>((resolve, reject) => db.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+		const locks = await runSql<Array<{ acquired: number }>>("SELECT GET_LOCK('pomelo_schema_migration', 60) AS acquired");
+		if (Number(locks[0]?.acquired) !== 1) throw new Error('Migration lock unavailable');
 		// 顺序：user → friend_group → friend → group_chat → group_members → message → message_statistics
 		await runSql(userTableSQL());
 		await runSql(friendGroupTableSQL());
@@ -327,12 +353,24 @@ export const initDatabase = async (): Promise<void> => {
 		await runSql(messageStatisticsTableSQL());
 		await runSql(conversationReadTableSQL());
 		await runSql(fileMetadataTableSQL());
+		await runSql(`CREATE TABLE IF NOT EXISTS message_attachment (
+		 message_id INT NOT NULL, file_id INT NOT NULL, PRIMARY KEY(message_id, file_id), INDEX idx_attachment_file(file_id),
+		 FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE,
+		 FOREIGN KEY(file_id) REFERENCES file_metadata(id) ON DELETE CASCADE
+		) ENGINE=InnoDB`);
+		await runSql(`CREATE TABLE IF NOT EXISTS message_outbox (
+		 message_id INT NOT NULL PRIMARY KEY, attempts INT NOT NULL DEFAULT 0,
+		 next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at DATETIME NULL,
+		 INDEX idx_outbox_pending(delivered_at, next_attempt_at), FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE
+		) ENGINE=InnoDB`);
 		await runSql(assistantMemoryTableSQL());
 		await runSql(assistantTaskTableSQL());
+		await runSql(assistantActionTableSQL());
 		await runSql(mcpAuditLogTableSQL());
 		await runSql(schemaMigrationTableSQL());
 		await runCompatibilityMigrations();
 		await backfillCompatibilityData();
+		await repairSystemData();
 		// eslint-disable-next-line no-console
 		console.log('MySQL 数据表初始化/迁移完成');
 	} catch (caught: unknown) {
@@ -340,7 +378,38 @@ export const initDatabase = async (): Promise<void> => {
 		// eslint-disable-next-line no-console
 		console.error('MySQL 数据表初始化/迁移失败:', err.message);
 		throw err;
+	} finally {
+		if (migrationConnection) {
+			await runSql("SELECT RELEASE_LOCK('pomelo_schema_migration')").catch(() => undefined);
+			migrationConnection.release();
+			migrationConnection = undefined;
+		}
 	}
+};
+
+const repairSystemData = async (): Promise<void> => {
+	const name = 'system_integrity_v1';
+	if (await isMigrationApplied(name)) return;
+	await runMigrationSql('friend_owner', 'ALTER TABLE friend ADD COLUMN owner_id INT NULL');
+	await runSql('UPDATE friend f JOIN friend_group fg ON fg.id = f.group_id SET f.owner_id = fg.user_id WHERE f.owner_id IS NULL');
+	const contacts = await runSql<unknown[]>('SELECT owner_id, user_id FROM friend WHERE owner_id IS NOT NULL GROUP BY owner_id, user_id HAVING COUNT(*) > 1 LIMIT 1');
+	const phones = await runSql<unknown[]>('SELECT phone FROM user GROUP BY phone HAVING COUNT(*) > 1 LIMIT 1');
+	if (contacts.length || phones.length) throw new Error('Resolve duplicate contacts/phone numbers before applying system_integrity_v1; no user histories were deleted');
+	await runMigrationSql('friend_owner_unique', 'ALTER TABLE friend ADD UNIQUE KEY uniq_friend_owner_user(owner_id, user_id)');
+	await runMigrationSql('user_phone_unique', 'ALTER TABLE user ADD UNIQUE KEY uniq_user_phone(phone)');
+	await runSql('START TRANSACTION');
+	try {
+		await runSql(`CREATE TEMPORARY TABLE repaired_message_seq AS SELECT id, room, room_seq AS old_seq,
+		 ROW_NUMBER() OVER (PARTITION BY room ORDER BY id) AS new_seq FROM message`);
+		await runSql(`UPDATE conversation_read cr JOIN conversation c ON c.id = cr.conversation_id
+		 SET cr.last_read_seq = (SELECT COALESCE(MAX(r.new_seq), 0) FROM repaired_message_seq r WHERE r.room = c.room AND r.old_seq <= cr.last_read_seq AND r.old_seq > 0)`);
+		await runSql(`UPDATE message m JOIN repaired_message_seq r ON r.id = m.id JOIN conversation c ON c.room = m.room SET m.room_seq = r.new_seq, m.conversation_id = c.id`);
+		await runSql(`UPDATE conversation c LEFT JOIN (SELECT room, COUNT(*) AS total, MAX(id) AS last_id FROM message GROUP BY room) m ON m.room = c.room SET c.last_seq = COALESCE(m.total, 0), c.last_message_id = m.last_id`);
+		await runSql(`INSERT IGNORE INTO message_attachment(message_id, file_id) SELECT m.id, f.id FROM message m JOIN file_metadata f ON f.owner_id = m.sender_id AND f.storage_path = m.content WHERE m.media_type <> 'text' AND m.media_type = f.media_type AND f.status = 'ready'`);
+		await recordMigration(name);
+		await runSql('COMMIT');
+	} catch (err) { await runSql('ROLLBACK'); throw err; }
+	finally { await runSql('DROP TEMPORARY TABLE IF EXISTS repaired_message_seq'); }
 };
 
 const runCompatibilityMigrations = async (): Promise<void> => {
@@ -348,6 +417,7 @@ const runCompatibilityMigrations = async (): Promise<void> => {
 		['message_add_conversation_id', 'ALTER TABLE message ADD COLUMN conversation_id INT(11) NULL AFTER id'],
 		['message_add_client_msg_id', 'ALTER TABLE message ADD COLUMN client_msg_id VARCHAR(64) NULL AFTER conversation_id'],
 		['message_add_room_seq', 'ALTER TABLE message ADD COLUMN room_seq BIGINT NOT NULL DEFAULT 0 AFTER client_msg_id'],
+		['message_idx_room_type_id', 'ALTER TABLE message ADD INDEX idx_message_room_type_id (room, type, id)'],
 		['message_idx_room_id', 'ALTER TABLE message ADD INDEX idx_message_room_id (room, id)'],
 		['message_idx_room_created', 'ALTER TABLE message ADD INDEX idx_message_room_created (room, created_at)'],
 		['message_idx_receiver_status', 'ALTER TABLE message ADD INDEX idx_message_receiver_status (receiver_id, status, room)'],
@@ -358,7 +428,12 @@ const runCompatibilityMigrations = async (): Promise<void> => {
 		['friend_idx_room', 'ALTER TABLE friend ADD INDEX idx_friend_room (room)'],
 		['friend_idx_group_user', 'ALTER TABLE friend ADD INDEX idx_friend_group_user (group_id, user_id)'],
 		['group_chat_idx_room', 'ALTER TABLE group_chat ADD INDEX idx_group_chat_room (room)'],
-		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)']
+		['group_members_uniq_group_user', 'ALTER TABLE group_members ADD UNIQUE KEY uniq_group_members_group_user (group_id, user_id)'],
+		['assistant_task_confirmation_id', 'ALTER TABLE assistant_task ADD COLUMN confirmation_id VARCHAR(64) NULL'],
+		['assistant_task_source_index', 'ALTER TABLE assistant_task ADD COLUMN source_index INT NULL'],
+		['assistant_task_action_unique', 'ALTER TABLE assistant_task ADD UNIQUE KEY uniq_assistant_task_action (user_id, confirmation_id, source_index)'],
+		['assistant_memory_confirmation_id', 'ALTER TABLE assistant_memory ADD COLUMN confirmation_id VARCHAR(64) NULL'],
+		['assistant_memory_action_unique', 'ALTER TABLE assistant_memory ADD UNIQUE KEY uniq_assistant_memory_action (user_id, confirmation_id)']
 	];
 	for (const [name, sql] of migrations) {
 		if (await isMigrationApplied(name)) continue;

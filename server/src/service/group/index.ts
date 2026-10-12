@@ -5,6 +5,8 @@ import { CommonStatus, GroupStatus } from '../../utils/status';
 import { RespData, RespSuccess, RespError } from '../../utils/resp';
 import { NotificationUser } from '../../utils/notification';
 import { Query, withTransaction } from '../../utils/query';
+import { persistMessage } from '../message/persistence';
+import { assertOwnedAvatar } from '../../utils/attachments';
 
 interface GroupMemberRow {
 	user_id: number;
@@ -122,11 +124,12 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 		return;
 	}
 	try {
+		await assertOwnedAvatar(req.user!.id, groupInfo.avatar);
 		const invited = await validateInvitees(req.user!.id, groupInfo.members);
 		if (!invited) return RespError(res, CommonStatus.PARAM_ERR);
 		const members = [
 			...invited.filter(member => String(member.user_id) !== String(req.user!.id)),
-			{ user_id: req.user!.id, username: req.user!.name || req.user!.username }
+			{ user_id: req.user!.id, username: req.user!.username }
 		];
 		await withTransaction(async query => {
 			const uuid = randomUUID();
@@ -134,8 +137,7 @@ export const createGroupChat = async (req: Request, res: Response): Promise<void
 				name: groupInfo.name.trim(), creator_id: req.user!.id, avatar: groupInfo.avatar, announcement: groupInfo.announcement, room: uuid
 			});
 			if (!group.insertId) throw new Error('group creation failed');
-			await query('INSERT INTO message SET ?', { sender_id: req.user!.id, receiver_id: group.insertId, type: 'group', media_type: 'text', status: 0, content: '大家可以一起聊天了!', room: uuid });
-			await query('INSERT INTO message_statistics SET ?', { room: uuid, total: 1 });
+			await persistMessage(query, {sender_id: req.user!.id, receiver_id: group.insertId, type: 'group', media_type: 'text', file_size: 0, status: 0, content: '大家可以一起聊天了!', room: uuid});
 			await query('INSERT INTO group_members (group_id, user_id, nickname) VALUES ?', [members.map(member => [group.insertId, member.user_id, member.username])]);
 		});
 		for (const member of members) void NotificationUser({ receiver_username: member.username, name: 'groupChatList' }).catch(error => console.error('[group] notification failed:', error));
@@ -386,7 +388,7 @@ export const joinGroupChat = async (req: Request, res: Response): Promise<void> 
 		};
 		// 通知自己，让群聊列表进行更新
 		NotificationUser({
-			receiver_username: sender.name,
+			receiver_username: sender.username,
 			name: 'groupChatList'
 		});
 		RespData(res, options);

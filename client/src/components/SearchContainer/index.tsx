@@ -1,5 +1,5 @@
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
-import { Tooltip, Input } from 'antd';
+import { Dropdown, Input } from 'antd';
 import { useState } from 'react';
 
 import styles from './index.module.less';
@@ -7,7 +7,15 @@ import styles from './index.module.less';
 import AddFriendOrGroupModal from '@/components/AddFriendOrGroupModal';
 import CreateGroupChatModal from '@/components/CreateGroupChatModal';
 
-const SearchContainer = () => {
+const SearchContainer = ({
+	query,
+	onSearchChange,
+	placeholder = '搜索会话或联系人'
+}: {
+	query?: string;
+	onSearchChange?: (value: string) => void;
+	placeholder?: string;
+}) => {
 	const [openAddModal, setAddModal] = useState(false);
 	const [openCreateModal, setCreateModal] = useState(false);
 
@@ -19,29 +27,36 @@ const SearchContainer = () => {
 	const handleCreateModal = (visible: boolean) => {
 		setCreateModal(visible);
 	};
-	const addContent = (
-		<ul>
-			<li onClick={() => handleAddModal(true)}> 加好友/加群 </li>
-			<li onClick={() => handleCreateModal(true)}> 创建群聊 </li>
-		</ul>
-	);
 
 	return (
 		<>
 			<div className={styles.searchContainer}>
-				<div className={styles.searchBox}>
-					<Input size="small" placeholder="搜索" prefix={<SearchOutlined />} />
-				</div>
-				<Tooltip
-					placement="bottomLeft"
-					title={addContent}
-					arrow={false}
-					overlayClassName="addContent"
-				>
-					<div className={styles.addBox}>
-						<PlusOutlined />
+				{onSearchChange && (
+					<div className={styles.searchBox}>
+						<Input
+							size="small"
+							aria-label={placeholder}
+							placeholder={placeholder}
+							prefix={<SearchOutlined />}
+							allowClear
+							value={query}
+							onChange={event => onSearchChange(event.target.value)}
+						/>
 					</div>
-				</Tooltip>
+				)}
+				<Dropdown
+					trigger={['click']}
+					menu={{
+						items: [
+							{ key: 'add', label: '加好友/加群', onClick: () => handleAddModal(true) },
+							{ key: 'create', label: '创建群聊', onClick: () => handleCreateModal(true) }
+						]
+					}}
+				>
+					<button type="button" className={styles.addBox} aria-label="添加好友或群聊">
+						<PlusOutlined />
+					</button>
+				</Dropdown>
 			</div>
 			{
 				// 添加好友或群聊弹窗

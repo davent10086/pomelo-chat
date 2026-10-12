@@ -3,6 +3,7 @@ import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
+import { useChatDraft } from './useChatDraft';
 import { IChatToolProps, IMessageListItem, ISendMessage } from './type';
 
 import { EmojiList } from '@/assets/emoji';
@@ -29,7 +30,13 @@ const ChatTool = (props: IChatToolProps) => {
 	// H11: userStorage.getItem() 已返回对象
 	const user = userProfile && Object.keys(userProfile).length ? userProfile : userStorage.getItem();
 	const showMessage = useShowMessage();
-	const [inputValue, setInputValue] = useState<string>('');
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const {
+		text: inputValue,
+		setValue: setInputValue,
+		saveSelection,
+		clearSent
+	} = useChatDraft(Number(user.id), curChatInfo.room, textareaRef);
 	const [loading, setLoading] = useState(false);
 	const [openAudioModal, setAudioModal] = useState(false);
 	const [openVideoModal, setVideoModal] = useState(false);
@@ -41,14 +48,17 @@ const ChatTool = (props: IChatToolProps) => {
 	const [selectedIndex, setSelectedIndex] = useState<number>(-1);
 	const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
 	const [previewText, setPreviewText] = useState<string>('');
+	const suggestionGeneration = useRef(0);
 	const suggestionFetchAbort = useRef<AbortController | null>(null);
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const buildContextText = (limit = 10) => {
 		const msgs = recentMessages || [];
 		const last = msgs.slice(Math.max(0, msgs.length - limit));
 		return last
-			.map((m: { sender_name?: string; content?: string }) => `${m.sender_name || '用户'}: ${m.content || ''}`)
+			.map(
+				(m: { sender_name?: string; content?: string }) =>
+					`${m.sender_name || '用户'}: ${m.content || ''}`
+			)
 			.join('\n');
 	};
 
@@ -68,6 +78,7 @@ const ChatTool = (props: IChatToolProps) => {
 	};
 
 	const changeInputValue = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		suggestionGeneration.current++;
 		setInputValue(e.target.value);
 		if (showSuggestions) {
 			setShowSuggestions(false);
@@ -89,8 +100,7 @@ const ChatTool = (props: IChatToolProps) => {
 		if (!text) return;
 		const el = textareaRef.current!;
 		const { start, end } = getCursor();
-		const newVal = inputValue.slice(0, start) + text + inputValue.slice(end);
-		setInputValue(newVal);
+		setInputValue(previous => previous.slice(0, start) + text + previous.slice(end));
 		const newPos = start + text.length;
 		requestAnimationFrame(() => {
 			el.focus();
@@ -125,15 +135,21 @@ const ChatTool = (props: IChatToolProps) => {
 
 		const prompt = `基于下面的对话历史，给出最多5条可作为回复或继续对话的短语（简洁，中文，每条不超过50字），并根据用户画像风格适当调整：\n\n对话历史：\n${buildContextText(10)}\n\n当前输入片段：\n${prefixText}\n\n返回格式：用换行分隔列出候选。`;
 
-		const res = await request.post('/assistant/next-steps', {
-			contextText: prompt,
-			count: 5
-		});
-		const steps = (res as { data?: { steps?: string[] } })?.data?.steps || [];
+		const res = await request.post<{ contextText: string; count: number }, { steps: string[] }>(
+			'/assistant/next-steps',
+			{
+				contextText: prompt.slice(-7000),
+				count: 5
+			},
+			{ signal: controller.signal }
+		);
+		if (controller.signal.aborted) throw new Error('cancelled');
+		const steps = res.data.data.steps || [];
 		return steps.slice(0, 5);
 	};
 
 	const triggerSuggestions = async (prefixText: string) => {
+		const epoch = ++suggestionGeneration.current;
 		setShowSuggestions(false);
 		setSuggestions([]);
 		setSelectedIndex(-1);
@@ -143,9 +159,11 @@ const ChatTool = (props: IChatToolProps) => {
 			try {
 				items = await fetchSuggestionsFromBackend(prefixText);
 			} catch {
+				if (epoch !== suggestionGeneration.current || suggestionFetchAbort.current?.signal.aborted)
+					return;
 				items = heuristicSuggestions(prefixText, 5);
 			}
-			if (items && items.length) {
+			if (epoch === suggestionGeneration.current && items && items.length) {
 				setSuggestions(items);
 				setSelectedIndex(0);
 				setShowSuggestions(true);
@@ -157,6 +175,7 @@ const ChatTool = (props: IChatToolProps) => {
 	};
 
 	const cancelSuggestions = () => {
+		suggestionGeneration.current++;
 		if (suggestionFetchAbort.current) {
 			suggestionFetchAbort.current.abort();
 			suggestionFetchAbort.current = null;
@@ -242,6 +261,9 @@ const ChatTool = (props: IChatToolProps) => {
 		} else if ((e.key === 'ArrowRight' || e.key === 'Enter') && showSuggestions && previewText) {
 			e.preventDefault();
 			acceptSuggestion();
+		} else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+			e.preventDefault();
+			void handleSendTextMessage();
 		} else if (e.key === 'ArrowDown' && showSuggestions) {
 			e.preventDefault();
 			setSelectedIndex(prev => Math.min(suggestions.length - 1, prev + 1));
@@ -251,8 +273,9 @@ const ChatTool = (props: IChatToolProps) => {
 		}
 	};
 
-	const handleSendTextMessage = () => {
-		if (inputValue === '') return;
+	const handleSendTextMessage = async () => {
+		if (!inputValue.trim() || loading) return;
+		const sentText = inputValue;
 		try {
 			const newmessage: ISendMessage = {
 				sender_id: user.id,
@@ -261,8 +284,8 @@ const ChatTool = (props: IChatToolProps) => {
 				content: inputValue,
 				avatar: user.avatar
 			};
-			sendMessage(newmessage);
-			setInputValue('');
+			await sendMessage(newmessage);
+			clearSent(sentText);
 		} catch {
 			showMessage('error', '消息发送失败，请重试');
 		}
@@ -272,8 +295,8 @@ const ChatTool = (props: IChatToolProps) => {
 		if (e.target.files!.length > 0) {
 			setLoading(true);
 			const file = e.target.files![0];
-			if (file.size > 2 * 1024 * 1024 * 1024) {
-				showMessage('error', '文件大小不能超过 2G');
+			if (file.size > 100 * 1024 * 1024) {
+				showMessage('error', '文件大小不能超过 100MB');
 				setLoading(false);
 				return;
 			}
@@ -409,7 +432,12 @@ const ChatTool = (props: IChatToolProps) => {
 				<ul className={styles.rightIcons}>
 					{ChatIconList.slice(3, 6).map(item => (
 						<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
-							<button type="button" className={`iconfont ${item.icon}`} aria-label={item.text} onClick={() => handleIconClick(item.icon)}></button>
+							<button
+								type="button"
+								className={`iconfont ${item.icon}`}
+								aria-label={item.text}
+								onClick={() => handleIconClick(item.icon)}
+							></button>
 						</Tooltip>
 					))}
 				</ul>
@@ -434,6 +462,8 @@ const ChatTool = (props: IChatToolProps) => {
 						ref={textareaRef}
 						onChange={e => changeInputValue(e)}
 						onKeyDown={handleKeyDown}
+						onSelect={saveSelection}
+						onBlur={saveSelection}
 						value={inputValue}
 						placeholder="输入消息，Enter 发送，Shift + Enter 换行"
 						aria-label="消息输入框"
@@ -460,7 +490,8 @@ const ChatTool = (props: IChatToolProps) => {
 					</div>
 					<ul>
 						{suggestions.map((s, idx) => (
-							<button type="button"
+							<button
+								type="button"
 								key={idx}
 								className={idx === selectedIndex ? styles.selected : ''}
 								onClick={() => handleSuggestionClick(s)}

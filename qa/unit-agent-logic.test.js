@@ -8,8 +8,9 @@ require('../server/node_modules/dotenv').config({ path: path.join(process.cwd(),
 require('../server/node_modules/ts-node/register/transpile-only');
 
 const { classifyIntent, chooseAgents } = require('../server/src/service/assistant/agent-orchestrator');
-const { normalizeAgentRequest } = require('../server/src/service/assistant/agent');
+const { normalizeAgentRequest, validateTaskCandidateSources } = require('../server/src/service/assistant/agent');
 const { normalizeUploadMetadata } = require('../server/src/utils/file');
+const { hasMcpIdempotencyContract } = require('../server/src/service/assistant/tools/external-mcp');
 
 const agents = (input, room) => chooseAgents(input, room).map(step => step.agent);
 
@@ -51,6 +52,14 @@ assert.deepEqual(normalizeUploadMetadata(hash, '.png'), {
 });
 assert.equal(normalizeUploadMetadata('../escape', 'png'), null);
 assert.equal(normalizeUploadMetadata(hash, '../png'), null);
+assert.equal(hasMcpIdempotencyContract('requestId', { properties: { requestId: { type: 'string' } }, required: ['requestId'] }), true);
+assert.equal(hasMcpIdempotencyContract(undefined, { properties: { requestId: { type: 'string' } }, required: ['requestId'] }), false);
+assert.equal(hasMcpIdempotencyContract('requestId', { properties: { requestId: { type: 'number' } }, required: ['requestId'] }), false);
+assert.equal(hasMcpIdempotencyContract('requestId', { properties: { requestId: { type: 'string' } } }), false);
+assert.deepEqual(validateTaskCandidateSources(
+  [{ title: '完成测试', sourceMessageIds: [12, 999, 12, '12'] }],
+  [{ id: 12, content: '明天完成测试', created_at: '2026-09-27' }]
+)[0].sources.map(source => source.id), [12]);
 
 console.log('[unit-agent-logic] all assertions passed');
 process.exit(0);

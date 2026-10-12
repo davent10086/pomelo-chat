@@ -2,21 +2,28 @@
 
 .addressBook {
 	display: flex;
+	height: 100%;
+	min-height: 0;
 
 	.leftContainer {
-		flex: 5;
-		background-color: @primary-color; // 左侧通讯录列表使用白色
+		flex: 0 0 250px;
+		min-width: 0;
+		background-color: #f5f6f7;
 		display: flex;
 		flex-direction: column;
 		border-right: @primary-border_bg-color 0.002rem solid;
-		height: 6rem;
+		height: 100%;
+		min-height: 0;
 
 		.search {
-			height: 0.6rem;
+			height: 56px;
+			flex-shrink: 0;
 		}
 
 		.list {
-			height: 5.4rem;
+			flex: 1;
+			min-height: 0;
+			overflow: hidden;
 
 			.addressBookTabs {
 				width: 100%;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import styles from './index.module.less';
 import { IChatContainerProps } from './type';
@@ -7,6 +7,7 @@ import AIChatSummary from '@/components/AIChatSummary';
 import MessageShow from '@/components/MessageShow';
 import { IMessageItem } from '@/components/MessageShow/type';
 import request from '@/utils/request';
+import { mergeMessages } from '@/utils/message-merge';
 
 // M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
 const ESTIMATE_ITEM_HEIGHT = 60; // 初始估算高度
@@ -21,15 +22,27 @@ const BUFFER_SIZE = 10;
  * L2: isAtBottomRef 改为 state 镜像，确保重渲染
  */
 const ChatContainer = (props: IChatContainerProps) => {
-	const { historyMsg, newMsg, hasMoreHistory, onLoadMoreHistory, historyLoading } = props;
+	const {
+		historyMsg,
+		newMsg,
+		hasMoreHistory,
+		onLoadMoreHistory,
+		historyLoading,
+		focusMessageId,
+		onRetry,
+		onCancelRetry,
+		onAtBottomChange
+	} = props;
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const messagesWrapRef = useRef<HTMLDivElement>(null);
 	const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
 	const [summary, setSummary] = useState('');
 	const [followNew, setFollowNew] = useState<boolean>(true);
-	const messageCache = useRef<Map<string | number, JSX.Element>>(new Map());
 	// L2: 使用 state 镜像 isAtBottom，确保 FAB 按钮正确重渲染
 	const [isAtBottom, setIsAtBottom] = useState<boolean>(true);
+	const initialScroll = useRef(false);
+	const focusPinned = useRef(true);
+	const anchor = useRef<{ key: string; offset: number }>();
 	const isAtBottomRef = useRef<boolean>(true);
 
 	const [nextSteps, setNextSteps] = useState<string[]>([]);
@@ -37,35 +50,57 @@ const ChatContainer = (props: IChatContainerProps) => {
 	const [nextLoading, setNextLoading] = useState<boolean>(false);
 	const seedRef = useRef<number>(0);
 	// M7: 防抖定时器
+	const nextRequest = useRef<AbortController>();
+	const [layoutVersion, setLayoutVersion] = useState(0);
 	const nextStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// M5: 缓存上限，避免内存泄漏
-	const CACHE_LIMIT = 200;
 
 	// M6: 测量高度缓存
-	const measuredHeights = useRef<Map<number, number>>(new Map());
+	const measuredHeights = useRef<Map<string, number>>(new Map());
 
 	const allMessages = useMemo(() => {
-		return [...(historyMsg || []), ...(newMsg || [])];
+		return mergeMessages(historyMsg || [], newMsg || []);
 	}, [historyMsg, newMsg]);
 
+	useEffect(() => {
+		onAtBottomChange?.(isAtBottom);
+	}, [isAtBottom, onAtBottomChange]);
 	const buildContextText = (limit = 12) => {
 		const msgs = allMessages || [];
 		const last = msgs.slice(Math.max(0, msgs.length - limit));
 		return last
-			.map((m: { sender_name?: string; content?: string }) => `${m.sender_name || '用户'}: ${m.content || ''}`)
+			.map(
+				(m: { sender_name?: string; content?: string }) =>
+					`${m.sender_name || '用户'}: ${m.content || ''}`
+			)
 			.join('\n');
 	};
 
 	const heuristicNextSteps = (count = 3) => {
-		const last = allMessages && allMessages.length ? (allMessages[allMessages.length - 1] as { content?: string }).content || '' : '';
+		const last =
+			allMessages && allMessages.length
+				? (allMessages[allMessages.length - 1] as { content?: string }).content || ''
+				: '';
 		const isQuestion = /[?？]$/.test(last) || /(吗|么|是否|怎么|怎样|如何)/.test(last);
 		const mentionTime = /(今天|明天|后天|今晚|这周|下周|周[一二三四五六日天])/.test(last);
 		const seed = seedRef.current % 3;
 		const templates: string[][] = [
-			['收到，我来跟进这件事，预计今天内给你反馈。', '我们安排一次 30 分钟讨论，确定范围与时间表。', '我先整理一个要点清单，稍后发你确认。'],
-			['我这边先出一个初版方案，我们一起评审下可行性。', '方便的话，把相关资料/示例发我，我先评估工作量。', '我来拉个小群，相关同学一起对齐下细节。'],
-			['我创建一个待办清单，按优先级推进并同步进度。', '这块我先试一下，遇到问题再和你确认。', '我们定一个里程碑节点，按节点回顾与复盘。']
+			[
+				'收到，我来跟进这件事，预计今天内给你反馈。',
+				'我们安排一次 30 分钟讨论，确定范围与时间表。',
+				'我先整理一个要点清单，稍后发你确认。'
+			],
+			[
+				'我这边先出一个初版方案，我们一起评审下可行性。',
+				'方便的话，把相关资料/示例发我，我先评估工作量。',
+				'我来拉个小群，相关同学一起对齐下细节。'
+			],
+			[
+				'我创建一个待办清单，按优先级推进并同步进度。',
+				'这块我先试一下，遇到问题再和你确认。',
+				'我们定一个里程碑节点，按节点回顾与复盘。'
+			]
 		];
 		const items = templates[seed].slice(0, count);
 		if (isQuestion) items[0] = '我先给出一个初步答复，你看是否符合预期？';
@@ -76,8 +111,15 @@ const ChatContainer = (props: IChatContainerProps) => {
 	// H4: 通过后端代理调用（不暴露 API Key）
 	const fetchNextStepsFromBackend = async () => {
 		const prompt = `基于以下最近的对话内容，给出不超过5条"下一步行动建议"，要求：\n1) 中文，简洁，每条不超过30字\n2) 可直接点击作为回复开头或行动声明\n3) 不要编号，按行返回\n\n对话：\n${buildContextText(12)}`;
-		const res = await request.post('/assistant/next-steps', { contextText: prompt, count: 5 });
-		const steps = (res as { data?: { steps?: string[] } })?.data?.steps || [];
+		nextRequest.current?.abort();
+		const controller = new AbortController();
+		nextRequest.current = controller;
+		const res = await request.post<{ contextText: string; count: number }, { steps: string[] }>(
+			'/assistant/next-steps',
+			{ contextText: prompt.slice(-7000), count: 5 },
+			{ signal: controller.signal }
+		);
+		const steps = res.data.data.steps || [];
 		return steps.slice(0, 5);
 	};
 
@@ -91,7 +133,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 			} catch {
 				items = heuristicNextSteps(3);
 			}
-			setNextSteps(items.slice(0, 3));
+			if (!nextRequest.current?.signal.aborted) setNextSteps(items.slice(0, 3));
 		} finally {
 			setNextLoading(false);
 		}
@@ -112,11 +154,34 @@ const ChatContainer = (props: IChatContainerProps) => {
 		};
 	}, [allMessages.length]);
 
+	useEffect(() => () => nextRequest.current?.abort(), []);
+	useEffect(() => {
+		const wrapper = messagesWrapRef.current;
+		if (!wrapper) return;
+		const observer = new ResizeObserver(() => {
+			let changed = false;
+			wrapper.querySelectorAll<HTMLElement>('[data-message-index]').forEach(el => {
+				const index = Number(el.dataset.messageIndex);
+				const height = el.offsetHeight;
+				if (
+					height > 0 &&
+					measuredHeights.current.get(getMessageKey(allMessages[index], index)) !== height
+				) {
+					measuredHeights.current.set(getMessageKey(allMessages[index], index), height);
+					changed = true;
+				}
+			});
+			if (changed) setLayoutVersion(value => value + 1);
+		});
+		wrapper.querySelectorAll('[data-message-index]').forEach(el => observer.observe(el));
+		return () => observer.disconnect();
+	}, [allMessages, visibleRange]);
 	// M6: 累计高度计算（基于测量值或估算值）
 	const getCumulativeHeight = (index: number) => {
 		let total = 0;
-		for (let i = 0; i < index; i++) {
-			total += measuredHeights.current.get(i) || ESTIMATE_ITEM_HEIGHT;
+		for (let i = 0; i < Math.min(index, allMessages.length); i++) {
+			total +=
+				measuredHeights.current.get(getMessageKey(allMessages[i], i)) || ESTIMATE_ITEM_HEIGHT;
 		}
 		return total;
 	};
@@ -125,22 +190,91 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return getCumulativeHeight(allMessages.length);
 	};
 
+	useEffect(() => {
+		focusPinned.current = true;
+		const container = chatContainerRef.current;
+		const unpin = () => {
+			focusPinned.current = false;
+			initialScroll.current = true;
+		};
+		container?.addEventListener('wheel', unpin, { passive: true });
+		container?.addEventListener('touchstart', unpin, { passive: true });
+		return () => {
+			container?.removeEventListener('wheel', unpin);
+			container?.removeEventListener('touchstart', unpin);
+		};
+	}, [focusMessageId]);
+	useEffect(() => {
+		if (!focusMessageId || !chatContainerRef.current || !focusPinned.current) return;
+		const index = allMessages.findIndex(message => Number(message.id) === focusMessageId);
+		if (index < 0) return;
+		setFollowNew(false);
+		setVisibleRange({
+			start: Math.max(0, index - BUFFER_SIZE),
+			end: Math.min(allMessages.length, index + BUFFER_SIZE)
+		});
+		let innerFrame = 0;
+		const frame = requestAnimationFrame(() => {
+			if (chatContainerRef.current && messagesWrapRef.current) {
+				chatContainerRef.current.scrollTop =
+					messagesWrapRef.current.offsetTop + getCumulativeHeight(index);
+			}
+			innerFrame = requestAnimationFrame(() => {
+				chatContainerRef.current
+					?.querySelector(`[data-message-id="${focusMessageId}"]`)
+					?.scrollIntoView({ block: 'center' });
+			});
+		});
+		return () => {
+			cancelAnimationFrame(frame);
+			cancelAnimationFrame(innerFrame);
+		};
+	}, [focusMessageId, layoutVersion, allMessages]);
+
+	useLayoutEffect(() => {
+		const container = chatContainerRef.current;
+		if (!container || !allMessages.length || (focusMessageId && focusPinned.current)) return;
+		if (!initialScroll.current) {
+			initialScroll.current = true;
+			const end = allMessages.length;
+			setVisibleRange({ start: Math.max(0, end - 30), end });
+			const frame = requestAnimationFrame(() => {
+				container.scrollTop = container.scrollHeight;
+			});
+			return () => cancelAnimationFrame(frame);
+		}
+		if (!isAtBottomRef.current && anchor.current) {
+			const index = allMessages.findIndex(
+				(message, i) => getMessageKey(message, i) === anchor.current!.key
+			);
+			if (index >= 0)
+				container.scrollTop =
+					(messagesWrapRef.current?.offsetTop || 0) +
+					getCumulativeHeight(index) +
+					anchor.current.offset;
+		}
+	}, [allMessages, focusMessageId]);
+
 	// 计算可见范围（M6: 动态高度）
 	useEffect(() => {
 		if (!chatContainerRef.current) return;
 		const container = chatContainerRef.current;
 		const handleScroll = () => {
-			const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+			const distanceToBottom =
+				container.scrollHeight - container.scrollTop - container.clientHeight;
 			const dynamicBuffer = distanceToBottom <= 100 ? BUFFER_SIZE * 4 : BUFFER_SIZE;
 			const listOffsetTop = messagesWrapRef.current ? messagesWrapRef.current.offsetTop : 0;
 			const relativeScrollTop = Math.max(0, container.scrollTop - listOffsetTop);
 
 			// M6: 动态高度计算 start
+			let anchorIndex = 0;
 			let start = 0;
 			let accHeight = 0;
 			for (let i = 0; i < allMessages.length; i++) {
-				const h = measuredHeights.current.get(i) || ESTIMATE_ITEM_HEIGHT;
+				const h =
+					measuredHeights.current.get(getMessageKey(allMessages[i], i)) || ESTIMATE_ITEM_HEIGHT;
 				if (accHeight + h >= relativeScrollTop) {
+					anchorIndex = i;
 					start = Math.max(0, i - dynamicBuffer);
 					break;
 				}
@@ -149,13 +283,22 @@ const ChatContainer = (props: IChatContainerProps) => {
 			// 计算 end
 			let end = start;
 			let visibleHeight = 0;
-			while (end < allMessages.length && visibleHeight < container.clientHeight + dynamicBuffer * ESTIMATE_ITEM_HEIGHT) {
-				visibleHeight += measuredHeights.current.get(end) || ESTIMATE_ITEM_HEIGHT;
+			while (
+				end < allMessages.length &&
+				visibleHeight < container.clientHeight + dynamicBuffer * ESTIMATE_ITEM_HEIGHT
+			) {
+				visibleHeight +=
+					measuredHeights.current.get(getMessageKey(allMessages[end], end)) || ESTIMATE_ITEM_HEIGHT;
 				end++;
 			}
 			end = Math.min(allMessages.length, end + dynamicBuffer);
 
 			setVisibleRange({ start, end });
+			if (allMessages[anchorIndex])
+				anchor.current = {
+					key: getMessageKey(allMessages[anchorIndex], anchorIndex),
+					offset: relativeScrollTop - accHeight
+				};
 
 			// L2: 同步更新 ref 与 state
 			isAtBottomRef.current = distanceToBottom <= 20;
@@ -167,13 +310,14 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return () => {
 			container.removeEventListener('scroll', handleScroll);
 		};
-	}, [allMessages.length]);
+	}, [allMessages.length, layoutVersion]);
 
 	// M5: 消息列表变更时清理缓存，避免跨会话污染与内存泄漏
 	useEffect(() => {
-		messageCache.current.clear();
-		measuredHeights.current.clear();
-	}, [historyMsg]);
+		const keys = new Set(allMessages.map(getMessageKey));
+		for (const key of measuredHeights.current.keys())
+			if (!keys.has(key)) measuredHeights.current.delete(key);
+	}, [allMessages]);
 
 	const scrollToBottom = () => {
 		if (chatContainerRef.current) {
@@ -181,23 +325,28 @@ const ChatContainer = (props: IChatContainerProps) => {
 		}
 	};
 
-	const getMessageKey = (message: IMessageItem, index: number) => {
+	function getMessageKey(message: IMessageItem, index: number) {
 		const maybeId = (message as unknown as { id?: string | number }).id;
+		if (message.clientMsgId || message.client_msg_id)
+			return `${message.sender_id}:${message.clientMsgId || message.client_msg_id}`;
 		if (maybeId !== undefined && maybeId !== null) return String(maybeId);
-		const created = message.created_at instanceof Date
-			? message.created_at.toISOString()
-			: String(message.created_at ?? '');
+		const created =
+			message.created_at instanceof Date
+				? message.created_at.toISOString()
+				: String(message.created_at ?? '');
 		const sender = String(message.sender_id ?? '');
 		const snippet = (message.content ?? '').slice(0, 20);
 		return `${created}-${sender}-${snippet}-${index}`;
-	};
+	}
 
 	useEffect(() => {
+		if (focusMessageId) return;
 		if (newMsg && newMsg.length > 0) {
 			if (isAtBottomRef.current && followNew) {
 				if (chatContainerRef.current) {
 					const container = chatContainerRef.current;
-					const visibleCount = Math.ceil(container.clientHeight / ESTIMATE_ITEM_HEIGHT) + BUFFER_SIZE * 4;
+					const visibleCount =
+						Math.ceil(container.clientHeight / ESTIMATE_ITEM_HEIGHT) + BUFFER_SIZE * 4;
 					const end = allMessages.length;
 					const start = Math.max(0, end - visibleCount);
 					if (visibleRange.end < end) {
@@ -215,9 +364,6 @@ const ChatContainer = (props: IChatContainerProps) => {
 
 	const renderMessage = (message: IMessageItem, index: number) => {
 		const cacheKey = getMessageKey(message, index);
-		if (messageCache.current.has(cacheKey)) {
-			return messageCache.current.get(cacheKey) as JSX.Element;
-		}
 		const prev = allMessages[index - 1];
 		const prevTime = prev ? new Date(prev.created_at).getTime() : 0;
 		const curTime = message.created_at ? new Date(message.created_at).getTime() : 0;
@@ -227,31 +373,42 @@ const ChatContainer = (props: IChatContainerProps) => {
 		const measureRef = (el: HTMLDivElement | null) => {
 			if (el) {
 				const height = el.offsetHeight;
-				if (height > 0 && measuredHeights.current.get(index) !== height) {
-					measuredHeights.current.set(index, height);
+				if (
+					height > 0 &&
+					measuredHeights.current.get(getMessageKey(allMessages[index], index)) !== height
+				) {
+					measuredHeights.current.set(getMessageKey(message, index), height);
 				}
 			}
 		};
 
 		const element = (
-			<div key={cacheKey} className={styles.chat_item} ref={measureRef}>
-				<MessageShow showTime={showTime} message={message} />
+			<div
+				key={cacheKey}
+				data-message-index={index}
+				data-message-id={message.id}
+				className={styles.chat_item}
+				ref={measureRef}
+				style={Number(message.id) === focusMessageId ? { outline: '2px solid #f0a94a' } : undefined}
+			>
+				<MessageShow
+					showTime={showTime}
+					message={message}
+					onRetry={onRetry}
+					onCancelRetry={onCancelRetry}
+				/>
 			</div>
 		);
 
-		// M5: 缓存上限保护
-		if (messageCache.current.size >= CACHE_LIMIT) {
-			// 简单 LRU：删除最早的一条
-			const firstKey = messageCache.current.keys().next().value;
-			if (firstKey !== undefined) messageCache.current.delete(firstKey);
-		}
-		messageCache.current.set(cacheKey, element);
 		return element;
 	};
 
 	// M6: 占位高度用累计实际高度
 	const topPlaceholderHeight = getCumulativeHeight(visibleRange.start);
-	const bottomPlaceholderHeight = Math.max(0, getTotalHeight() - getCumulativeHeight(visibleRange.end));
+	const bottomPlaceholderHeight = Math.max(
+		0,
+		getTotalHeight() - getCumulativeHeight(visibleRange.end)
+	);
 
 	return (
 		<div className={styles.chat_root}>
@@ -282,13 +439,15 @@ const ChatContainer = (props: IChatContainerProps) => {
 			<div className={styles.fab_container}>
 				{/* L2: 使用 state 镜像 isAtBottom 确保 FAB 正确重渲染 */}
 				{!isAtBottom && (
-					<button className={styles.scroll_fab} onClick={scrollToBottom}>回到底部</button>
+					<button className={styles.scroll_fab} onClick={scrollToBottom}>
+						回到底部
+					</button>
 				)}
 				<label className={styles.follow_toggle}>
 					<input
 						type="checkbox"
 						checked={followNew}
-						onChange={(e) => setFollowNew(e.target.checked)}
+						onChange={e => setFollowNew(e.target.checked)}
 					/>
 					<span>跟随新消息</span>
 				</label>
@@ -298,10 +457,19 @@ const ChatContainer = (props: IChatContainerProps) => {
 					<div className={styles.next_steps_header}>
 						<span className={styles.next_steps_title}>下一步建议</span>
 						<div className={styles.next_steps_actions}>
-							<button type="button" className={styles.next_btn} onClick={refreshNextSteps} disabled={nextLoading}>
+							<button
+								type="button"
+								className={styles.next_btn}
+								onClick={refreshNextSteps}
+								disabled={nextLoading}
+							>
 								{nextLoading ? '加载中…' : '换一批'}
 							</button>
-							<button type="button" className={styles.next_btn} onClick={() => setNextCollapsed(v => !v)}>
+							<button
+								type="button"
+								className={styles.next_btn}
+								onClick={() => setNextCollapsed(v => !v)}
+							>
 								{nextCollapsed ? '展开' : '收起'}
 							</button>
 						</div>
@@ -315,7 +483,9 @@ const ChatContainer = (props: IChatContainerProps) => {
 									onClick={() => {
 										// M2: 改用全局事件仍是最简方式（ChatContainer 与 ChatTool 无共同父组件可直接传 prop）
 										// 但为避免魔法字符串风险，封装为具名事件
-										window.dispatchEvent(new CustomEvent('next-steps-insert', { detail: { text: s } }));
+										window.dispatchEvent(
+											new CustomEvent('next-steps-insert', { detail: { text: s } })
+										);
 									}}
 									type="button"
 								>

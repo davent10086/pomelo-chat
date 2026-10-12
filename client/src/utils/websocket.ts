@@ -135,6 +135,7 @@ export class ReconnectingWebSocket {
 		this.ws.onclose = (e: CloseEvent) => {
 			this.clearConnectTimeout();
 			this.onClose?.(e);
+			if (e.code >= 4001 && e.code <= 4004) { this.manualClose = true; return; }
 			this.scheduleReconnect();
 		};
 	}

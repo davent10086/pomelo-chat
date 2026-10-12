@@ -1,8 +1,9 @@
 @import '@/assets/styles/variables.less';
 
 .parentContainer {
-	min-width: 100vw;
-	min-height: 100vh;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
 	display: flex;
 	justify-content: center;
 	align-items: center;
@@ -10,17 +11,17 @@
 
 .container {
 	z-index: 10;
-	width: min(1180px, calc(100vw - 48px));
-	height: min(760px, calc(100vh - 48px));
+	width: 100%;
+	height: 100%;
 	display: flex;
-	margin: 24px;
+	margin: 0;
 	overflow: hidden;
-	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
-	border-radius: 4px;
+	box-shadow: none;
+	border-radius: 0;
 
 	.leftContainer {
-		flex: 1;
-		background-color: @sider-bg-color; // 窄侧边栏用 #EDEDED，贴近微信
+		flex: 0 0 60px;
+		background-color: #e7ece9; // 窄侧边栏用 #EDEDED，贴近微信
 		display: flex;
 		align-items: center;
 		flex-direction: column;
@@ -29,7 +30,7 @@
 		.avatar {
 			width: 0.4rem;
 			height: 0.4rem;
-			margin-top: 0.3rem;
+			margin-top: 0.12rem;
 			margin-bottom: 0.2rem;
 
 			img {
@@ -74,7 +75,7 @@
 	}
 
 	.rightContainer {
-		flex: 17;
+		flex: 1;
 		min-width: 0;
 		height: 100%;
 	}
@@ -152,4 +153,22 @@
 			}
 		}
 	}
+}
+
+@media (max-width: 700px) {
+    .parentContainer { min-height: 100dvh; }
+    .container {
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        .leftContainer { flex: 0 0 48px; min-width: 0; }
+        .rightContainer { flex: 1; }
+    }
 }

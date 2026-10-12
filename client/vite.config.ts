@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [react()],
 	server: {
-		open: true,
+		open: process.env.POMELO_DESKTOP_DEV !== '1',
 		host: '0.0.0.0',
 		port: 5173
 	},

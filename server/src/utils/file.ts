@@ -7,6 +7,7 @@ export const getFileSuffixByName = (filename: string): 'video' | 'image' | 'file
 		case 'wmv':
 		case 'mov':
 		case 'flv':
+		case 'webm':
 		case 'mp4':
 			return 'video';
 		case 'png':
@@ -64,7 +65,7 @@ export const isAllowedUploadMime = (mime: unknown): boolean => {
 };
 
 export const normalizeUploadMetadata = (fileHash: unknown, extension: unknown) => {
-	if (typeof fileHash !== 'string' || !/^[a-f0-9]{32,64}$/i.test(fileHash)) return null;
+	if (typeof fileHash !== 'string' || !/^(?:[a-f0-9]{32}|[a-f0-9]{64})$/i.test(fileHash)) return null;
 	if (typeof extension !== 'string') return null;
 	const ext = extension.replace(/^\./, '').toLowerCase();
 	if (!/^[a-z0-9]{1,10}$/.test(ext)) return null;

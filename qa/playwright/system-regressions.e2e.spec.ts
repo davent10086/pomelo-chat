@@ -1,0 +1,164 @@
+import { test, expect, request } from "@playwright/test";
+
+test("real login, message ACK, suggestions, room isolation, streaming and password change", async ({
+  page,
+}) => {
+  const api = await request.newContext({
+    baseURL: "http://127.0.0.1:3199/api/chat/v1/",
+  });
+  const stamp = Date.now();
+  const create = async (index: number) => {
+    const username = `browser_${stamp}_${index}`,
+      password = "Browser123!";
+    const registered = await api.post("auth/register", {
+      data: {
+        username,
+        password,
+        phone: `13${String(stamp + index).slice(-9)}`,
+        avatar: "",
+      },
+    });
+    expect(registered.ok()).toBeTruthy();
+    const logged = (
+      await (
+        await api.post("auth/login", { data: { username, password } })
+      ).json()
+    ).data;
+    return { username, password, ...logged };
+  };
+  const a = await create(1),
+    b = await create(2);
+  await api.post("friend/add_friend", {
+    headers: { Authorization: `Bearer ${a.token}` },
+    data: { id: b.info.id, username: b.username },
+  });
+  const chats = (
+    await (
+      await api.get("message/chat_list", {
+        headers: { Authorization: `Bearer ${a.token}` },
+      })
+    ).json()
+  ).data;
+  const room = chats[0].room;
+  await page.routeWebSocket("**/message/connect_chat?**", (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((raw) => {
+      const frame = JSON.parse(String(raw));
+      if (frame.content !== "gap-hidden-message") socket.send(raw);
+    });
+  });
+  await page.route("**/assistant/next-steps", (route) =>
+    route.fulfill({
+      json: {
+        code: 200,
+        message: "success",
+        data: { steps: ["已收到，我来确认细节", "请补充信息"] },
+      },
+    }),
+  );
+  await page.goto("/login");
+  await page.getByPlaceholder("请输入用户名").fill(a.username);
+  await page.getByPlaceholder("请输入密码").fill(a.password);
+  await page.locator("button[type=submit]").click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.locator(`[id="chatList_${room}"]`).click();
+  const input = page.getByLabel("消息输入框");
+  await input.fill("browser-message");
+  await input.press("Enter");
+  await expect(
+    page
+      .locator("div")
+      .filter({ hasText: /^browser-message$/ })
+      .last(),
+  ).toBeVisible();
+  await expect(page.getByText("已发送", { exact: true })).toBeVisible();
+  // Drop one real server frame without closing the browser socket. The next
+  // sequence must trigger HTTP catchup and restore the missing message once.
+  await page.evaluate(
+    async ({ room, user, receiver }) => {
+      await new Promise<void>((resolve, reject) => {
+        const socket = new WebSocket(
+          `ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${user.info.id}&type=private`,
+          ["pomelo-token", user.token],
+        );
+        const timer = setTimeout(() => {
+          socket.close();
+          reject(new Error("Peer ACK timeout"));
+        }, 10000);
+        const send = (content: string) =>
+          socket.send(
+            JSON.stringify({
+              sender_id: user.info.id,
+              receiver_id: receiver,
+              content,
+              type: "private",
+              clientMsgId: `browser_${content}_${Date.now()}`,
+            }),
+          );
+        let sent = 0;
+        socket.onmessage = (event) => {
+          const frame = JSON.parse(event.data);
+          if (frame.name === "history" && sent === 0) {
+            sent = 1;
+            send("gap-hidden-message");
+          } else if (frame.name === "ack" && sent === 1) {
+            sent = 2;
+            send("gap-visible-message");
+          } else if (frame.name === "ack" && sent === 2) {
+            clearTimeout(timer);
+            socket.close();
+            resolve();
+          } else if (frame.name === "error") {
+            clearTimeout(timer);
+            socket.close();
+            reject(new Error("Peer send failed"));
+          }
+        };
+      });
+    },
+    { room, user: b, receiver: a.info.id },
+  );
+  await expect(
+    page.locator("[data-message-index]").getByText("gap-hidden-message", { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.locator("[data-message-index]").getByText("gap-visible-message", { exact: true }),
+  ).toHaveCount(1);
+  await input.fill("已有草稿");
+  await input.press("Tab");
+  await expect(page.getByText("候选回复", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "已收到，我来确认细节", exact: true })
+    .first()
+    .click();
+  await expect(input).toHaveValue(/已有草稿/);
+  await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
+  await expect(input).toHaveValue("");
+  await page.route("**/assistant/agent/stream", async (route) => {
+    await route.fulfill({
+      contentType: "text/event-stream",
+      body: 'event: delta\ndata: {"delta":"第一段"}\n\nevent: delta\ndata: {"delta":"，第二段"}\n\nevent: result\ndata: {"content":"第一段，第二段","actions":[]}\n\n',
+    });
+  });
+  await input.fill("stream-test");
+  await input.press("Enter");
+  await expect(
+    page.getByText("第一段，第二段", { exact: true }).last(),
+  ).toBeVisible();
+  await page.locator("img").first().hover();
+  await page.getByRole("button", { name: /修改密码/ }).click();
+  await page.getByPlaceholder("请输入当前密码").fill(a.password);
+  await page.getByPlaceholder("请输入新的密码").fill("Changed123!");
+  await page.getByPlaceholder("确认新的密码").fill("Changed123!");
+  await page.getByRole("button", { name: /确\s*认/ }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  const old = await api.post("auth/login", {
+    data: { username: a.username, password: a.password },
+  });
+  expect(old.ok()).toBeFalsy();
+  const changed = await api.post("auth/login", {
+    data: { username: a.username, password: "Changed123!" },
+  });
+  expect(changed.ok()).toBeTruthy();
+  await api.dispose();
+});

@@ -9,7 +9,7 @@ import type {
 } from 'axios';
 
 import { apiBaseURL } from '@/config';
-import { tokenStorage } from '@/utils/storage';
+import { tokenStorage, clearSessionStorage } from '@/utils/storage';
 
 /**
  * 统一的 API 响应格式接口定义
@@ -64,15 +64,33 @@ export class Request {
 			(error: AxiosError) => {
 				const apiError: ApiError = {
 					status: error.response?.status || 0,
-					message: (error.response?.data as { message?: string })?.message || error.message || '请求失败',
+					code: (error.response?.data as { code?: number })?.code,
+					message:
+						(error.response?.data as { message?: string })?.message || error.message || '请求失败',
 					raw: error.response?.data
 				};
+				const requestToken = error.config?.headers?.Authorization;
+				const currentToken = tokenStorage.getItem();
+				if (
+					apiError.status === 401 &&
+					currentToken &&
+					requestToken === `Bearer ${currentToken}` &&
+					typeof window !== 'undefined' &&
+					!window.location.pathname.includes('/login')
+				) {
+					clearSessionStorage();
+					if (window.pomeloDesktop && window.location.pathname === '/desktop-assistant') {
+						void window.pomeloDesktop.invalidateAuth(currentToken).catch(() => undefined);
+					} else window.location.assign('/login');
+				}
 				return Promise.reject(apiError);
 			}
 		);
 	}
 
-	public request<TResponse = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<TResponse>> {
+	public request<TResponse = unknown>(
+		config: AxiosRequestConfig
+	): Promise<AxiosResponse<TResponse>> {
 		return this.instance.request<TResponse>(config);
 	}
 

@@ -8,8 +8,7 @@ import { IChangePwdForm, IChangePwdModalProps } from './type';
 
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
-import { handleLogout } from '@/utils/logout';
-import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
+import { clearSessionStorage, tokenStorage } from '@/utils/storage';
 
 /**
  * 修改密码弹窗组件
@@ -23,22 +22,6 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 	const navigate = useNavigate();
 
 	const [loading, setLoading] = useState(false);
-
-	// 退出登录
-	const confirmLogout = async () => {
-		try {
-			const res = await handleLogout(userStorage.getItem());
-			if (res.code === HttpStatus.SUCCESS) {
-				clearSessionStorage();
-				showMessage('success', '登录已过期，请重新登录');
-				navigate('/login');
-			} else {
-				showMessage('error', '退出失败, 请重试');
-			}
-		} catch {
-			showMessage('error', '退出失败, 请重试');
-		}
-	};
 
 	/**
 	 * 处理修改密码表单提交
@@ -89,24 +72,15 @@ const ChangePwdModal = (props: IChangePwdModalProps) => {
 				footer={null}
 				wrapClassName="changePwdModal"
 			>
-				<Form name="changePwdForm" initialValues={{ phone: 'verified' }} onFinish={handleSubmit} className={styles.changePwdForm}>
+				<Form name="changePwdForm" onFinish={handleSubmit} className={styles.changePwdForm}>
 					<Form.Item
 						name="currentPassword"
 						rules={[
-							{ required: true, message: '请输入用户名' },
-							{ max: 255, message: '用户名最多输入255个字符' }
+							{ required: true, message: '请输入当前密码' },
+							{ max: 255, message: '当前密码最多输入255个字符' }
 						]}
 					>
 						<Input type="password" placeholder="请输入当前密码"></Input>
-					</Form.Item>
-					<Form.Item hidden
-						name="phone"
-						rules={[
-							{ required: true, message: '请输入手机号' },
-							{ pattern: /^1[3456789]\d{9}$/, message: '请输入有效的手机号码' }
-						]}
-					>
-						<Input type="phone" placeholder="请输入绑定的手机号"></Input>
 					</Form.Item>
 					<Form.Item
 						name="password"

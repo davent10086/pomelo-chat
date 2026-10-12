@@ -11,6 +11,7 @@ export interface ICallModalProps {
 	status: callStatusType;
 	type: 'private' | 'group';
 	callInfo: {
+		callId?: string;
 		room: string;
 		callReceiverList: ICallReceiverInfo[]; // 私聊时为对方信息，群聊时为其它群成员信息
 	};

@@ -1,5 +1,13 @@
-import { CheckCircleOutlined, CloseCircleOutlined, CopyOutlined, DeleteOutlined, LoadingOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Image, Modal, Tooltip, message as antdMessage } from 'antd';
+import {
+	CheckCircleOutlined,
+	CloseCircleOutlined,
+	CopyOutlined,
+	DeleteOutlined,
+	LoadingOutlined,
+	ReloadOutlined,
+	MoreOutlined
+} from '@ant-design/icons';
+import { Button, Dropdown, Image, Modal, message as antdMessage } from 'antd';
 import { useEffect, useState } from 'react';
 
 import styles from './index.module.less';
@@ -69,11 +77,29 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 						muted
 						style={{ width: getMediaShowSize(curMediaInfo.size, 'video').width }}
 					/>
-					<button type="button" className={styles.play_button} onClick={() => setIsVideoPlay(true)} aria-label="播放视频">
+					<button
+						type="button"
+						className={styles.play_button}
+						onClick={() => setIsVideoPlay(true)}
+						aria-label="播放视频"
+					>
 						<img src={ChatImage.PLAY} alt="" draggable="false" />
 					</button>
-					<Modal open={isVideoPlay} footer={null} title="视频" onCancel={() => setIsVideoPlay(false)} destroyOnClose width={800}>
-						<video src={getAuthorizedMediaURL(messageContent)} muted controls autoPlay width={750} />
+					<Modal
+						open={isVideoPlay}
+						footer={null}
+						title="视频"
+						onCancel={() => setIsVideoPlay(false)}
+						destroyOnClose
+						width={800}
+					>
+						<video
+							src={getAuthorizedMediaURL(messageContent)}
+							muted
+							controls
+							autoPlay
+							width={750}
+						/>
 					</Modal>
 				</div>
 			) : (
@@ -81,7 +107,12 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 			);
 		case 'file':
 			return (
-				<button type="button" className={styles.content_file} onClick={() => downloadFile(getAuthorizedMediaURL(messageContent))} aria-label={`下载文件 ${getFileName(messageContent)} `}>
+				<button
+					type="button"
+					className={styles.content_file}
+					onClick={() => downloadFile(getAuthorizedMediaURL(messageContent))}
+					aria-label={`下载文件 ${getFileName(messageContent)} `}
+				>
 					<div className={styles.content_file_name}>
 						<span>{getFileName(messageContent)}</span>
 						{fileSize && <span>{fileSize}</span>}
@@ -97,7 +128,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 };
 
 const MessageShow = (props: IMessageShowProps) => {
-	const { showTime, message } = props;
+	const { showTime, message, onRetry, onCancelRetry } = props;
 	const user = userStorage.getItem();
 	const { sender_id, content, avatar, type, file_size, created_at, status } = message;
 	const [hidden, setHidden] = useState(false);
@@ -105,7 +136,8 @@ const MessageShow = (props: IMessageShowProps) => {
 
 	const statusMeta = (() => {
 		if (!isSelf) return null;
-		if (status === 'failed') return { text: '发送失败', icon: <CloseCircleOutlined /> };
+		if (status === 'failed')
+			return { text: message.failureReason || '发送失败', icon: <CloseCircleOutlined /> };
 		if (status === 'pending') return { text: '发送中', icon: <LoadingOutlined /> };
 		return { text: '已发送', icon: <CheckCircleOutlined /> };
 	})();
@@ -119,6 +151,37 @@ const MessageShow = (props: IMessageShowProps) => {
 		}
 	};
 
+	const actions = [
+		{ key: 'copy', label: '复制', icon: <CopyOutlined aria-hidden="true" />, onClick: handleCopy },
+		...(isSelf && status === 'failed' && onRetry
+			? [
+					{
+						key: 'retry',
+						label: '重新发送',
+						icon: <ReloadOutlined aria-hidden="true" />,
+						onClick: () => onRetry(message)
+					}
+				]
+			: []),
+		...(isSelf && (status === 'pending' || status === 'failed') && onCancelRetry
+			? [{ key: 'cancel', label: '取消重试', onClick: () => onCancelRetry(message) }]
+			: []),
+		{
+			key: 'hide',
+			label: '本地隐藏',
+			icon: <DeleteOutlined aria-hidden="true" />,
+			danger: true,
+			onClick: () => setHidden(true)
+		}
+	];
+	const moreActions = (
+		<div className={styles.message_actions}>
+			<Dropdown trigger={['click']} menu={{ items: actions }}>
+				<Button type="text" aria-label="消息更多操作" icon={<MoreOutlined />} />
+			</Dropdown>
+		</div>
+	);
+
 	if (hidden) return null;
 
 	return (
@@ -130,22 +193,28 @@ const MessageShow = (props: IMessageShowProps) => {
 			)}
 			{isSelf ? (
 				<div className={`${styles.self} ${styles.chat_item_content}`}>
-					{statusMeta && (
-						<span className={`${styles.message_status} ${status === 'failed' ? styles.status_failed : ''}`}>
-							{statusMeta.icon}{statusMeta.text}
-						</span>
-					)}
 					<div className={styles.message_bubble_wrap}>
-						<div className={styles.message_actions}>
-							<Tooltip title="复制"><Button size="small" type="text" icon={<CopyOutlined />} onClick={handleCopy} /></Tooltip>
-							{status === 'failed' && (
-								<Tooltip title="重新发送">
-									<Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => antdMessage.info('请在输入框中重新发送这条消息')} />
-								</Tooltip>
-							)}
-							<Tooltip title="本地隐藏"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => setHidden(true)} /></Tooltip>
-						</div>
+						{moreActions}
 						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+						{statusMeta && (
+							<span
+								role="status"
+								className={`${styles.message_status} ${status === 'failed' ? styles.status_failed : ''}`}
+							>
+								{statusMeta.icon}
+								{statusMeta.text}
+								{status === 'failed' && onRetry && (
+									<Button size="small" onClick={() => onRetry(message)} aria-label="重新发送">
+										重试
+									</Button>
+								)}
+								{(status === 'pending' || status === 'failed') && onCancelRetry && (
+									<Button size="small" onClick={() => onCancelRetry(message)}>
+										取消重试
+									</Button>
+								)}
+							</span>
+						)}
 					</div>
 					<div className={styles.avatar}>
 						<ImageLoad src={avatar} />
@@ -157,10 +226,7 @@ const MessageShow = (props: IMessageShowProps) => {
 						<ImageLoad src={avatar} />
 					</div>
 					<div className={styles.message_bubble_wrap}>
-						<div className={styles.message_actions}>
-							<Tooltip title="复制"><Button size="small" type="text" icon={<CopyOutlined />} onClick={handleCopy} /></Tooltip>
-							<Tooltip title="本地隐藏"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => setHidden(true)} /></Tooltip>
-						</div>
+						{moreActions}
 						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
 					</div>
 				</div>

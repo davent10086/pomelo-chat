@@ -1,19 +1,42 @@
 import { useCallback, useState } from 'react';
 
 import { IMessageItem } from '@/components/MessageShow/type';
+import { apiBaseURL } from '@/config';
 import { sanitizeAiContent } from '@/utils/sanitize';
-import { IUserInfo } from '@/utils/storage';
+import { IUserInfo, tokenStorage } from '@/utils/storage';
 import request from '@/utils/request';
+import { invalidateDesktopAuth } from '@/desktop/bridge';
 
 // AI 助手用户名与头像
 export const AI_USERNAME = 'ai-assistant';
 
 export interface AgentAction {
-	type: 'create_tasks' | 'send_message' | 'reply_suggestion';
+	type: 'create_tasks' | 'send_message' | 'external_mcp' | 'save_memory' | 'forget_memory' | 'reply_suggestion';
 	requiresConfirmation: boolean;
 	payload: Record<string, unknown>;
 	confirmationId?: string;
 	expiresAt?: string;
+	status?: ActionStatus['status'];
+}
+
+export interface TaskCandidate {
+	title: string;
+	assignee?: string;
+	due?: string;
+	sources: Array<{ id: number; content: string; createdAt: string }>;
+}
+
+export interface TaskCandidateResult {
+	todos: TaskCandidate[];
+	action: AgentAction | null;
+}
+
+export interface ActionStatus {
+	confirmationId: string;
+	type: string;
+	status: 'pending' | 'executing' | 'completed' | 'cancelled' | 'expired';
+	result?: Record<string, unknown> | null;
+	retryable?: boolean;
 }
 
 export interface AgentTodo {
@@ -42,12 +65,22 @@ export interface AgentStep {
 	durationMs?: number;
 }
 
+export interface AgentEvent {
+	type: 'agent_started' | 'agent_completed' | 'tool_started' | 'tool_completed';
+	agent?: string;
+	tool?: string;
+	status?: 'success' | 'error';
+	detail?: string;
+	durationMs?: number;
+}
+
 export interface AgentResponse {
 	content: string;
 	summary?: string;
 	todos?: AgentTodo[];
 	replySuggestions?: string[];
 	draftMessage?: string;
+	memorySuggestion?: { content: string; category?: string };
 	actions?: AgentAction[];
 	toolTrace?: Array<{ tool: string; status: 'success' | 'error' }>;
 	agentTrace?: string[];
@@ -59,11 +92,16 @@ export interface AgentReplyResult extends AgentResponse {
 }
 
 interface GenerateReplyOptions {
+	/** Desktop callers need to distinguish failure/cancellation from successful completion. */
+	throwOnError?: boolean;
+	signal?: AbortSignal;
 	room?: string;
 	currentChatType?: string;
 	currentReceiverId?: number;
 	recentMessages?: IMessageItem[];
 	memoryEnabled?: boolean;
+	onDelta?: (text: string) => void;
+	onEvent?: (event: AgentEvent) => void;
 }
 
 interface ChatResponse {
@@ -105,21 +143,6 @@ export const getAiAvatar = () => {
 	return '';
 };
 
-// 回退：本地启发式（通用 AI 助手风格）
-const genAiReply = (text: string): string => {
-	const msg = text.trim();
-	if (!msg) return '我在听，请继续说。';
-	const isQuestion = /[?？]$/.test(msg) || /(吗|么|如何|怎么|为何|原因|可以|能否)/.test(msg);
-	const isGreeting = /(你好|在吗|早上好|晚上好|hello|hi|嗨)/i.test(msg);
-	const isThanks = /(谢谢|多谢|辛苦|感激)/.test(msg);
-	if (isGreeting) return '你好！我是AI助手，有什么可以帮你的吗？';
-	if (isThanks) return '不客气，能帮上忙就好。还有其他问题吗？';
-	if (isQuestion) {
-		return '让我想想。可以从目标开始，逐步分解，再一点点推进。若有更多细节，告诉我吧。';
-	}
-	return '我明白了。你愿意多说一点细节吗？这样我能更好地帮助你。';
-};
-
 const buildOpenAIMessages = (all: IMessageItem[], nextUserText: string, userId: unknown) => {
 	const persona = getPersonaPrompt();
 	const msgs: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
@@ -144,10 +167,73 @@ const buildAgentDisplayText = (data: AgentResponse): string => {
 	return sanitizeAiContent(parts.join('\n'));
 };
 
+const streamAgentReply = async (
+	input: string,
+	room: string | undefined,
+	context: Record<string, unknown>,
+	onDelta: (text: string) => void,
+	onEvent?: (event: AgentEvent) => void,
+	signal?: AbortSignal
+): Promise<AgentResponse> => {
+	const requestToken = tokenStorage.getItem();
+	const response = await fetch(`${apiBaseURL}/assistant/agent/stream`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${requestToken}` },
+		body: JSON.stringify({ input, room, context }),
+		signal
+	});
+	if (response.status === 401 && tokenStorage.getItem() === requestToken) invalidateDesktopAuth(requestToken);
+	if (!response.ok || !response.body) throw new Error(response.status === 403
+		? '没有权限访问该会话。' : response.status === 401 ? '登录已失效，请在主窗口重新登录。' : 'AI 服务连接失败，请稍后重试。');
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	let text = '';
+	let result: AgentResponse | undefined;
+	const handleEvent = (frame: string) => {
+		const event = frame.match(/^event: (.+)$/m)?.[1];
+		const data = frame.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n');
+		if (!data || data === '[DONE]') return;
+		if (event === 'agent') {
+			onEvent?.(JSON.parse(data) as AgentEvent);
+			return;
+		}
+		const value = JSON.parse(data) as AgentResponse & { delta?: string; reset?: boolean; error?: string };
+		if (event === 'delta' && typeof value.delta === 'string') {
+			if (value.reset) text = '';
+			text += value.delta;
+			onDelta(sanitizeAiContent(text));
+		} else if (value.error) {
+			throw new Error(value.error);
+		} else if (typeof value.content === 'string') {
+			result = value;
+		}
+	};
+	try {
+		while (!signal?.aborted) {
+			const { value, done } = await reader.read();
+			if (value) buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, '\n');
+			let boundary = buffer.indexOf('\n\n');
+			while (boundary >= 0) {
+				handleEvent(buffer.slice(0, boundary));
+				buffer = buffer.slice(boundary + 2);
+				boundary = buffer.indexOf('\n\n');
+			}
+			if (done) break;
+		}
+		if (buffer.trim()) handleEvent(buffer);
+		if (signal?.aborted) throw new DOMException('Generation stopped', 'AbortError');
+		if (!result) throw new Error('AI 回答中断，请重试。');
+		return result;
+	} finally {
+		reader.releaseLock();
+	}
+};
+
 /**
  * M1: AI 助手 hook，从 Chat 页面抽取
  * 通过后端代理调用大模型（H4: 不再在前端暴露 API Key）
- * 无 Key 或后端不可用时回退本地启发式
+ * 非流式调用在 Agent 不可用时降级到普通聊天；流式调用失败时显示错误
  */
 export const useAiAssistant = (user: IUserInfo) => {
 	const [aiHistory, setAiHistory] = useState<IMessageItem[]>([]);
@@ -158,6 +244,22 @@ export const useAiAssistant = (user: IUserInfo) => {
 			history: IMessageItem[],
 			options: GenerateReplyOptions = {}
 		): Promise<AgentReplyResult> => {
+			const context = {
+				currentChatType: options.currentChatType || 'assistant',
+				currentReceiverId: options.currentReceiverId,
+				recentMessagesText: buildContextText(options.recentMessages || history),
+				memoryEnabled: options.memoryEnabled !== false
+			};
+			if (options.onDelta) {
+				try {
+					const agentData = await streamAgentReply(userText, options.room, context, options.onDelta, options.onEvent, options.signal);
+					return { ...agentData, text: buildAgentDisplayText(agentData) };
+				} catch (error) {
+					if (options.throwOnError) throw error;
+					const errorText = 'AI 服务暂时不可用，本次回答未完成。若涉及写操作，请在助手面板查询状态后再重试。';
+					return { content: errorText, text: errorText, actions: [] };
+				}
+			}
 			try {
 				const agentRes = await request.post<
 					{
@@ -174,12 +276,7 @@ export const useAiAssistant = (user: IUserInfo) => {
 				>('/assistant/agent', {
 					input: userText,
 					room: options.room,
-					context: {
-						currentChatType: options.currentChatType || 'assistant',
-						currentReceiverId: options.currentReceiverId,
-						recentMessagesText: buildContextText(options.recentMessages || history),
-						memoryEnabled: options.memoryEnabled !== false
-					}
+					context
 				});
 				const agentData = agentRes.data?.data;
 				if (agentData?.content) {
@@ -201,14 +298,15 @@ export const useAiAssistant = (user: IUserInfo) => {
 				);
 				const content = res.data?.data?.content;
 				// 漏洞2: 前端兜底 sanitize
-				if (content) return { content, text: sanitizeAiContent(content), actions: [] };
-				const fallback = genAiReply(userText);
-				return { content: fallback, text: fallback, actions: [] };
+				if (content) {
+					const notice = '提示：Agent 本次未能完成；以下回答来自普通 AI 聊天，不包含 Agent 的工具结果。\n\n';
+					return { content: notice + content, text: notice + sanitizeAiContent(content), actions: [] };
+				}
 			} catch {
-				// 后端不可用或无 Key，回退本地启发式
-				const fallback = genAiReply(userText);
-				return { content: fallback, text: fallback, actions: [] };
+				// 两条后端路径均不可用时明确显示失败，不生成看似正常的模板回答。
 			}
+			const errorText = 'AI 服务暂时不可用，本次没有生成可用回答。若涉及写操作，请在助手面板查询状态后再重试。';
+			return { content: errorText, text: errorText, actions: [] };
 		},
 		[user]
 	);

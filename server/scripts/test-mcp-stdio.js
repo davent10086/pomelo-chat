@@ -99,6 +99,9 @@ child.on('exit', code => {
 		if (!tools.some(item => item.name === 'suggest_replies')) {
 			throw new Error('suggest_replies tool is missing.');
 		}
+		if (tools.some(item => item.name === 'save_memory' || item.name === 'forget_memory')) {
+			throw new Error('Unconfirmed memory write tool is exposed over stdio.');
+		}
 
 		const call = await send(3, 'tools/call', {
 			name: 'suggest_replies',

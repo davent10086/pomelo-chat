@@ -18,8 +18,10 @@ export default () => {
 	router.post('/agent/stream', authenticateToken, assistantAgent.agentStream);
 	router.get('/agent/tools', authenticateToken, assistantAgent.listAgentTools);
 	router.post('/agent/tools/call', authenticateToken, assistantAgent.callAgentTool);
+	router.post('/agent/task-candidates', authenticateToken, assistantAgent.taskCandidates);
 	router.post('/actions/confirm', authenticateToken, assistantActions.confirmAction);
 	router.post('/actions/cancel', authenticateToken, assistantActions.cancelAction);
+	router.get('/actions/:id', authenticateToken, assistantActions.getActionStatus);
 	router.get('/tasks', authenticateToken, assistantActions.listTasks);
 	router.patch('/tasks/:id', authenticateToken, assistantActions.updateTask);
 	return router;

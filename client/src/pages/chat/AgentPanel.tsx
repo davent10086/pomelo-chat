@@ -1,10 +1,20 @@
-import { Button, Empty, Switch } from 'antd';
+import { Button, Empty, Switch, Tabs } from 'antd';
 
 import styles from './index.module.less';
-import type { AgentAction, AgentReplyResult, AssistantTask } from '@/hooks/useAiAssistant';
+import type {
+	AgentAction,
+	AgentEvent,
+	AgentReplyResult,
+	AssistantTask,
+	TaskCandidateResult,
+	ActionStatus
+} from '@/hooks/useAiAssistant';
+import type { IMessageListItem } from '@/components/ChatTool/type';
 
 interface AgentPanelProps {
 	result: AgentReplyResult | null;
+	liveEvents: AgentEvent[];
+	streaming: boolean;
 	tasks: AssistantTask[];
 	tasksLoading: boolean;
 	memoryEnabled: boolean;
@@ -14,11 +24,27 @@ interface AgentPanelProps {
 	onInsertText: (text?: string) => void;
 	onConfirmAction: (action: AgentAction) => void;
 	onCancelAction: (action: AgentAction) => void;
+	onCheckAction: (action: AgentAction) => void;
 	onUpdateTask: (task: AssistantTask, completed: boolean) => void;
+	conversations: IMessageListItem[];
+	selectedRoom: string;
+	onSelectRoom: (room: string) => void;
+	onGenerateTasks: () => void;
+	taskCandidateResult: TaskCandidateResult | null;
+	taskCandidateLoading: boolean;
+	selectedTaskIndexes: number[];
+	onSelectedTaskIndexesChange: (indexes: number[]) => void;
+	taskActionStatus: ActionStatus | null;
+	onConfirmSelectedTasks: () => void;
+	onCancelSelectedTasks: () => void;
+	onCheckTaskStatus: () => void;
+	onJumpToSource: (id: number) => void;
 }
 
 const AgentPanel = ({
 	result,
+	liveEvents,
+	streaming,
 	tasks,
 	tasksLoading,
 	memoryEnabled,
@@ -28,7 +54,21 @@ const AgentPanel = ({
 	onInsertText,
 	onConfirmAction,
 	onCancelAction,
-	onUpdateTask
+	onCheckAction,
+	onUpdateTask,
+	conversations,
+	selectedRoom,
+	onSelectRoom,
+	onGenerateTasks,
+	taskCandidateResult,
+	taskCandidateLoading,
+	selectedTaskIndexes,
+	onSelectedTaskIndexesChange,
+	taskActionStatus,
+	onConfirmSelectedTasks,
+	onCancelSelectedTasks,
+	onCheckTaskStatus,
+	onJumpToSource
 }: AgentPanelProps) => {
 	const hasReplySuggestions = !!result?.replySuggestions?.length;
 	const hasTodos = !!result?.todos?.length;
@@ -36,118 +76,382 @@ const AgentPanel = ({
 	const hasAgentTrace = !!result?.agentTrace?.length;
 	const hasToolTrace = !!result?.toolTrace?.length;
 	const hasAgentSteps = !!result?.agentSteps?.length;
-	const confirmableActions = result?.actions?.filter(item => item.requiresConfirmation && item.confirmationId) || [];
-	const hasContent = hasReplySuggestions || hasTodos || hasDraft || hasAgentTrace || hasToolTrace || hasAgentSteps || tasks.length || confirmableActions.length;
+	const confirmableActions =
+		result?.actions?.filter(item => item.requiresConfirmation && item.confirmationId) || [];
+	const liveTools = liveEvents.reduce<
+		Array<{ tool: string; status: 'running' | 'success' | 'error'; durationMs?: number }>
+	>((items, event) => {
+		if (!event.tool || (event.type !== 'tool_started' && event.type !== 'tool_completed'))
+			return items;
+		const status =
+			event.type === 'tool_started' ? 'running' : event.status === 'error' ? 'error' : 'success';
+		const existing = items.find(item => item.tool === event.tool);
+		if (existing) {
+			existing.status = status;
+			existing.durationMs = event.durationMs;
+		} else items.push({ tool: event.tool, status, durationMs: event.durationMs });
+		return items;
+	}, []);
 
 	return (
-		<aside className={styles.agentPanel}>
+		<div className={styles.agentPanelContent}>
 			<div className={styles.agentToolbar}>
 				<div>
 					<div className={styles.agentPanelTitle}>AI Copilot</div>
-					<div className={styles.agentPanelSubtitle}>总结、待办、建议回复和工具轨迹</div>
-				</div>
-				<div className={styles.memoryControls}>
-					<span>记忆</span>
-					<Switch size="small" checked={memoryEnabled} onChange={onMemoryEnabledChange} />
-					<Button size="small" onClick={onOpenMemoryManager}>管理</Button>
+					<div className={styles.agentPanelSubtitle}>查看回复，按需处理待办与记忆</div>
 				</div>
 			</div>
-
-			<div className={styles.workflow}>
-				<span className={styles.workflowItem}>规划</span>
-				<span className={styles.workflowArrow}>→</span>
-				<span className={styles.workflowItem}>工具</span>
-				<span className={styles.workflowArrow}>→</span>
-				<span className={styles.workflowItem}>结果</span>
-				<span className={styles.workflowArrow}>→</span>
-				<span className={styles.workflowItem}>确认</span>
+			<div role="status" className={styles.taskHint}>
+				{streaming
+					? '正在生成回答…'
+					: confirmableActions.some(action => !action.status || action.status === 'pending')
+						? '有操作等待你的确认'
+						: ''}
 			</div>
-
-			{!hasContent && (
-				<div className={styles.agentEmpty}>
-					<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="向 AI 发消息后，这里会显示建议、待办和执行轨迹" />
-				</div>
-			)}
-
-			{hasReplySuggestions && (
-				<div className={styles.agentSection}>
-					<div className={styles.agentTitle}>回复建议</div>
-					<div className={styles.agentChips}>
-						{result!.replySuggestions!.map(item => <Button key={item} size="small" onClick={() => onInsertText(item)}>{item}</Button>)}
-					</div>
-				</div>
-			)}
-
-			{hasDraft && (
-				<div className={styles.agentSection}>
-					<div className={styles.agentTitle}>消息草稿</div>
-					<button type="button" className={styles.agentDraft} onClick={() => onInsertText(result!.draftMessage)}>{result!.draftMessage}</button>
-				</div>
-			)}
-
 			{confirmableActions.map(action => (
 				<div className={styles.agentSection} key={action.confirmationId}>
-					<div className={styles.agentTitle}>{action.type === 'create_tasks' ? '待办操作' : '草稿发送'}</div>
+					<div className={styles.agentTitle}>
+						{action.type === 'create_tasks'
+							? '待办操作'
+							: action.type === 'external_mcp'
+								? '外部工具操作'
+								: action.type === 'save_memory'
+									? '保存记忆'
+									: '草稿发送'}
+						：
+						{
+							{
+								pending: '待确认',
+								executing: '执行中',
+								completed: '已完成',
+								cancelled: '已取消',
+								expired: '已过期'
+							}[action.status || 'pending']
+						}
+					</div>
+					{action.type === 'save_memory' && <p>{String(action.payload.content || '')}</p>}
 					<div className={styles.actionControls}>
-						<Button size="small" type="primary" loading={pendingActionId === action.confirmationId} onClick={() => onConfirmAction(action)}>
-							{action.type === 'create_tasks' ? '确认创建' : '确认发送'}
+						<Button
+							size="small"
+							type="primary"
+							disabled={!!action.status && action.status !== 'pending'}
+							loading={pendingActionId === action.confirmationId}
+							onClick={() => onConfirmAction(action)}
+						>
+							{action.type === 'create_tasks'
+								? '确认创建'
+								: action.type === 'external_mcp'
+									? '确认执行'
+									: action.type === 'save_memory'
+										? '确认保存'
+										: '确认发送'}
 						</Button>
-						<Button size="small" disabled={pendingActionId === action.confirmationId} onClick={() => onCancelAction(action)}>取消</Button>
+						<Button size="small" onClick={() => onCheckAction(action)}>
+							查询结果／重试
+						</Button>
+						<Button
+							size="small"
+							disabled={
+								pendingActionId === action.confirmationId ||
+								(!!action.status && action.status !== 'pending')
+							}
+							onClick={() => onCancelAction(action)}
+						>
+							取消
+						</Button>
 					</div>
 				</div>
 			))}
 
-			{hasTodos && (
-				<div className={styles.agentSection}>
-					<div className={styles.agentTitle}>待办建议</div>
-					<div className={styles.todoList}>
-						{result!.todos!.map((todo, index) => (
-							<div className={styles.todoItem} key={`${todo.title}-${index}`}>
-								<span>{todo.title}</span>
-								{todo.assignee && <em>{todo.assignee}</em>}
-								{todo.due && <em>{todo.due}</em>}
-							</div>
-						))}
-					</div>
-				</div>
-			)}
+			<Tabs
+				defaultActiveKey="reply"
+				items={[
+					{
+						key: 'reply',
+						label: '回复',
+						children: (
+							<>
+								{result?.content && (
+									<section className={styles.agentSection} aria-label="当前回答">
+										<div className={styles.agentTitle}>当前回答</div>
+										<p className={styles.agentAnswer}>{result.content}</p>
+									</section>
+								)}
+								{!result && !streaming && (
+									<Empty
+										image={Empty.PRESENTED_IMAGE_SIMPLE}
+										description="向 AI 发消息，查看回答与建议"
+									/>
+								)}
+								{hasReplySuggestions && (
+									<div className={styles.agentSection}>
+										<div className={styles.agentTitle}>回复建议</div>
+										<div className={styles.agentChips}>
+											{result!.replySuggestions!.map(item => (
+												<Button key={item} size="small" onClick={() => onInsertText(item)}>
+													{item}
+												</Button>
+											))}
+										</div>
+									</div>
+								)}
 
-			{tasks.length > 0 && (
-				<div className={styles.agentSection}>
-					<div className={styles.agentTitle}>我的待办</div>
-					<div className={styles.todoList}>
-						{tasks.slice(0, 8).map(task => (
-							<div className={styles.todoItem} key={task.id}>
-								<Button size="small" type={task.status === 'completed' ? 'default' : 'link'} onClick={() => onUpdateTask(task, task.status !== 'completed')}>
-									{task.status === 'completed' ? '已完成' : '完成'}
-								</Button>
-								<span>{task.title}</span>
-								{task.due && <em>{task.due}</em>}
-							</div>
-						))}
-						{tasksLoading && <span className={styles.taskHint}>加载中...</span>}
-					</div>
-				</div>
-			)}
+								{hasDraft && (
+									<div className={styles.agentSection}>
+										<div className={styles.agentTitle}>消息草稿</div>
+										<button
+											type="button"
+											className={styles.agentDraft}
+											onClick={() => onInsertText(result!.draftMessage)}
+										>
+											{result!.draftMessage}
+										</button>
+									</div>
+								)}
 
-			{(hasAgentSteps || hasAgentTrace || hasToolTrace) && (
-				<div className={`${styles.agentSection} ${styles.traceSection}`}>
-					<div className={styles.agentTitle}>执行轨迹</div>
-					<div className={styles.traceList}>
-						{hasAgentSteps
-							? result!.agentSteps!.map(item => (
-									<span className={`${styles.agentTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`} key={`agent-step-${item.agent}`} title={item.detail ? `${item.detail}${item.durationMs !== undefined ? ` (${item.durationMs}ms)` : ''}` : undefined}>
-										{item.agent}
-									</span>
-								))
-							: result?.agentTrace?.map(item => <span className={styles.agentTraceItem} key={`agent-${item}`}>{item}</span>)}
-						{result?.toolTrace?.map((item, index) => (
-							<span className={`${styles.toolTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`} key={`tool-${item.tool}-${index}`}>{item.tool}</span>
-						))}
-					</div>
-				</div>
-			)}
-		</aside>
+								{(streaming ||
+									liveTools.length > 0 ||
+									hasAgentSteps ||
+									hasAgentTrace ||
+									hasToolTrace) && (
+									<details className={styles.agentDetails}>
+										<summary>执行详情</summary>
+										{(streaming || liveTools.length > 0) && (
+											<div
+												className={`${styles.agentSection} ${styles.traceSection}`}
+												aria-live="polite"
+											>
+												<div className={styles.agentTitle}>
+													实时工具{streaming ? ' · 执行中' : ''}
+												</div>
+												<div className={styles.traceList}>
+													{liveTools.length === 0 && streaming && (
+														<span className={styles.agentTraceItem}>等待工具调用或模型回复</span>
+													)}
+													{liveTools.map(item => (
+														<span
+															key={item.tool}
+															className={`${styles.toolTraceItem} ${styles[`traceStatus_${item.status === 'running' ? 'planned' : item.status}`] || ''}`}
+														>
+															{item.tool} ·{' '}
+															{item.status === 'running'
+																? '运行中'
+																: item.status === 'success'
+																	? '完成'
+																	: '失败'}
+															{item.durationMs !== undefined ? ` (${item.durationMs}ms)` : ''}
+														</span>
+													))}
+												</div>
+											</div>
+										)}
+										{(hasAgentSteps || hasAgentTrace || hasToolTrace) && (
+											<div className={`${styles.agentSection} ${styles.traceSection}`}>
+												<div className={styles.agentTitle}>执行轨迹</div>
+												<div className={styles.traceList}>
+													{hasAgentSteps
+														? result!.agentSteps!.map(item => (
+																<span
+																	className={`${styles.agentTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`}
+																	key={`agent-step-${item.agent}`}
+																	title={
+																		item.detail
+																			? `${item.detail}${item.durationMs !== undefined ? ` (${item.durationMs}ms)` : ''}`
+																			: undefined
+																	}
+																>
+																	{item.agent}
+																</span>
+															))
+														: result?.agentTrace?.map(item => (
+																<span className={styles.agentTraceItem} key={`agent-${item}`}>
+																	{item}
+																</span>
+															))}
+													{result?.toolTrace?.map((item, index) => (
+														<span
+															className={`${styles.toolTraceItem} ${styles[`traceStatus_${item.status}`] || ''}`}
+															key={`tool-${item.tool}-${index}`}
+														>
+															{item.tool}
+														</span>
+													))}
+												</div>
+											</div>
+										)}
+									</details>
+								)}
+							</>
+						)
+					},
+					{
+						key: 'tasks',
+						label: '待办',
+						children: (
+							<>
+								<div className={styles.agentSection}>
+									<div className={styles.agentTitle}>聊天事项卡片</div>
+									<select
+										aria-label="选择聊天会话"
+										value={selectedRoom}
+										onChange={event => onSelectRoom(event.target.value)}
+									>
+										<option value="">选择一个会话</option>
+										{conversations.map(item => (
+											<option key={item.room} value={item.room}>
+												{item.name || item.room}
+											</option>
+										))}
+									</select>
+									<Button
+										size="small"
+										disabled={!selectedRoom}
+										loading={taskCandidateLoading}
+										onClick={onGenerateTasks}
+									>
+										整理事项
+									</Button>
+									{taskCandidateResult && taskCandidateResult.todos.length === 0 && (
+										<p>最近消息中没有明确事项。</p>
+									)}
+									{taskCandidateResult?.todos.map((todo, index) => (
+										<div
+											className={`${styles.todoItem} ${styles.taskCandidateItem}`}
+											key={`${todo.title}-${index}`}
+										>
+											<label>
+												<input
+													type="checkbox"
+													checked={selectedTaskIndexes.includes(index)}
+													disabled={taskActionStatus?.status !== 'pending'}
+													onChange={event =>
+														onSelectedTaskIndexesChange(
+															event.target.checked
+																? [...selectedTaskIndexes, index]
+																: selectedTaskIndexes.filter(item => item !== index)
+														)
+													}
+												/>
+												{todo.title}
+											</label>
+											{todo.assignee && <em>{todo.assignee}</em>}
+											{todo.due && <em>{todo.due}</em>}
+											{todo.sources.map(source => (
+												<button
+													type="button"
+													key={source.id}
+													onClick={() => onJumpToSource(source.id)}
+												>
+													原消息 #{source.id}：{source.content}
+												</button>
+											))}
+										</div>
+									))}
+									{taskCandidateResult?.action && (
+										<div className={styles.actionControls}>
+											<span>
+												{taskActionStatus?.status === 'pending'
+													? '待确认'
+													: taskActionStatus?.status === 'executing'
+														? '执行中'
+														: taskActionStatus?.status === 'completed'
+															? '已完成'
+															: taskActionStatus?.status === 'expired'
+																? '已过期'
+																: '已取消'}
+											</span>
+											<Button
+												size="small"
+												type="primary"
+												disabled={
+													!selectedTaskIndexes.length || taskActionStatus?.status !== 'pending'
+												}
+												loading={pendingActionId === taskCandidateResult.action.confirmationId}
+												onClick={onConfirmSelectedTasks}
+											>
+												确认保存所选
+											</Button>
+											<Button
+												size="small"
+												disabled={taskActionStatus?.status !== 'pending'}
+												onClick={onCancelSelectedTasks}
+											>
+												取消
+											</Button>
+											<Button size="small" onClick={onCheckTaskStatus}>
+												查询结果／重试确认
+											</Button>
+										</div>
+									)}
+								</div>
+								{hasTodos && (
+									<div className={styles.agentSection}>
+										<div className={styles.agentTitle}>待办建议</div>
+										<div className={styles.todoList}>
+											{result!.todos!.map((todo, index) => (
+												<div className={styles.todoItem} key={`${todo.title}-${index}`}>
+													<span>{todo.title}</span>
+													{todo.assignee && <em>{todo.assignee}</em>}
+													{todo.due && <em>{todo.due}</em>}
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+
+								{tasks.length > 0 && (
+									<div className={styles.agentSection}>
+										<div className={styles.agentTitle}>我的待办</div>
+										<div className={styles.todoList}>
+											{tasks.slice(0, 8).map(task => (
+												<div className={styles.todoItem} key={task.id}>
+													<Button
+														size="small"
+														type={task.status === 'completed' ? 'default' : 'link'}
+														onClick={() => onUpdateTask(task, task.status !== 'completed')}
+													>
+														{task.status === 'completed' ? '已完成' : '完成'}
+													</Button>
+													<span>{task.title}</span>
+													{task.due && <em>{task.due}</em>}
+												</div>
+											))}
+											{tasksLoading && <span className={styles.taskHint}>加载中...</span>}
+										</div>
+									</div>
+								)}
+
+								{tasksLoading && tasks.length === 0 && <p role="status">正在加载待办…</p>}
+								{!tasksLoading && tasks.length === 0 && (
+									<p className={styles.taskHint}>暂无已保存的待办，可从聊天记录中整理事项。</p>
+								)}
+							</>
+						)
+					},
+					{
+						key: 'memory',
+						label: '记忆',
+						children: (
+							<section className={styles.agentSection}>
+								<div className={styles.memoryControls}>
+									<span>在回复中参考已保存记忆</span>
+									<Switch
+										aria-label="在回复中参考已保存记忆"
+										size="small"
+										checked={memoryEnabled}
+										onChange={onMemoryEnabledChange}
+									/>
+								</div>
+								<p className={styles.taskHint}>
+									只有你确认保存的内容才会成为记忆，可随时查看和删除。
+								</p>
+								<Button onClick={onOpenMemoryManager}>管理记忆</Button>
+							</section>
+						)
+					}
+				]}
+			/>
+		</div>
 	);
 };
 

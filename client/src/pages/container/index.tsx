@@ -40,6 +40,7 @@ const Container = () => {
 	const [initSelectedChat, setInitSelectedChat] = useState<IFriendInfo | IGroupChatInfo | null>(
 		null
 	);
+	const [callId, setCallId] = useState<string>();
 	const [room, setRoom] = useState<string>('');
 	const [curMode, setCurMode] = useState<string>('');
 	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]);
@@ -56,7 +57,7 @@ const Container = () => {
 				clearSessionStorage();
 				showMessage('success', '退出成功');
 				if (socket.current !== null) {
-					socket.current.close();
+					socket.current.destroy();
 					socket.current = null;
 				}
 				navigate('/login');
@@ -105,14 +106,15 @@ const Container = () => {
 
 	// 进入主页面时建立 websocket 连接（H3: 携带 token 认证）
 	const initSocket = () => {
+		socket.current?.destroy();
 		const token = tokenStorage.getItem();
 		const ws = new ReconnectingWebSocket(
-			`${wsBaseURL}/auth/user_channel?username=${user.username}&token=${encodeURIComponent(token)}`
+			`${wsBaseURL}/auth/user_channel?username=${encodeURIComponent(user.username)}&token=${encodeURIComponent(token)}`
 		);
 
 		ws.onMessage = e => {
 			// H11: safeParse 保护，非法 JSON 不致白屏
-			const message = safeParse<{ name: string; callReceiverList?: ICallReceiverInfo[]; room?: string; mode?: string }>(e.data, { name: '' });
+			const message = safeParse<{ name: string; callId?: string; status?: string; memberStatus?: string; callReceiverList?: ICallReceiverInfo[]; room?: string; mode?: string }>(e.data, { name: '' });
 			switch (message.name) {
 				case 'friendList':
 					addressBookRef.current?.refreshFriendList();
@@ -123,10 +125,14 @@ const Container = () => {
 				case 'chatList':
 					chatRef.current?.refreshChatList();
 					break;
+				case 'call_state':
+					window.dispatchEvent(new CustomEvent('pomelo-call-state', {detail: message}));
+					break;
 				case 'create_room': {
 					try {
 						const { callReceiverList, room, mode } = message;
 						if (callReceiverList && room && mode) {
+							setCallId(message.callId);
 							setCallReceiverList(callReceiverList);
 							setRoom(room);
 							setCurMode(mode);
@@ -151,6 +157,12 @@ const Container = () => {
 			chatRef.current?.refreshChatList();
 		};
 
+		ws.onClose = event => {
+			if (event.code === 4001) setTimeout(() => {
+				if (tokenStorage.getItem() !== token) return;
+				clearSessionStorage(); navigate('/login');
+			},300);
+		};
 		ws.onError = () => {
 			console.error('[通知管道] 连接出错，将自动重连');
 		};
@@ -171,7 +183,7 @@ const Container = () => {
 		initSocket();
 		return () => {
 			if (socket.current) {
-				socket.current.close();
+				socket.current.destroy();
 				socket.current = null;
 			}
 		};
@@ -256,7 +268,7 @@ const Container = () => {
 					handleModal={handleAudioModal}
 					status="receive"
 					type={curMode.includes('private') ? 'private' : 'group'}
-					callInfo={{ room, callReceiverList }}
+					callInfo={{ room, callId, callReceiverList }}
 				/>
 			)}
 			{openVideoModal && callReceiverList.length && (
@@ -265,7 +277,7 @@ const Container = () => {
 					handleModal={handleVideoModal}
 					status="receive"
 					type={curMode.includes('private') ? 'private' : 'group'}
-					callInfo={{ room, callReceiverList }}
+					callInfo={{ room, callId, callReceiverList }}
 				/>
 			)}
 		</div>

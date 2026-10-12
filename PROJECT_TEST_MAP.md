@@ -95,6 +95,9 @@ Generated: 2026-07-21
 Internal Pomelo tools:
 
 - `get_recent_messages`
+- `search_messages`
+- `get_message_context`
+- `list_my_tasks`
 - `search_contacts`
 - `search_groups`
 - `extract_todos`
@@ -108,7 +111,7 @@ External MCP:
 - Configured from `MCP_SERVERS_JSON`.
 - Supports stdio, SSE, and streamable HTTP MCP transports.
 - Current live tool list included web search and Amap map/weather/route tools during QA.
-- Write-class external tools require confirmation if configured in `writeTools`.
+- Existing read-only MCP servers remain compatible. Servers with `writeTools` must list read tools in `readTools`; writes require a string idempotency field in `idempotencyKeys` and user confirmation.
 
 ## 8. Message Protocol
 
@@ -196,3 +199,10 @@ AI SSE:
   - 100 concurrent HTTP reads.
   - WebSocket burst delivery.
   - AI latency and rate-limit behavior.
+
+## P0/P1 integrated regressions
+
+- `server/scripts/test-system-integrity.js`: real isolated MySQL/Redis, registration races, duplicate contacts, transactional message sequence and ACK, outbox retry after Redis failure, attachment authorization and metadata recovery, paged history, read cursor monotonicity, legacy migration replay, session replacement/revocation, and RTC cancellation/timeout state.
+- `qa/playwright/system-regressions.e2e.spec.ts`: real login, private chat delivery, AI suggestion insertion, room switching, deterministic streaming updates, and password change.
+- `server/scripts/run-isolated-tests.js system|migrations|browser`: local runner creates and removes only its own test database; credentials come from `server/.env` without accessing business tables.
+- CI runs migration, system, browser, existing regression suites, and both production builds. LiveKit media/device behavior and real LLM provider availability remain outside these deterministic regressions.

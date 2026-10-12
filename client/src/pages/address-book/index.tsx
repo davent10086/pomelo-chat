@@ -40,6 +40,10 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 	const user = userStorage.getItem();
 	const showMessage = useShowMessage();
 
+	const [searchQuery, setSearchQuery] = useState('');
+	const keyword = searchQuery.trim().toLocaleLowerCase();
+	const matches = (...values: (string | undefined)[]) =>
+		values.some(value => value?.toLocaleLowerCase().includes(keyword));
 	const [curTab, setCurTab] = useState<string>(TabType.FRIEND); // 当前 tab 是好友还是群聊
 	// 好友相关状态
 	const [friendList, setFriendList] = useState<IFriendGroupItem[]>([]); // 好友列表
@@ -54,53 +58,59 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 	const [openCreateModal, setCreateModal] = useState(false); // 是否打开创建群聊的 modal
 
 	// 难点: 如何将后端返回的数据转换成 Tree 组件需要的数据格式
-	const treeData = friendList.map(group => {
-		return {
-			title: (
-				<span>
-					{group.name}&nbsp;&nbsp;&nbsp;&nbsp;{group.online_counts}/{group.friend.length}
-				</span>
-			),
-			key: String(Math.random()), // 根据实际情况生成唯一的 key，这里简单使用了随机数
-			selectable: false,
-			children: group.friend.map(friend => ({
+	const treeData = friendList
+		.map(group => ({
+			...group,
+			friend: group.friend.filter(friend => matches(friend.remark, friend.username))
+		}))
+		.filter(group => !keyword || group.friend.length > 0)
+		.map(group => {
+			return {
 				title: (
-					<div className={styles.nodeContent}>
-						<ImageLoad src={friend.avatar} />
-						<span>{friend.remark}</span>
-						<span className={styles.friendStatus}>
-							<Tooltip
-								placement="bottomLeft"
-								title={
-									friend.online_status === 'offline'
-										? StatusIconList[1].text
-										: StatusIconList[0].text
-								}
-								arrow={false}
-							>
-								<span
-									className={`iconfont ${
-										friend.online_status === 'offline'
-											? StatusIconList[1].icon
-											: StatusIconList[0].icon
-									}`}
-								></span>
-							</Tooltip>
-						</span>
-					</div>
+					<span>
+						{group.name}&nbsp;&nbsp;&nbsp;&nbsp;{group.online_counts}/{group.friend.length}
+					</span>
 				),
-				key: String(friend.id),
-				isLeaf: true
-			}))
-		};
-	});
+				key: `group-${group.name}`, // 根据实际情况生成唯一的 key，这里简单使用了随机数
+				selectable: false,
+				children: group.friend.map(friend => ({
+					title: (
+						<div className={styles.nodeContent}>
+							<ImageLoad src={friend.avatar} />
+							<span>{friend.remark}</span>
+							<span className={styles.friendStatus}>
+								<Tooltip
+									placement="bottomLeft"
+									title={
+										friend.online_status === 'offline'
+											? StatusIconList[1].text
+											: StatusIconList[0].text
+									}
+									arrow={false}
+								>
+									<span
+										className={`iconfont ${
+											friend.online_status === 'offline'
+												? StatusIconList[1].icon
+												: StatusIconList[0].icon
+										}`}
+									></span>
+								</Tooltip>
+							</span>
+						</div>
+					),
+					key: String(friend.id),
+					isLeaf: true
+				}))
+			};
+		});
 	// 根据节点的 key 获取节点的信息
 	/**
 	 * 根据节点ID获取节点信息
-	 * 
+	 *
 	 * 通过好友ID从服务器获取详细的好友信息，并设置到当前选中的好友信息状态中
 	 * 同时更新好友信息表单的数据
-	 * 
+	 *
 	 * @param id - 好友ID
 	 */
 	const getNodeInfoById = async (id: number) => {
@@ -123,10 +133,10 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 	};
 	/**
 	 * 处理树形结构节点选择事件
-	 * 
+	 *
 	 * 当用户在好友树中选择一个好友节点时，触发此函数
 	 * 获取被选中节点的好友信息并显示
-	 * 
+	 *
 	 * @param selectedKeys - 被选中的节点key数组
 	 * @param info - 节点相关信息对象
 	 */
@@ -137,7 +147,7 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 刷新好友列表
-	 * 
+	 *
 	 * 从服务器获取最新的好友列表数据并更新状态
 	 * 如果请求成功，更新friendList状态；如果失败，显示错误消息
 	 */
@@ -156,7 +166,7 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 获取好友分组列表
-	 * 
+	 *
 	 * 从服务器获取好友分组列表数据并更新状态
 	 * 如果请求成功，更新groupList状态；如果失败，显示错误消息
 	 */
@@ -175,7 +185,7 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 更新好友信息
-	 * 
+	 *
 	 * 验证表单数据后，向服务器发送请求更新好友的备注和分组信息
 	 * 更新成功后刷新好友列表并显示成功消息，失败则显示错误消息
 	 */
@@ -202,7 +212,7 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 创建新的好友分组
-	 * 
+	 *
 	 * 验证分组名称后，向服务器发送请求创建新的好友分组
 	 * 创建成功后刷新好友列表和分组列表，关闭模态框并显示成功消息
 	 * 如果分组名称为空或请求失败，则显示相应的错误消息
@@ -235,7 +245,7 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 刷新群聊列表
-	 * 
+	 *
 	 * 从服务器获取最新的群聊列表数据并更新状态
 	 * 如果请求成功，更新groupChatList状态；如果失败，显示错误消息
 	 */
@@ -254,9 +264,9 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 处理选择群聊事件
-	 * 
+	 *
 	 * 当用户点击某个群聊时，获取该群聊的详细信息并设置为当前选中的群聊
-	 * 
+	 *
 	 * @param item - 被选中的群聊项
 	 */
 	const handleSelectGroupChat = async (item: IGroupChatItem) => {
@@ -324,9 +334,9 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 控制创建群聊模态框的显示与隐藏
-	 * 
+	 *
 	 * 用于打开或关闭邀请好友加入群聊的模态框
-	 * 
+	 *
 	 * @param visible - 是否显示模态框
 	 */
 	const handleCreateModal = (visible: boolean) => {
@@ -365,10 +375,10 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 
 	/**
 	 * 生成标签标题元素
-	 * 
+	 *
 	 * 为Tabs组件生成带有右键菜单功能的标题元素
 	 * 根据传入的key值确定是好友标签还是群聊标签，并添加相应的右键菜单
-	 * 
+	 *
 	 * @param key - 标签类型标识符 (1表示好友，2表示群聊)
 	 * @returns 带有Tooltip的JSX元素
 	 */
@@ -409,24 +419,26 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 			key: TabType.GROUP_CHAT,
 			label: titleLabel(2),
 			children:
-				groupChatList.length === 0 ? (
+				groupChatList.filter(item => matches(item.name)).length === 0 ? (
 					<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
 				) : (
 					<div className={styles.groupChatList}>
-						{groupChatList.map(item => {
-							return (
-								<div
-									className={`${styles.groupChat} ${
-										curGroupChatInfo?.id === item.id ? styles.curGroupChatInfo : ''
-									}`}
-									key={item.id}
-									onClick={() => handleSelectGroupChat(item)}
-								>
-									<ImageLoad src={item.avatar} />
-									<span>{item.name}</span>
-								</div>
-							);
-						})}
+						{groupChatList
+							.filter(item => matches(item.name))
+							.map(item => {
+								return (
+									<div
+										className={`${styles.groupChat} ${
+											curGroupChatInfo?.id === item.id ? styles.curGroupChatInfo : ''
+										}`}
+										key={item.id}
+										onClick={() => handleSelectGroupChat(item)}
+									>
+										<ImageLoad src={item.avatar} />
+										<span>{item.name}</span>
+									</div>
+								);
+							})}
 					</div>
 				)
 		}
@@ -440,7 +452,11 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 		return (
 			<div className={styles.leftContainer}>
 				<div className={styles.search}>
-					<SearchContainer />
+					<SearchContainer
+						query={searchQuery}
+						onSearchChange={setSearchQuery}
+						placeholder="搜索联系人或群聊"
+					/>
 				</div>
 				<div className={styles.list}>
 					<div className={styles.addressBookTabs}>
@@ -449,11 +465,11 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 				</div>
 			</div>
 		);
-	}, [friendList, groupChatList, curGroupChatInfo]);
+	}, [friendList, groupChatList, curGroupChatInfo, searchQuery]);
 
 	/**
 	 * 暴露组件内部方法给父组件使用
-	 * 
+	 *
 	 * 通过ref将组件内部的方法暴露给父组件，使父组件可以调用这些方法
 	 * 主要暴露刷新好友列表和刷新群聊列表的方法
 	 */

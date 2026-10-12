@@ -33,6 +33,10 @@ export interface IRouter {
  */
 export const router: Array<IRouter> = [
 	{
+		path: '/desktop-assistant',
+		component: lazy(() => import('@/pages/desktop-assistant'))
+	},
+	{
 		path: '/',
 		component: withPrivateRoute(lazy(() => import('@/pages/home'))), // 需要登录才能访问的页面
 		children: [

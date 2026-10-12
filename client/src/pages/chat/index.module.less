@@ -1,5 +1,9 @@
 @import '@/assets/styles/variables.less';
 
+.receiverName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.searchToggle { background: transparent; color: #666; font-size: 18px; width: 32px; height: 32px; cursor: pointer; border-radius: 5px; &:hover { background: #eaeaea; } }
+.chat_unread span { background: #ed5b58; color: white; border-radius: 10px; min-width: 16px; height: 16px; font-size: 10px; text-align: center; line-height: 16px; padding: 0 4px; margin-top: 6px; }
+
 .chatList {
 	display: flex;
 	height: 100%;
@@ -146,6 +150,7 @@
 	.rightContainer {
 		flex: 12;
 		min-width: 0;
+		container-type: inline-size;
 		background-color: @deeply-border_bg-color; // 右侧聊天区浅灰背景
 		display: flex;
 		justify-content: center;
@@ -167,6 +172,10 @@
 				padding-left: 0.2rem;
 				padding-right: 0.2rem;
 				gap: 0.1rem;
+			}
+
+			.mobileBack {
+				display: none;
 			}
 
 			.chat_body {
@@ -216,6 +225,7 @@
 	.agentPanel {
 		flex: 0 0 320px;
 		width: 320px;
+		min-width: 0;
 		box-sizing: border-box;
 		height: 100%;
 		overflow: auto;
@@ -228,24 +238,18 @@
 		display: none;
 	}
 
-	@media (max-width: 900px) {
-		.leftContainer { flex-basis: 240px; min-width: 220px; }
+	.agentPanelContent {
+		min-width: 0;
+	}
 
-		.chat_window .agentPanelOpen .chat_main {
+	@media (max-width: 700px) {
+		&.activeConversation .leftContainer {
 			display: none;
 		}
 
-		.agentPanel {
-			flex: 1 1 auto;
-			width: auto;
-			border-left: 0;
-		}
-
-		.agentPanelClose {
+		.rightContainer .chat_window .chat_receiver .mobileBack {
 			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			margin-bottom: 0.12rem;
+			flex: 0 0 auto;
 			padding: 0.05rem 0.09rem;
 			border: 1px solid fade(@primary-antd-color, 35%);
 			border-radius: 4px;
@@ -284,6 +288,7 @@
 
 	.agentToolbar {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.12rem;
@@ -341,8 +346,13 @@
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
+		min-width: 0;
 		gap: 0.08rem;
 		margin-bottom: 0.14rem;
+
+		select {
+			width: 100%;
+		}
 	}
 
 	.agentTitle {
@@ -358,6 +368,8 @@
 
 	.actionControls {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.06rem;
 	}
 
@@ -389,6 +401,7 @@
 
 	.todoItem {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.04rem;
 		max-width: 100%;
@@ -397,9 +410,11 @@
 		border-radius: 4px;
 		padding: 0.04rem 0.08rem;
 		font-size: 0.12rem;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		overflow-wrap: anywhere;
+
+		> span {
+			min-width: 0;
+		}
 
 		em {
 			color: @font-color-lightest;
@@ -416,6 +431,30 @@
 		flex-wrap: wrap;
 		gap: 0.05rem;
 		min-width: 0;
+	}
+
+	.taskCandidateItem {
+		flex-direction: column;
+		align-items: stretch;
+
+		label {
+			display: flex;
+			align-items: flex-start;
+			gap: 0.06rem;
+			min-width: 0;
+		}
+
+		input {
+			flex: 0 0 auto;
+			margin-top: 0.02rem;
+		}
+
+		button {
+			max-width: 100%;
+			text-align: left;
+			white-space: normal;
+			overflow-wrap: anywhere;
+		}
 	}
 
 	.agentTraceItem,
@@ -466,6 +505,36 @@
 }
 
 
+@container (max-width: 840px) {
+	.chatList .rightContainer .chat_window .agentPanelOpen .chat_main {
+		display: none;
+	}
+
+	.agentPanelOpen .agentPanel {
+		flex: 1 1 auto;
+		width: auto;
+		border-left: 0;
+	}
+
+	.agentPanelOpen .agentPanelClose {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 0.12rem;
+		padding: 0.05rem 0.09rem;
+		border: 1px solid fade(@primary-antd-color, 35%);
+		border-radius: 4px;
+		background: fade(@primary-antd-color, 8%);
+		color: @primary-antd-color;
+		cursor: pointer;
+
+		&:focus-visible {
+			outline: 2px solid @primary-antd-color;
+			outline-offset: 2px;
+		}
+	}
+}
+
 .memoryHeader {
 	display: flex;
 	align-items: center;
@@ -512,4 +581,73 @@
 		font-size: 13px;
 		word-break: break-word;
 	}
+}
+
+.messageSearch {
+    flex: 0 0 320px;
+    width: 320px;
+    max-width: 100%;
+    min-width: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px;
+    background: @primary-color;
+    border-left: 1px solid @primary-border_bg-color;
+    h3 { margin: 12px 0; font-size: 18px; }
+    label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    input[type='date'] { min-width: 0; padding: 6px; border: 1px solid @primary-border_bg-color; border-radius: 4px; }
+    button:focus-visible, input:focus-visible { outline: 2px solid @primary-antd-color; outline-offset: 2px; }
+}
+@container (max-width: 840px) {
+    .chatList .rightContainer .chat_window .searchPanelOpen .chat_main { display: none; }
+    .searchPanelOpen .messageSearch { flex: 1 1 auto; width: 100%; border-left: 0; }
+}
+@media (max-width: 700px) {
+    .chatList {
+        .leftContainer { flex: 1 1 auto; min-width: 0; }
+        &:not(.activeConversation) .rightContainer { display: none; }
+        .rightContainer .chat_window {
+            .chat_receiver { padding: 8px; gap: 8px; font-size: 16px; }
+            .chat_receiver > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+            .chat_receiver button { font-size: 12px; flex-shrink: 0; min-height: 36px; }
+            .chat_input { flex-basis: 156px; }
+        }
+    }
+}
+.agentAnswer { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin: 0; }
+.agentDetails {
+    margin-top: 16px;
+    border-top: 1px solid @primary-border_bg-color;
+    padding-top: 12px;
+    summary { cursor: pointer; font-size: 13px; padding: 8px 0; color: @font-color-lighter; }
+    summary:focus-visible { outline: 2px solid @primary-antd-color; }
+}
+
+@media (min-width: 701px) {
+.chatList {
+ .leftContainer { flex: 0 0 250px; min-width: 250px; background: #f5f6f7; border-right: 1px solid #e8e8e8;
+  .search { height: 56px; flex-shrink: 0; }
+  .list .chat_item { min-height: 72px; height: 72px; padding: 0 14px; border-bottom: 1px solid #eceff1; position: relative;
+   .chat_avatar { flex: 0 0 40px; img { width: 40px; height: 40px; border-radius: 5px; } }
+   .chat_info { flex: 1; min-width: 0; padding: 0 6px 0 10px;
+    .chat_name { font-size: 14px; padding-right: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat_message { margin-top: 3px; color: #929299; }
+   }
+   .chat_info_time { position: absolute; right: 10px; top: 10px; padding: 0; align-items: flex-end;
+    .chat_time { font-size: 10px; color: #96969c; max-width: 42px; }
+   }
+  }
+  .list .assistant_item { background: transparent; .chat_name::after { display: none; } }
+  .list .selectedChat { background: #e3eee7; box-shadow: inset 3px 0 #07b85a; }
+  .list .chat_item:hover { background: #edf0f2; }
+ }
+ .rightContainer { background: #f0f2f4;
+  .chat_window {
+   .chat_receiver { height: 56px; flex-basis: 56px; font-size: 16px; font-weight: 600; background: #fff; border-bottom: 1px solid #e2e6e9; }
+   .chat_body { border-top: 0; }
+   .chat_content { border-bottom: 0; padding-top: 16px; }
+   .chat_input { flex-basis: 160px; background: #fff; padding: 0; }
+  }
+ }
+}
 }

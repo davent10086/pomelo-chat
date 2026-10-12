@@ -3,8 +3,8 @@ import { IMessageItem } from '@/components/MessageShow/type';
 import Request from '@/utils/request';
 
 // 获取消息列表
-export const getChatList = async () => {
-	const res = await Request.get<IMessageListItem[]>(`message/chat_list`);
+export const getChatList = async (signal?: AbortSignal) => {
+	const res = await Request.get<IMessageListItem[]>(`message/chat_list`, { signal });
 	return res.data;
 };
 

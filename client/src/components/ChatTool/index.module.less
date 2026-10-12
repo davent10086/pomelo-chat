@@ -255,3 +255,17 @@
 		font-size: 12px;
 	}
 }
+
+@media (min-width: 701px) {
+.chat_tool {
+ position: relative; border: 0; border-top: 1px solid #dfe5e8; border-radius: 0; background: #fff;
+ .chat_tool_input { order: 0; flex: 1; padding: 14px 20px 8px; background: transparent; textarea { background: transparent; font-size: 14px; } }
+ .chat_tool_item { order: 1; flex: 0 0 36px; padding: 0 90px 12px 20px; align-items: center;
+  .leftIcons button { margin-right: 18px; color: #666; } .rightIcons button { margin-left: 14px; color: #666; }
+ }
+ .chat_tool_btn { position: absolute; right: 16px; bottom: 12px; padding: 0; height: 26px;
+  :global(.ant-btn) { height: 26px; min-width: 48px; border-radius: 5px; background: #55bd72; box-shadow: none; }
+ }
+ .suggestionBox { position: absolute; bottom: 42px; left: 10px; width: calc(100% - 20px); padding: 12px; z-index: 5; margin: 0; }
+}
+}

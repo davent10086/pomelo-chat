@@ -1,0 +1,71 @@
+html.desktop-assistant-surface, .desktop-assistant-surface body, .desktop-assistant-surface #root {
+  background: transparent !important; overflow: hidden; width: 100%; height: 100%; font-size: 14px;
+}
+.assistant-root {
+  width: 100%; height: 100%; color: #21352c; font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  * { box-sizing: border-box; }
+  button, textarea, input { font: inherit; }
+  button { cursor: pointer; border: 0; border-radius: 10px; transition: background 120ms, transform 120ms; }
+  button:disabled { cursor: default; opacity: .45; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid #07c160; outline-offset: 2px; }
+  button:active:not(:disabled) { transform: scale(.97); }
+}
+.assistant-ball-wrap { width: 40px; height: 96px; touch-action: none; animation: content-enter 200ms ease-out; }
+.assistant-ball {
+  width: 40px; height: 96px; position: relative; padding: 12px 6px; background: #f5fbf7;
+  border: 1px solid #d6e7dc !important; border-radius: 0 10px 10px 0 !important;
+  display: flex; flex-direction: column; gap: 4px; align-items: center; color: #07a44e;
+  img { width: 24px; height: 24px; pointer-events: none; }
+  strong { font-size: 12px; } .assistant-tab-arrow { font-size: 18px; line-height: 16px; }
+  &:hover { background: #e6f5ec; }
+  &.has-unread { animation: ball-glow 900ms ease-out; }
+}
+.unread-dot { position: absolute; right: 0; top: 0; width: 9px; height: 9px; background: #07c160; border: 2px solid white; border-radius: 50%; }
+.is-dragging .assistant-ball { animation-play-state: paused; cursor: grabbing; }
+.assistant-panel {
+  position: absolute; inset: 0; display: flex; flex-direction: column; border: 1px solid #d3eade;
+  border-radius: 0 10px 10px 0; background: #f4f7f5; overflow: hidden; padding-top: 32px; box-shadow: 0 2px 6px #133c251a;
+  header { display: flex; justify-content: space-between; align-items: center; height: 56px; flex-shrink: 0; padding: 10px 18px; background: #fff; border-bottom: 1px solid #e2e8e4; touch-action: none; cursor: grab; user-select: none;
+    > div { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+    img { width: 30px; height: 30px; }
+    small { display: block; font-size: 11px; color: #6d8375; font-weight: 400; }
+    button { background: transparent; width: 32px; height: 32px; font-size: 24px; color: #587362; &:hover { background: #d9efdf; } }
+  }
+}
+[data-phase='expanding'] .assistant-content { animation: content-enter 180ms 60ms both; }
+.assistant-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.assistant-context { padding: 14px 18px 8px; background: #fff; font-size: 12px; label { display: flex; gap: 6px; align-items: center; cursor: pointer; } input { accent-color: #07c160; } > span { display: block; color: #75877d; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
+.assistant-shortcuts { display: flex; gap: 8px; padding: 4px 18px 14px; background: #fff; border-bottom: 1px solid #e2e8e4; button { background: #edf7f0; color: #34764c; padding: 6px 10px; font-size: 12px; &:hover:not(:disabled) { background: #dcf3e4; } } }
+.assistant-messages { min-height: 0; flex: 1; overflow-y: auto; padding: 12px 18px; scrollbar-width: thin; }
+.assistant-welcome { text-align: center; padding: 24px 0; img { width: 46px; height: 46px; } h2 { font-size: 17px; font-weight: 600; margin: 12px 0 6px; } p { color: #73837b; font-size: 13px; } }
+.assistant-message {
+  padding: 10px 12px; margin: 8px 0; border-radius: 13px; background: #f0f5f2; animation: message-enter 160ms ease-out;
+  &.user { background: #e5f8ec; margin-left: 26px; }
+  .message-source { font-size: 10px; color: #7a8f81; margin-bottom: 5px; }
+  .message-text { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+  small { display: block; color: #7a8f81; margin-top: 6px; }
+  .copy-button { font-size: 11px; padding: 3px 6px; color: #4a7c5e; background: transparent; margin-top: 6px; &:hover { background: #e1ede5; } }
+  .reply-suggestion { display: block; width: 100%; text-align: left; padding: 8px; margin-top: 6px; background: #fff; white-space: pre-wrap; overflow-wrap: anywhere; span { display: block; color: #4a7c5e; font-size: 11px; margin-top: 4px; } }
+}
+.thinking { display: inline-flex; gap: 5px; padding: 8px 0; i { width: 5px; height: 5px; border-radius: 50%; background: #77ad89; animation: thinking 1.2s infinite ease-in-out; &:nth-child(2) { animation-delay: 150ms; } &:nth-child(3) { animation-delay: 300ms; } } }
+.assistant-composer { border-top: 1px solid #dfe5e8; padding: 12px 16px; background: white; flex: 0 0 160px; display: flex; flex-direction: column;
+  textarea { display: block; width: 100%; height: auto; min-height: 0; flex: 1; resize: none; border: 0; border-radius: 8px; padding: 10px; background: #f6f8f7; color: #21352c; }
+  > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; span { color: #8a9a90; font-size: 10px; } button { color: white; background: #07b85a; padding: 6px 14px; } }
+}
+.assistant-window-error { font-size: 11px; padding: 5px 12px; color: #9b5723; }
+.assistant-unavailable { font-size: 14px; padding: 20px; }
+@keyframes ball-enter { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+@keyframes ball-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025); } }
+@keyframes ball-glow { 0%, 100% { box-shadow: 0 3px 8px #153c2529; } 50% { box-shadow: 0 0 0 5px #07c16026; } }
+@keyframes message-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes content-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes thinking { 0%, 100% { opacity: .4; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-root *, .assistant-root *::before, .assistant-root *::after { animation: none !important; transition: none !important; }
+}
+
+.assistant-panel::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 32px; background: #e6e5e8; border-bottom: 1px solid #dfe4e1; }
+.assistant-messages.is-empty { display: grid; place-items: center; }
+.assistant-context label { font-weight: 500; color: #40574a; }
+.assistant-shortcuts button { border: 1px solid #dce8df; border-radius: 7px; }
+.assistant-composer > div { min-height: 30px; }

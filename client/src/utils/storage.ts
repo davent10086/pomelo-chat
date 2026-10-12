@@ -1,3 +1,4 @@
+import { clearUserDrafts } from './chat-drafts';
 import { safeParse } from './safe-parse';
 
 export const sessionStorageKey = 'pomelo-chat.';
@@ -23,6 +24,9 @@ export class TypedStorage<T> implements ISessionStorage<T> {
 
 	setItem(value: T) {
 		sessionStorage.setItem(this.key, JSON.stringify(value));
+		if (this.key === sessionStorageKey + 'authToken')
+			window.dispatchEvent(new Event('pomelo-token-changed'));
+		window.dispatchEvent(new Event('pomelo-session-changed'));
 	}
 
 	getItem(): T {
@@ -32,6 +36,7 @@ export class TypedStorage<T> implements ISessionStorage<T> {
 
 	removeItem() {
 		sessionStorage.removeItem(this.key);
+		window.dispatchEvent(new Event('pomelo-session-changed'));
 	}
 }
 
@@ -75,9 +80,18 @@ export const getAuthHeader = (): string => {
 
 /** 只清除当前项目所属的本地存储 */
 export const clearSessionStorage = () => {
+	const userId = userStorage.getItem().id;
+	clearUserDrafts(userId);
+	if (userId)
+		void import('./pending-messages')
+			.then(module => module.clearPendingMessages(userId))
+			.catch(() => undefined);
+	window.dispatchEvent(new Event('pomelo-logout'));
+
 	for (const key in sessionStorage) {
 		if (key.includes(sessionStorageKey)) {
 			sessionStorage.removeItem(key);
 		}
 	}
+	window.dispatchEvent(new Event('pomelo-session-changed'));
 };

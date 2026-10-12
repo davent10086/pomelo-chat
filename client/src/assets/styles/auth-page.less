@@ -1,0 +1,55 @@
+// Shared, locally rendered background for the login and registration pages.
+.authBackground() {
+	position: relative;
+	width: 100%;
+	min-height: 100vh;
+	min-height: 100dvh;
+	:global(.desktop-main-surface) & { min-height: calc(100dvh - 32px); }
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 48px 20px;
+	isolation: isolate;
+	background:
+		radial-gradient(ellipse at 12% 20%, #dcefe4 0%, transparent 48%),
+		radial-gradient(ellipse at 90% 85%, #e2eee9 0%, transparent 45%),
+		linear-gradient(145deg, #f3f7f5, #fafbfa 55%, #f0f5f3);
+	&::before, &::after {
+		content: ''; position: absolute; pointer-events: none; z-index: -1;
+		width: min(32vw, 380px); aspect-ratio: 1; border-radius: 28%;
+		border: 1px solid #ffffffb3; background: #ffffff26;
+	}
+	&::before { left: 6%; top: 12%; transform: rotate(-16deg); }
+	&::after { right: 7%; bottom: 10%; transform: rotate(18deg); }
+	@media (max-width: 600px) { padding: 24px 16px; &::before, &::after { display: none; } }
+}
+
+.authCard() {
+	width: 420px;
+	max-width: 100%;
+	padding: 36px 32px 28px;
+	border: 1px solid #ffffff;
+	border-radius: 18px;
+	background: #ffffffeb;
+	box-shadow: 0 16px 60px #274a3810, 0 2px 8px #274a3806;
+	backdrop-filter: blur(12px);
+	color: #35443c;
+	.text { text-align: center; margin-bottom: 28px; color: #283d31; text-shadow: none;
+		h2 { font-size: 26px; font-weight: 600; line-height: 1.4; }
+	}
+	form { width: 100%; display: flex; flex-direction: column;
+		:global(.ant-form-item) { width: 100%; margin-bottom: 20px; }
+		:global(.ant-input) { height: 42px; padding: 8px 12px; border: 1px solid #e2e8e4; border-radius: 7px; background: #fafcfb; font-size: 14px; color: #35443c; }
+		:global(.ant-input):hover { border-color: #99cbaa; }
+		:global(.ant-input):focus { border-color: #07c160; box-shadow: 0 0 0 2px #07c16012; }
+		.login_tools { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #718077;
+			.remenberTool :global(.ant-checkbox-wrapper) { color: #718077; font-size: 13px; }
+			.forgetpasTool { cursor: pointer; &:hover { color: #07a950; } }
+		}
+		.login_button, .register_button { width: 100%; height: 42px; border-radius: 7px; background: #07b85a; box-shadow: none; letter-spacing: 2px; text-indent: 2px; font-size: 15px;
+			&:hover { background: #06a651 !important; }
+		}
+	}
+	.link { text-align: center; margin-top: 4px; font-size: 13px; a { color: #459366; &:hover { color: #07a950; } } }
+	@media (max-width: 600px) { padding: 28px 22px 24px; border-radius: 14px; }
+}

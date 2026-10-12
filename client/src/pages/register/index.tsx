@@ -6,7 +6,6 @@ import { handleRegister } from './api';
 import styles from './index.module.less';
 import { IRegisterForm } from './type';
 
-import { BgImage } from '@/assets/images';
 import { generateAvatarAPI } from '@/assets/images';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
@@ -69,7 +68,7 @@ const Register = () => {
 
 	return (
 		<>
-			<div className={styles.bgContainer} style={{ backgroundImage: `url(${BgImage})` }}>
+			<div className={styles.bgContainer}>
 				<div className={styles.registerContainer}>
 					<div className={styles.text}>
 						<h2>Welcome</h2>

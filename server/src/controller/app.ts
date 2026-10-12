@@ -40,7 +40,7 @@ const cors: RequestHandler = (req, res, next) => {
 		'Access-Control-Allow-Headers',
 		'Content-Type, Authorization, X-Requested-With'
 	);
-	res.header('Access-Control-Allow-Methods', 'PUT,POST,GET,DELETE,OPTIONS');
+	res.header('Access-Control-Allow-Methods', 'PUT,POST,PATCH,GET,DELETE,OPTIONS');
 	res.header('Content-Type', 'application/json;charset=utf-8');
 
 	if (req.method.toLowerCase() === 'options') {
@@ -60,7 +60,7 @@ const requestContext: RequestHandler = (req, res, next) => {
 			JSON.stringify({
 				requestId,
 				method: req.method,
-				path: req.originalUrl,
+				path: req.path,
 				status: res.statusCode,
 				durationMs: Date.now() - startedAt
 			})

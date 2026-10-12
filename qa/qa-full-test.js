@@ -308,20 +308,27 @@ const percentile = (arr, p) => {
   const tools = expectBusiness('agent tools', await get('/assistant/agent/tools', users.new_a.token));
   results.evidence.tools = tools.tools.map(t => t.name);
   record('agent tool listing', tools.tools.length >= 8 ? 'pass' : 'fail', { count: tools.tools.length });
+	const recentForContext = expectBusiness('recent message for context lookup', await post('/assistant/agent/tools/call', {
+		name: 'get_recent_messages', args: { room: roomAB, limit: 1 }
+	}, users.new_a.token));
+	const messageIdAB = recentForContext.result.messages[0]?.id;
+	if (!messageIdAB) throw new Error('No message id available for get_message_context');
 
-  const internalTools = ['get_recent_messages', 'search_contacts', 'search_groups', 'extract_todos', 'suggest_replies', 'search_memory', 'save_memory', 'forget_memory'];
+  const internalTools = ['get_recent_messages', 'search_messages', 'get_message_context', 'list_my_tasks', 'search_contacts', 'search_groups', 'extract_todos', 'suggest_replies', 'search_memory', 'save_memory'];
   const mcpMatrix = [];
   for (const toolName of internalTools) {
     const invalid = await post('/assistant/agent/tools/call', { name: toolName, args: null }, users.new_a.token, 10000);
     const validArgs = {
       get_recent_messages: { room: roomAB, limit: 3 },
+      search_messages: { room: roomAB, query: 'qa', limit: 3 },
+      get_message_context: { messageId: messageIdAB, before: 1, after: 1 },
+      list_my_tasks: { status: 'open', limit: 5 },
       search_contacts: { query: users.new_b.username.slice(0, 6) },
       search_groups: { query: 'qa_group' },
       extract_todos: { text: '今天需要确认接口文档\n明天提醒我回归测试' },
       suggest_replies: { text: '请今天确认接口文档，可以吗？', count: 2 },
       search_memory: { query: 'qa-memory', limit: 5 },
-      save_memory: { content: `qa-memory-${RUN_ID}`, category: 'qa' },
-      forget_memory: { query: `qa-memory-${RUN_ID}` }
+      save_memory: { content: `qa-memory-${RUN_ID}`, category: 'qa' }
     }[toolName];
     const valid = await post('/assistant/agent/tools/call', { name: toolName, args: validArgs }, users.new_a.token, 15000);
     mcpMatrix.push({ toolName, invalidCode: invalid.body?.code, validCode: valid.body?.code });
@@ -329,10 +336,13 @@ const percentile = (arr, p) => {
   results.evidence.mcpMatrix = mcpMatrix;
   record('internal MCP/Pomelo tools parameter and happy-path matrix', mcpMatrix.every(row => row.validCode === 200) ? 'pass' : 'fail', { mcpMatrix });
 
-  await post('/assistant/agent/tools/call', {
+  const memoryAction = expectBusiness('memory save proposal', await post('/assistant/agent/tools/call', {
     name: 'save_memory',
     args: { content: `qa-private-memory-${RUN_ID}`, category: 'qa' }
-  }, users.new_a.token);
+  }, users.new_a.token));
+  expectBusiness('memory save confirmation', await post('/assistant/actions/confirm', {
+    confirmationId: memoryAction.result.confirmationId
+  }, users.new_a.token));
   const memoryA = expectBusiness('memory search A', await post('/assistant/agent/tools/call', {
     name: 'search_memory',
     args: { query: `qa-private-memory-${RUN_ID}` }
@@ -342,6 +352,14 @@ const percentile = (arr, p) => {
     args: { query: `qa-private-memory-${RUN_ID}` }
   }, users.new_b.token));
   record('memory isolation by user', memoryA.result.memories.length > 0 && memoryB.result.memories.length === 0 ? 'pass' : 'fail', { memoryA: memoryA.result, memoryB: memoryB.result });
+
+  const memoryDelete = expectBusiness('memory delete proposal', await post('/assistant/agent/tools/call', {
+    name: 'forget_memory', args: { id: memoryA.result.memories[0].id }
+  }, users.new_a.token));
+  record('memory deletion targets exact id', memoryDelete.result.payload.id === memoryA.result.memories[0].id ? 'pass' : 'fail');
+  expectBusiness('cancel memory delete proposal', await post('/assistant/actions/cancel', {
+    confirmationId: memoryDelete.result.confirmationId
+  }, users.new_a.token));
 
   const crossRoomTool = expectBusiness('cross room tool call', await post('/assistant/agent/tools/call', {
     name: 'get_recent_messages',

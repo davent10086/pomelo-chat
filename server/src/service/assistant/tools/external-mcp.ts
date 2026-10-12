@@ -18,7 +18,10 @@ interface ExternalMcpServerConfig {
 	category?: 'calendar' | 'files' | 'web' | 'other';
 	enabled?: boolean;
 	allowedTools?: string[];
+	readTools?: string[];
 	writeTools?: string[];
+	idempotencyKeys?: Record<string, string>;
+	allowedUserIds?: number[];
 }
 
 interface ConnectedMcpServer {
@@ -69,7 +72,11 @@ const parseServerConfig = (value: unknown): ExternalMcpServerConfig | null => {
 		category,
 		enabled: typeof value.enabled === 'boolean' ? value.enabled : undefined,
 		allowedTools: optionalStringArray(value.allowedTools),
-		writeTools: optionalStringArray(value.writeTools)
+		readTools: optionalStringArray(value.readTools),
+		writeTools: optionalStringArray(value.writeTools),
+		idempotencyKeys: optionalStringRecord(value.idempotencyKeys),
+		allowedUserIds: Array.isArray(value.allowedUserIds) && value.allowedUserIds.length === 1 && value.allowedUserIds.every(id => Number.isSafeInteger(id) && id > 0)
+			? value.allowedUserIds as number[] : undefined
 	};
 };
 
@@ -95,6 +102,31 @@ const parseConfig = (): ExternalMcpServerConfig[] => {
 const safeName = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
 
 const sharedArgsSchema = z.record(z.string(), z.unknown());
+const MCP_TIMEOUT_MS = 5000;
+const TOOL_CACHE_MS = 60000;
+
+export const isMcpToolAllowed = (config: Pick<ExternalMcpServerConfig, 'readTools' | 'writeTools' | 'allowedTools' | 'allowedUserIds'>, userId: number, name: string): boolean =>
+	config.allowedUserIds?.length === 1 && config.allowedUserIds[0] === userId &&
+	(config.allowedTools === undefined || config.allowedTools.includes(name)) &&
+	(config.readTools?.includes(name) === true || config.writeTools?.includes(name) === true);
+
+const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T> => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<T>((_resolve, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), MCP_TIMEOUT_MS); })
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+};
+
+export const hasMcpIdempotencyContract = (key: string | undefined, schema: unknown): boolean => {
+	if (!key || !isRecord(schema) || !isRecord(schema.properties)) return false;
+	const field = schema.properties[key];
+	return isRecord(field) && field.type === 'string' && Array.isArray(schema.required) && schema.required.includes(key);
+};
 
 const auditMcpTool = (
 	event: string,
@@ -138,12 +170,36 @@ const auditMcpTool = (
 
 class ExternalMcpManager {
 	private connections = new Map<string, Promise<ConnectedMcpServer>>();
+	private toolCache = new Map<string, { expiresAt: number; tools: Awaited<ReturnType<Client['listTools']>>['tools'] }>();
+	private activeKeys = new Map<string, string>();
+
+	async close(): Promise<void> {
+		const connections = [...this.connections.values()];
+		this.connections.clear(); this.toolCache.clear(); this.activeKeys.clear();
+		await Promise.allSettled(connections.map(async connection => (await connection).client.close()));
+	}
+
+	private configKey(config: ExternalMcpServerConfig): string {
+		return JSON.stringify(config);
+	}
+
+	private invalidate(key: string): void {
+		this.toolCache.delete(key);
+		const connection = this.connections.get(key);
+		this.connections.delete(key);
+		if (connection) void connection.then(connected => connected.client.close()).catch(() => undefined);
+	}
 
 	private connect(config: ExternalMcpServerConfig): Promise<ConnectedMcpServer> {
-		const existing = this.connections.get(config.name);
+		const key = this.configKey(config);
+		const previousKey = this.activeKeys.get(config.name);
+		if (previousKey && previousKey !== key) this.invalidate(previousKey);
+		this.activeKeys.set(config.name, key);
+		const existing = this.connections.get(key);
 		if (existing) return existing;
+		let client: Client | undefined;
+		let transport: ConnectedMcpServer['transport'] | undefined;
 		const connection = (async () => {
-			let transport: ConnectedMcpServer['transport'];
 			if (config.url) {
 				const requestInit = { headers: expandHeaders(config.headers) };
 				transport = config.type === 'sse'
@@ -159,30 +215,51 @@ class ExternalMcpManager {
 				};
 				transport = new StdioClientTransport(stdioConfig);
 			}
-			const client = new Client({ name: 'pomelo-chat-agent', version: '1.0.0' }, { capabilities: {} });
+			client = new Client({ name: 'pomelo-chat-agent', version: '1.0.0' }, { capabilities: {} });
 			await client.connect(transport);
 			return { config, client, transport };
 		})();
-		this.connections.set(config.name, connection);
-		return connection;
+		const guarded = withTimeout(connection, `MCP ${config.name} connection`).catch(error => {
+			if (this.connections.get(key) === guarded) this.invalidate(key);
+			void client?.close().catch(() => undefined);
+			void transport?.close().catch(() => undefined);
+			void connection.then(connected => connected.client.close()).catch(() => undefined);
+			throw error;
+		});
+		this.connections.set(key, guarded);
+		return guarded;
 	}
 
-	async getTools() {
-		const configs = parseConfig().filter(item => item.enabled !== false);
+	async getTools(userId: number) {
+		const configs = parseConfig().filter(item => item.enabled !== false && item.allowedUserIds?.includes(userId));
 		const result = [] as Array<{
 			definition: Record<string, unknown>;
 			serverName: string;
 			invoke: (args: Record<string, unknown>) => Promise<unknown>;
 			requiresConfirmation: boolean;
+			idempotencyKey?: string;
 		}>;
-		for (const config of configs) {
+		const groups = await Promise.all(configs.map(async config => {
+			const group: typeof result = [];
+			const key = this.configKey(config);
 			try {
 				const connected = await this.connect(config);
-				const listed = await connected.client.listTools();
-				for (const remoteTool of listed.tools || []) {
-					if (config.allowedTools?.length && !config.allowedTools.includes(remoteTool.name)) continue;
+				let cached = this.toolCache.get(key);
+				if (!cached || cached.expiresAt <= Date.now()) {
+					const listed = await withTimeout(connected.client.listTools(), `MCP ${config.name} tools`);
+					cached = { expiresAt: Date.now() + TOOL_CACHE_MS, tools: listed.tools || [] };
+					this.toolCache.set(key, cached);
+				}
+				for (const remoteTool of cached.tools) {
+					if (!isMcpToolAllowed(config, userId, remoteTool.name)) continue;
+					const isWrite = config.writeTools?.includes(remoteTool.name) === true;
+					const idempotencyKey = config.idempotencyKeys?.[remoteTool.name];
+					if (isWrite && !hasMcpIdempotencyContract(idempotencyKey, remoteTool.inputSchema)) {
+						console.error(`[assistant-mcp] write tool ${config.name}/${remoteTool.name} lacks declared idempotency input`);
+						continue;
+					}
 					const name = `mcp_${safeName(config.name)}_${safeName(remoteTool.name)}`;
-					result.push({
+					group.push({
 						definition: {
 							name,
 							description: `[External MCP: ${config.name}] ${remoteTool.description || remoteTool.name}. Input schema: ${JSON.stringify(remoteTool.inputSchema || {})}`,
@@ -190,19 +267,30 @@ class ExternalMcpManager {
 							inputSchema: remoteTool.inputSchema || { type: 'object' }
 						},
 						serverName: config.name,
-						invoke: args => connected.client.callTool({ name: remoteTool.name, arguments: args }),
-						requiresConfirmation: config.writeTools?.includes(remoteTool.name) === true
+						invoke: async args => {
+							try {
+								return await withTimeout(connected.client.callTool({ name: remoteTool.name, arguments: args }), `MCP ${config.name}/${remoteTool.name} call`);
+							} catch (error) {
+								if (errorMessage(error).includes('timed out')) this.invalidate(key);
+								throw error;
+							}
+						},
+						requiresConfirmation: isWrite,
+						idempotencyKey
 					});
 				}
 			} catch (error: unknown) {
+				this.invalidate(key);
 				console.error(`[assistant-mcp] failed to load ${config.name}: ${errorMessage(error)}`);
 			}
-		}
+			return group;
+		}));
+		result.push(...groups.flat());
 		return result;
 	}
 
-	async buildTools() {
-		const remoteTools = await this.getTools();
+	async buildTools(userId: number) {
+		const remoteTools = await this.getTools(userId);
 		return remoteTools.filter(remote => !remote.requiresConfirmation).map(remote =>
 			tool(async args => JSON.stringify(await remote.invoke(args as Record<string, unknown>)), {
 				name: String(remote.definition.name),
@@ -212,17 +300,22 @@ class ExternalMcpManager {
 		);
 	}
 
-	async getTool(name: string) {
-		return (await this.getTools()).find(item => item.definition.name === name);
+	async getTool(name: string, userId: number) {
+		return (await this.getTools(userId)).find(item => item.definition.name === name);
 	}
 
-	async isWriteTool(name: string): Promise<boolean> {
-		return (await this.getTool(name))?.requiresConfirmation === true;
+	async isWriteTool(name: string, userId: number): Promise<boolean> {
+		return (await this.getTool(name, userId))?.requiresConfirmation === true;
 	}
 
-	async executeConfirmedTool(name: string, args: Record<string, unknown>, userId?: number) {
-		const remote = await this.getTool(name);
+	async executeConfirmedTool(name: string, args: Record<string, unknown>, userId: number, confirmationId?: string) {
+		const remote = await this.getTool(name, userId);
 		if (!remote) throw new Error(`Unknown external MCP tool: ${name}`);
+		if (remote.requiresConfirmation && (!confirmationId || !remote.idempotencyKey)) throw new Error('External write requires a confirmation id and idempotency contract');
+		if (!remote.requiresConfirmation && confirmationId) throw new Error('Tool classification changed');
+		const callArgs = remote.requiresConfirmation
+			? { ...args, [remote.idempotencyKey!]: confirmationId }
+			: args;
 		await auditMcpTool('mcp_tool_call', {
 			tool: name,
 			server: remote.serverName,
@@ -232,7 +325,8 @@ class ExternalMcpManager {
 			status: 'started'
 		});
 		try {
-			const result = await remote.invoke(args);
+			const result = await remote.invoke(callArgs);
+			if (isRecord(result) && result.isError === true) throw new Error('External MCP tool reported an error');
 			await auditMcpTool('mcp_tool_call', {
 				tool: name,
 				server: remote.serverName,
