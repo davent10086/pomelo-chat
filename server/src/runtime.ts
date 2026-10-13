@@ -1,14 +1,12 @@
-import {
-	better_chat,
-	startSessionSubscription,
-	stopSessionSubscription
-} from './utils/authenticate';
-import { startNotificationDelivery, stopNotificationDelivery } from './utils/notification';
-import { stopNotificationConnections } from './utils/notification-connections';
-import { startSessionChecks, stopSessionChecks } from './utils/socket-session';
-import { startCallTimeouts, stopCallTimeouts } from './service/rtc/calls';
-import { startMessageDelivery, stopMessageDelivery } from './service/message';
-import { externalMcpManager } from './service/assistant/tools/external-mcp';
+import { better_chat } from './infrastructure/redis';
+import { startSessionSubscription, stopSessionSubscription } from './modules/realtime/public';
+import { startNotificationDelivery, stopNotificationDelivery } from './modules/realtime/public';
+import { stopNotificationConnections } from './modules/realtime/public';
+import { startSessionChecks, stopSessionChecks } from './modules/realtime/public';
+import { rtcCalls } from './composition';
+const { startCallTimeouts, stopCallTimeouts } = rtcCalls;
+import { startMessageDelivery, stopMessageDelivery } from './modules/realtime/message-delivery';
+import { externalMcpManager } from './modules/assistant/public';
 
 let starting: Promise<void> | undefined;
 let stopping: Promise<void> | undefined;

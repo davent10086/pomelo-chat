@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as friend from '../../service/friend';
-import { authenticateToken } from '../../utils/authenticate';
+import { socialHttp as friend } from '../../composition';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 

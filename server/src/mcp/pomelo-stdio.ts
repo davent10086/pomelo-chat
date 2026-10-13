@@ -6,7 +6,7 @@ import {
 	executePomeloTool,
 	pomeloToolDefinitions,
 	type PomeloToolContext
-} from '../service/assistant/tools/pomelo-tools';
+} from '../modules/assistant/public';
 
 const parseUserId = (): number => {
 	const userId = Number(process.env.POMELO_MCP_USER_ID);

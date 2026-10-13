@@ -1,45 +1,62 @@
 require('ts-node/register/transpile-only');
-
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const { uploadChunk } = require('../src/service/file');
-const { better_chat } = require('../src/utils/authenticate');
-
-const root = path.resolve(__dirname, '..');
-const read = (...segments) => fs.readFileSync(path.join(root, 'src', ...segments), 'utf8');
-
-const response = () => {
-  let status;
-  let body;
-  return {
-    res: { status: value => { status = value; return { json: value => { body = value; } }; } },
-    value: () => ({ status, body })
-  };
-};
-
+const { uploadChunk } = require('../src/modules/files/public');
+const db = require('../src/infrastructure/database').default;
+const { withTransaction } = require('../src/infrastructure/database-query');
 (async () => {
-  const fileResponse = response();
-  await uploadChunk({
-    user: { id: 1 },
-    body: { chunkIndex: '1', fileHash: 'a'.repeat(64), extname: 'png' }
-  }, fileResponse.res);
-  const missingFile = fileResponse.value();
-  assert.equal(missingFile.body.code, 1003);
-
-  const friend = read('service', 'friend', 'index.ts');
-  assert.match(friend, /await withTransaction\(async query =>/);
-  assert.match(friend, /FOR UPDATE/);
-  assert.match(friend, /SELECT id, username, avatar, name FROM user WHERE id = \? AND username = \? FOR UPDATE/);
-
-  const group = read('service', 'group', 'index.ts');
-  assert.match(group, /await withTransaction\(async query =>/);
-  assert.match(group, /INSERT INTO group_members \(group_id, user_id, nickname\) VALUES \?/);
-
-  console.log('[p2-regressions] transactional writes and missing upload validation passed');
-  better_chat.disconnect();
+	assert.equal(
+		(
+			await uploadChunk(
+				{ id: 1, username: 'owner' },
+				{ chunkIndex: '1', fileHash: 'a'.repeat(64), extname: 'png' }
+			)
+		).code,
+		1003
+	);
+	const original = db.getConnection;
+	const operations = [];
+	const connection = {
+		beginTransaction: done => {
+			operations.push('begin');
+			done();
+		},
+		commit: done => {
+			operations.push('commit');
+			done();
+		},
+		rollback: done => {
+			operations.push('rollback');
+			done();
+		},
+		release: () => operations.push('release'),
+		query: (sql, values, done) => {
+			operations.push(sql);
+			done(null, { affectedRows: 1 });
+		}
+	};
+	db.getConnection = done => done(null, connection);
+	try {
+		await withTransaction(async query => {
+			await query('first write');
+			await query('second write');
+		});
+		assert.deepEqual(operations, ['begin', 'first write', 'second write', 'commit', 'release']);
+		operations.length = 0;
+		await assert.rejects(
+			withTransaction(async query => {
+				await query('partial write');
+				throw new Error('injected failure');
+			}),
+			/injected failure/
+		);
+		assert.deepEqual(operations, ['begin', 'partial write', 'rollback', 'release']);
+	} finally {
+		db.getConnection = original;
+	}
+	console.log(
+		'[p2-regressions] upload rejection and transaction commit/rollback/release behavior passed'
+	);
 })().catch(error => {
-  console.error('[p2-regressions] failed:', error);
-  better_chat.disconnect();
-  process.exitCode = 1;
+	console.error(error);
+	process.exitCode = 1;
 });

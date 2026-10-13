@@ -1,5 +1,65 @@
 import { test, expect, request } from "@playwright/test";
 
+test("contact search paginates, encodes keywords, and ignores superseded requests", async ({ page }) => {
+  const api = await request.newContext({ baseURL: "http://127.0.0.1:3199/api/chat/v1/" });
+  const stamp = Date.now();
+  const username = `search_${stamp}`;
+  const password = "Search123!";
+  try {
+    expect((await api.post("auth/register", { data: { username, password, phone: `13${String(stamp).slice(-9)}`, avatar: "" } })).ok()).toBeTruthy();
+    await page.goto("/login");
+    await page.getByPlaceholder("请输入用户名").fill(username);
+    await page.getByPlaceholder("请输入密码").fill(password);
+    await page.locator("button[type=submit]").click();
+    await page.getByRole("button", { name: "添加好友或群聊" }).click();
+    await page.getByRole("menuitem", { name: "加好友/加群", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const keyword = "a&b%_!";
+    let releaseOld: (() => void) | undefined;
+    let oldRequested = false;
+    await page.route("**/friend/search_user?**", async route => {
+      const params = new URL(route.request().url()).searchParams;
+      const term = params.get("username");
+      if (term === "old") {
+        oldRequested = true;
+        await new Promise<void>(resolve => { releaseOld = resolve; });
+      }
+      const afterId = Number(params.get("afterId"));
+      const rows = term === keyword ? Array.from({ length: afterId ? 2 : 30 }, (_, offset) => {
+        const id = afterId + offset + 1;
+        return { id, username: `page_user_${id}`, name: "", avatar: "", status: false };
+      }) : [{ id: 100, username: term === "old" ? "stale_user" : "latest_user", name: "", avatar: "", status: false }];
+      await route.fulfill({ json: { code: 200, data: rows } }).catch(() => {});
+    });
+    const input = dialog.getByPlaceholder("请输入对方的用户名");
+    await input.fill(keyword);
+    await dialog.getByRole("button", { name: /查\s*找/ }).click();
+    await expect(dialog.getByText("page_user_30 (page_user_30)", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "加载更多" }).click();
+    await expect(dialog.getByText("page_user_32 (page_user_32)", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "加载更多" })).toHaveCount(0);
+    await input.fill("old");
+    await dialog.getByRole("button", { name: /查\s*找/ }).click();
+    await expect.poll(() => oldRequested).toBeTruthy();
+    await input.fill("new");
+    await dialog.getByRole("button", { name: /查\s*找/ }).click();
+    await expect(dialog.getByText("latest_user (latest_user)", { exact: true })).toBeVisible();
+    releaseOld?.();
+    await expect(dialog.getByText("stale_user (stale_user)", { exact: true })).toHaveCount(0);
+    await dialog.getByRole("tab", { name: "加群", exact: true }).click();
+    await page.route("**/group/search_group?**", async route => {
+      const afterId = Number(new URL(route.request().url()).searchParams.get("afterId"));
+      const data = Array.from({ length: afterId ? 1 : 30 }, (_, offset) => ({ group_id: afterId + offset + 1, name: `page_group_${afterId + offset + 1}`, avatar: "", number: 2, status: false }));
+      await route.fulfill({ json: { code: 200, data } });
+    });
+    await dialog.getByPlaceholder("请输入群名称").fill("groups");
+    await dialog.getByRole("button", { name: /查\s*找/ }).click();
+    await dialog.getByRole("button", { name: "加载更多" }).click();
+    await expect(dialog.getByText("page_group_31 (2人)", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "加载更多" })).toHaveCount(0);
+  } finally { await api.dispose(); }
+});
+
 test("real login, message ACK, suggestions, room isolation, streaming and password change", async ({
   page,
 }) => {

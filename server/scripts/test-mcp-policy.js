@@ -2,9 +2,9 @@
 const assert = require('node:assert/strict');
 require('ts-node/register/transpile-only');
 
-const { externalMcpManager, isMcpToolAllowed, hasMcpIdempotencyContract } = require('../src/service/assistant/tools/external-mcp');
+const { externalMcpManager, isMcpToolAllowed, hasMcpIdempotencyContract } = require('../src/modules/assistant/adapters/external-mcp');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
-const { executePomeloTool, buildPomeloChatTools } = require('../src/service/assistant/tools/pomelo-tools');
+const { executePomeloTool, buildPomeloChatTools } = require('../src/modules/assistant/tools/pomelo-tools');
 
 assert.equal(isMcpToolAllowed({}, 1, 'delete_all'), false);
 assert.equal(isMcpToolAllowed({ allowedUserIds: [1] }, 1, 'delete_all'), false);

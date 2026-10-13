@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
-import * as file from '../../service/file';
-import { authenticateToken } from '../../utils/authenticate';
+import { filesHttp as file } from '../../composition';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 

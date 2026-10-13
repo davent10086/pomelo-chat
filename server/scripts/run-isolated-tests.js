@@ -3,8 +3,8 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const mysql = require('mysql2');
 const mode = process.argv[2] || 'system';
-if (!['system', 'browser', 'migrations'].includes(mode))
-	throw new Error('Expected system, browser, or migrations');
+if (!['system', 'browser', 'migrations', 'backend'].includes(mode))
+	throw new Error('Expected system, browser, migrations, or backend');
 const root = path.resolve(__dirname, '../..');
 const serverRoot = path.join(root, 'server');
 require('dotenv').config({ path: path.join(serverRoot, '.env'), quiet: true });
@@ -31,11 +31,11 @@ connection.query('CREATE DATABASE ??', [database], error => {
 	url.pathname = '/' + database;
 	const args =
 		mode === 'browser'
-			? [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test']
+			? [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test', ...process.argv.slice(3)]
 			: [
 					path.join(
 						__dirname,
-						mode === 'migrations' ? 'test-db-migrations.js' : 'test-system-integrity.js'
+						mode === 'migrations' ? 'test-db-migrations.js' : mode === 'backend' ? 'test-backend-reliability.js' : 'test-system-integrity.js'
 					)
 				];
 	const child = spawn(process.execPath, args, {
@@ -50,7 +50,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 		stdio: 'inherit'
 	});
 	child.on('exit', code => {
-		if (!/^pomelo_(system|browser|migrations)_test_\d+$/.test(database))
+		if (!/^pomelo_(system|browser|migrations|backend)_test_\d+$/.test(database))
 			throw new Error('Unsafe cleanup target');
 		connection.query('DROP DATABASE ??', [database], err => {
 			if (err) console.error('[isolated-tests] cleanup failed:', err.code);

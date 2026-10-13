@@ -5,7 +5,7 @@ process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
 let activeDb: { end: () => void } | undefined;
 
 const main = async () => {
-	const { default: db, assertDatabaseConnection, initDatabase } = await import('./db');
+	const { default: db, assertDatabaseConnection, initDatabase } = await import('../infrastructure/database');
 	activeDb = db;
 	await assertDatabaseConnection();
 	await initDatabase();

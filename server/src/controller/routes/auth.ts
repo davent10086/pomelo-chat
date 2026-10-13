@@ -1,6 +1,7 @@
+import { initUserNotification } from '../../modules/realtime/notification-socket';
 import { Router } from 'express';
-import * as auth from '../../service/auth';
-import { authenticateToken } from '../../utils/authenticate';
+import { identityHttp as auth } from '../../composition';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 
@@ -21,6 +22,6 @@ export default () => {
 	// 更新用户信息接口，需要验证token后才能访问
 	router.post('/update_info', authenticateToken, auth.updateInfo);
 	// WebSocket用户通知频道，用于实时消息推送
-	router.ws('/user_channel', auth.initUserNotification);
+	router.ws('/user_channel', initUserNotification);
 	return router;
 };

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 require('ts-node/register/transpile-only');
 
-const queryModule = require('../src/utils/query');
+const queryModule = require('../src/infrastructure/database-query');
 const calls = [];
 const messages = [
 	{ id: 10, room: 'room-a', sender_id: 1, content: '进度 100%', media_type: 'text', created_at: '2026-10-01', sender_name: '甲' },
@@ -37,7 +37,7 @@ queryModule.Query = async (sql, values = []) => {
 	throw new Error(`Unexpected query: ${sql}`);
 };
 
-const { executePomeloTool } = require('../src/service/assistant/tools/pomelo-tools');
+const { executePomeloTool } = require('../src/modules/assistant/tools/pomelo-tools');
 const call = (userId, name, args) => executePomeloTool({ userId, currentRoom: 'room-a' }, { name, args });
 
 (async () => {

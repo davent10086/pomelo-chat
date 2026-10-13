@@ -27,7 +27,7 @@ let importConnections = 0;
 net.Socket.prototype.connect = function (...args) { importConnections++; return originalConnect.apply(this, args); };
 
 const { initDatabase, default: db } = require('../src/model/db');
-const { Query } = require('../src/utils/query');
+const { Query } = require('../src/infrastructure/database-query');
 const { better_chat } = require('../src/utils/authenticate');
 const { default: app, registerAppRoutes } = require('../src/controller/app');
 const { flushMessageOutbox } = require('../src/service/message/outbox');

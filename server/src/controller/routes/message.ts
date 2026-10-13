@@ -1,6 +1,7 @@
+import { connectChat } from '../../modules/realtime/chat-socket';
 import { Router } from 'express';
-import * as message from '../../service/message';
-import { authenticateToken } from '../../utils/authenticate';
+import { messagingHttp as message } from '../../composition';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 
@@ -11,6 +12,6 @@ export default () => {
 	router.post('/resolve', authenticateToken, message.resolveMessages);
 	router.get('/history', authenticateToken, message.getHistory);
 	router.post('/read', authenticateToken, message.markRead);
-	router.ws('/connect_chat', message.connectChat);
+	router.ws('/connect_chat', connectChat);
 	return router;
 };

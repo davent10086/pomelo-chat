@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as rtc from '../../service/rtc';
-import { authenticateToken } from '../../utils/authenticate';
+import { rtcHttp as rtc } from '../../composition';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 

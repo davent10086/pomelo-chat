@@ -31,11 +31,11 @@ Module._load = function (request, parent, isMain) {
 	return originalLoad.call(this, request, parent, isMain);
 };
 
-const orchestrator = require('../src/service/assistant/agent-orchestrator');
+const orchestrator = require('../src/modules/assistant/agent-orchestrator');
 orchestrator.runAgentOrchestrator = async () => ({
 	preToolTrace: [], observations: {}, intent: 'chat', agentTrace: ['coordinator_agent'], agentSteps: []
 });
-const external = require('../src/service/assistant/tools/external-mcp');
+const external = require('../src/modules/assistant/adapters/external-mcp');
 external.externalMcpManager.buildTools = async () => [];
 const { better_chat } = require('../src/utils/authenticate');
 better_chat.incr = async () => 1;

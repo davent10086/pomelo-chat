@@ -13,6 +13,8 @@
     "serve": "node dist/index.js",
     "db:migrate": "ts-node --files src/model/migrate.ts",
     "test:db-migrations": "node scripts/test-db-migrations.js",
+    "test:architecture": "node scripts/test-architecture.js",
+    "test:backend": "node scripts/test-backend-reliability.js",
     "test:http-errors": "node scripts/test-http-errors.js",
     "test:p2-regressions": "node scripts/test-p2-regressions.js",
     "seed:anime-demo": "ts-node --files scripts/seed-anime-demo.ts",

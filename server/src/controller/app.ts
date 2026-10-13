@@ -12,14 +12,17 @@ import groupRouter from './routes/group';
 import rtcRouter from './routes/rtc';
 import fileRouter from './routes/file';
 import assistantRouter from './routes/assistant';
-import { authenticateUploadAccess } from '../utils/authenticate';
-import { createRateLimiter } from '../utils/rate-limit';
+import { authenticateUploadAccess } from '../composition';
+import { createRateLimiter } from '../infrastructure/rate-limit';
 
 const app = express();
 let routesRegistered = false;
 
 // CORS 白名单域名（生产环境应通过环境变量配置）
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000')
+const ALLOWED_ORIGINS = (
+	process.env.CORS_ORIGINS ||
+	'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000'
+)
 	.split(',')
 	.map(s => s.trim())
 	.filter(Boolean);
@@ -36,10 +39,7 @@ const cors: RequestHandler = (req, res, next) => {
 		res.header('Vary', 'Origin');
 	}
 	// 允许的 header 类型（具体列出，避免 *）
-	res.header(
-		'Access-Control-Allow-Headers',
-		'Content-Type, Authorization, X-Requested-With'
-	);
+	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 	res.header('Access-Control-Allow-Methods', 'PUT,POST,PATCH,GET,DELETE,OPTIONS');
 	res.header('Content-Type', 'application/json;charset=utf-8');
 
@@ -51,7 +51,8 @@ const cors: RequestHandler = (req, res, next) => {
 };
 
 const requestContext: RequestHandler = (req, res, next) => {
-	const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
+	const requestId =
+		typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
 	res.setHeader('X-Request-Id', requestId);
 	const startedAt = Date.now();
 	res.on('finish', () => {
@@ -82,7 +83,8 @@ const apiRateLimit = createRateLimiter({
 	name: 'api',
 	windowSeconds: Number(process.env.API_RATE_LIMIT_WINDOW_SECONDS || 60),
 	max: Number(process.env.API_RATE_LIMIT_MAX || 240),
-	skip: req => req.path.includes('/assistant/chat/stream') || req.path.includes('/assistant/agent/stream')
+	skip: req =>
+		req.path.includes('/assistant/chat/stream') || req.path.includes('/assistant/agent/stream')
 });
 
 /**
@@ -131,19 +133,22 @@ export const registerAppRoutes = (): void => {
 	app.use('/api/chat/v1', (_req, res) => {
 		res.status(404).json({ code: 1007, data: '', message: '资源不存在' });
 	});
-	app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-		const status = typeof (error as { status?: unknown })?.status === 'number'
-			&& (error as { status: number }).status >= 400
-			&& (error as { status: number }).status < 500
-			? (error as { status: number }).status
-			: 500;
-		if (status >= 500) console.error('[http] unhandled request error:', error);
-		res.status(status).json({
-			code: status === 400 ? 1003 : 1001,
-			data: '',
-			message: status === 400 ? '参数错误' : '服务有误'
-		});
-	});
+	app.use(
+		(error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+			const status =
+				typeof (error as { status?: unknown })?.status === 'number' &&
+				(error as { status: number }).status >= 400 &&
+				(error as { status: number }).status < 500
+					? (error as { status: number }).status
+					: 500;
+			if (status >= 500) console.error('[http] unhandled request error:', error);
+			res.status(status).json({
+				code: status === 400 ? 1003 : 1001,
+				data: '',
+				message: status === 400 ? '参数错误' : '服务有误'
+			});
+		}
+	);
 };
 
 export default app;

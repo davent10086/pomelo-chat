@@ -1,49 +1,113 @@
 require('ts-node/register/transpile-only');
-
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-
-const { normalizeUploadMetadata } = require('../src/utils/file');
-
+const bcrypt = require('bcrypt');
+const { normalizeUploadMetadata } = require('../src/shared/file');
+const queryModule = require('../src/infrastructure/database-query');
+const { better_chat } = require('../src/infrastructure/redis');
+const { createIdentityApplication } = require('../src/modules/identity/public');
+const { createUploadAccessMiddleware } = require('../src/modules/files/access-http');
+const { createRtcApplication } = require('../src/modules/rtc/public');
 const validHash = 'a'.repeat(64);
 assert.deepEqual(normalizeUploadMetadata(validHash, '.png'), {
 	fileHash: validHash,
 	ext: 'png',
 	suffix: 'image'
 });
-assert.equal(normalizeUploadMetadata('../escape', 'png'), null);
-assert.equal(normalizeUploadMetadata(validHash, '../png'), null);
-assert.equal(normalizeUploadMetadata(validHash, 'png/evil'), null);
-
-const readSource = (...segments) =>
-	fs.readFileSync(path.join(__dirname, '..', 'src', ...segments), 'utf8');
-
-const routes = readSource('controller', 'routes', 'auth.ts');
-assert.match(routes, /router\.post\('\/logout', authenticateToken, auth\.logout\)/);
-assert.match(routes, /router\.post\('\/forget_password', authenticateToken, auth\.forgetPassword\)/);
-
-const auth = readSource('service', 'auth', 'index.ts');
-assert.match(auth, /const username = req\.user\?\.username;/);
-assert.doesNotMatch(auth, /const \{[^}]*username[^}]*\} = req\.body \|\| \{\};\s*\n\s*const userToken = generateToken\(username\)/);
-assert.match(auth, /bcrypt\.compare\(currentPassword, user\.password\)/);
-assert.match(auth, /better_chat\.del\(`token:\$\{req\.user!\.username\}`\)/);
-
-const app = readSource('controller', 'app.ts');
-assert.match(app, /app\.use\('\/uploads', authenticateUploadAccess, staticDownload, express\.static\('uploads'\)\)/);
-
-const authenticate = readSource('utils', 'authenticate.ts');
-assert.match(authenticate, /export const authenticateUploadAccess/);
-assert.match(authenticate, /verifyTokenWithSession\(token\)/);
-
-const message = readSource('service', 'message', 'socket.ts');
-assert.match(message, /verifyTokenWithSession/);
-assert.match(message, /authorizeChatRoom/);
-
-const rtc = readSource('service', 'rtc', 'index.ts');
-const rtcRoutes = readSource('controller', 'routes', 'rtc.ts');
-assert.match(rtcRoutes, /router\.post\('\/join-token', authenticateToken, rtc\.createJoinToken\)/);
-assert.match(rtcRoutes, /router\.post\('\/invite', authenticateToken, rtc\.invite\)/);
-assert.match(rtc, /await canAccessRoom\(req\.user\.id, room, type\)/);
-
-console.log('Security regression checks passed.');
+for (const [hash, extension] of [
+	['../escape', 'png'],
+	[validHash, '../png'],
+	[validHash, 'png/evil']
+])
+	assert.equal(normalizeUploadMetadata(hash, extension), null);
+(async () => {
+	const hash = await bcrypt.hash('current-password', 4);
+	const mutations = [],
+		revoked = [];
+	queryModule.Query = async (sql, values) => {
+		if (sql.startsWith('SELECT id, password')) return [{ id: 1, password: hash }];
+		if (sql.startsWith('UPDATE user SET password')) {
+			mutations.push(values);
+			return { affectedRows: 1 };
+		}
+		if (sql.includes('FROM group_chat AS gc')) return [];
+		throw new Error('unexpected query: ' + sql);
+	};
+	better_chat.del = async key => {
+		revoked.push(key);
+		return 1;
+	};
+	const app = createIdentityApplication({
+		releaseUserCall: async () => {},
+		notifySessionChanged: async () => {},
+		updateContactPresence: async () => {},
+		initializeDefaultFriendGroup: async () => {}
+	});
+	assert.equal(
+		(
+			await app.forgetPassword(
+				{ id: 1, username: 'owner' },
+				{ currentPassword: 'wrong', password: 'new-password' }
+			)
+		).code,
+		2001
+	);
+	assert.equal(mutations.length, 0);
+	assert.equal(
+		(
+			await app.forgetPassword(
+				{ id: 1, username: 'owner' },
+				{ currentPassword: 'current-password', password: 'new-password', username: 'victim' }
+			)
+		).code,
+		200
+	);
+	assert.equal(mutations.length, 1);
+	assert.equal(mutations[0][1], 1);
+	assert.deepEqual(revoked, ['token:owner']);
+	let accessStatus,
+		nextCalled = false;
+	const access = createUploadAccessMiddleware(
+		async () => null,
+		() => false
+	);
+	await access(
+		{ headers: {}, query: {}, path: '/anything' },
+		{
+			status(code) {
+				accessStatus = code;
+				return this;
+			},
+			end() {}
+		},
+		() => {
+			nextCalled = true;
+		}
+	);
+	assert.equal(accessStatus, 401);
+	assert.equal(nextCalled, false);
+	const rtc = createRtcApplication({
+		calls: {
+			getCall: async () => {
+				throw new Error('must not load unauthorized call');
+			}
+		},
+		notifyUser: async () => {}
+	});
+	assert.equal(
+		(
+			await rtc.createJoinToken(
+				{ id: 2, username: 'outsider' },
+				{ room: 'private-room', type: 'group', callId: 'stolen' }
+			)
+		).code,
+		1006
+	);
+	console.log(
+		'[security] real password verification, actor-scoped mutation, revocation, upload authentication and RTC room authorization passed'
+	);
+	better_chat.disconnect();
+})().catch(error => {
+	console.error(error);
+	better_chat.disconnect();
+	process.exitCode = 1;
+});

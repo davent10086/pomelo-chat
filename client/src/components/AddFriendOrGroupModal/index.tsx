@@ -4,7 +4,8 @@ import { useState } from 'react';
 
 import { getFriendList, addFriend, getGroupList, addGroup } from './api';
 import styles from './index.module.less';
-import { IAddFriendOrGroupModalProps, IFriendItem, IGroupItem } from './type';
+import { useSearchResults } from './useSearchResults';
+import { IAddFriendOrGroupModalProps } from './type';
 
 import ImageLoad from '@/components/ImageLoad';
 import useShowMessage from '@/hooks/useShowMessage';
@@ -14,36 +15,24 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 	const { openmodal, handleModal } = props;
 
 	const showMessage = useShowMessage();
-	const [friendList, setFriendList] = useState<IFriendItem[]>([]);
-	const [groupList, setGroupList] = useState<IGroupItem[]>([]);
+	const friendSearch = useSearchResults(
+		getFriendList,
+		item => item.id,
+		() => showMessage('error', '查询失败，请重试')
+	);
+	const groupSearch = useSearchResults(
+		getGroupList,
+		item => item.group_id,
+		() => showMessage('error', '查询失败，请重试')
+	);
+	const friendList = friendSearch.items;
+	const groupList = groupSearch.items;
 	const [friendName, setFriendName] = useState('');
 	const [groupName, setGroupName] = useState('');
 	const [loading, setLoading] = useState(false);
-	// 查询好友关键字改变
 	const handleFriendNameChange = (e: { target: { value: string } }) => {
 		setFriendName(e.target.value);
-		if (e.target.value === '') {
-			setFriendList([]);
-		}
-	};
-	// 获取模糊查询的好友列表
-	const getFriendListData = async (username: string) => {
-		try {
-			if (username === '') {
-				setFriendList([]);
-				return;
-			}
-			const res = await getFriendList(username);
-			if (res.code === HttpStatus.SUCCESS && res.data) {
-				setFriendList(res.data);
-			} else {
-				showMessage('error', '查询失败, 请重试');
-				setFriendList([]);
-			}
-		} catch {
-			showMessage('error', '查询失败, 请重试');
-			setFriendList([]);
-		}
+		friendSearch.clear();
 	};
 	// 加好友
 	const handleAddFriend = async (id: number, username: string, avatar: string) => {
@@ -68,31 +57,9 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 			setLoading(false);
 		}
 	};
-	// 查询群关键字改变
 	const handleGroupNameChange = (e: { target: { value: string } }) => {
 		setGroupName(e.target.value);
-		if (e.target.value === '') {
-			setGroupList([]);
-		}
-	};
-	// 获取模糊查询的群列表
-	const getGroupChatListData = async (group_name: string) => {
-		try {
-			if (group_name === '') {
-				setGroupList([]);
-				return;
-			}
-			const res = await getGroupList(group_name);
-			if (res.code === HttpStatus.SUCCESS && res.data) {
-				setGroupList(res.data);
-			} else {
-				showMessage('error', '查询失败, 请重试');
-				setGroupList([]);
-			}
-		} catch {
-			showMessage('error', '查询失败, 请重试');
-			setGroupList([]);
-		}
+		groupSearch.clear();
 	};
 	// 加入群聊
 	const joinGroup = async (group_id: number) => {
@@ -133,8 +100,9 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 						/>
 						<Button
 							type="primary"
+							loading={friendSearch.loading}
 							onClick={() => {
-								getFriendListData(friendName);
+								void friendSearch.search(friendName);
 							}}
 						>
 							查找
@@ -168,6 +136,11 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 							))}
 						</div>
 					)}
+					{friendSearch.hasMore && (
+						<Button loading={friendSearch.loading} onClick={() => void friendSearch.loadMore()}>
+							加载更多
+						</Button>
+					)}
 				</>
 			)
 		},
@@ -187,8 +160,9 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 						/>
 						<Button
 							type="primary"
+							loading={groupSearch.loading}
 							onClick={() => {
-								getGroupChatListData(groupName);
+								void groupSearch.search(groupName);
 							}}
 						>
 							查找
@@ -215,6 +189,11 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 							))}
 						</div>
 					)}
+					{groupSearch.hasMore && (
+						<Button loading={groupSearch.loading} onClick={() => void groupSearch.loadMore()}>
+							加载更多
+						</Button>
+					)}
 				</>
 			)
 		}
@@ -225,6 +204,8 @@ const AddFriendOrGroupModal = (props: IAddFriendOrGroupModalProps) => {
 				open={openmodal}
 				footer={null}
 				onCancel={() => {
+					friendSearch.clear();
+					groupSearch.clear();
 					handleModal(false);
 				}}
 			>

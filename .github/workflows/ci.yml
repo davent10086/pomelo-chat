@@ -40,6 +40,7 @@ jobs:
           key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter pomelo-chat-server test:architecture
       - run: pnpm lint
       - run: pnpm --filter pomelo-chat-server test:db-migrations
       - run: pnpm test:system

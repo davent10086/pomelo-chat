@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import * as assistant from '../../service/assistant';
-import * as assistantAgent from '../../service/assistant/agent';
-import * as assistantActions from '../../service/assistant/actions';
-import { authenticateToken } from '../../utils/authenticate';
+import { assistantHttp as assistant } from '../../composition';
+import { assistantHttp as assistantAgent } from '../../composition';
+import { agentStream } from '../../modules/assistant/agent-http';
+import { assistantHttp as assistantActions } from '../../composition';
+import { chatStream } from '../../modules/assistant/legacy-http';
+import { authenticateToken } from '../../modules/identity/middleware';
 
 const router = Router();
 
@@ -10,12 +12,12 @@ export default () => {
 	// 非流式聊天补全
 	router.post('/chat', authenticateToken, assistant.chat);
 	// 流式聊天补全（SSE）
-	router.post('/chat/stream', authenticateToken, assistant.chatStream);
+	router.post('/chat/stream', authenticateToken, chatStream);
 	// 下一步建议
 	router.post('/next-steps', authenticateToken, assistant.nextSteps);
 	// LangChain 聊天 Agent
 	router.post('/agent', authenticateToken, assistantAgent.agentChat);
-	router.post('/agent/stream', authenticateToken, assistantAgent.agentStream);
+	router.post('/agent/stream', authenticateToken, agentStream);
 	router.get('/agent/tools', authenticateToken, assistantAgent.listAgentTools);
 	router.post('/agent/tools/call', authenticateToken, assistantAgent.callAgentTool);
 	router.post('/agent/task-candidates', authenticateToken, assistantAgent.taskCandidates);

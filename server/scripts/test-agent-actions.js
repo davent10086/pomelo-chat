@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 require('ts-node/register/transpile-only');
 
-const queryModule = require('../src/utils/query');
+const queryModule = require('../src/infrastructure/database-query');
 const rows = new Map();
 const tasks = new Map();
 const sentMessages = new Set();
@@ -79,13 +79,13 @@ queryModule.Query = async (sql, values = []) => {
 	throw new Error(`Unexpected query: ${sql}`);
 };
 
-const messageService = require('../src/service/message/writes');
+const messageService = require('../src/modules/messaging/writes');
 messageService.sendConfirmedTextMessage = async (_userId, _room, _type, _content, id) => { sentMessages.add(id); };
 const { createPendingAction, cancelAction, confirmAction, getActionStatus } = require('../src/service/assistant/actions');
 const { callAgentTool } = require('../src/service/assistant/agent');
 const { better_chat } = require('../src/utils/authenticate');
-const { externalMcpManager } = require('../src/service/assistant/tools/external-mcp');
-const { canAccessRoom } = require('../src/service/assistant/tools/pomelo-tools');
+const { externalMcpManager } = require('../src/modules/assistant/adapters/external-mcp');
+const { canAccessRoom } = require('../src/modules/assistant/tools/pomelo-tools');
 const invoke = async (handler, userId, body, params = {}) => {
 	let response;
 	await handler({ user: { id: userId }, body, params }, { status: () => ({ json: value => { response = value; } }) });
@@ -139,8 +139,10 @@ const invoke = async (handler, userId, body, params = {}) => {
 	const messageAction = await createPendingAction(ownerId, 'send_message', { room: 'room-1', chatType: 'private', content: 'hello' });
 	failCompletionOnce = true;
 	assert.equal((await invoke(confirmAction, ownerId, { confirmationId: messageAction.confirmationId })).code, 1001);
-	delete require.cache[require.resolve('../src/service/assistant/actions')];
-	const afterRestart = require('../src/service/assistant/actions');
+	delete require.cache[require.resolve('../src/modules/assistant/actions')];
+	const reloadedActions = require('../src/modules/assistant/actions');
+	const {respond} = require('../src/infrastructure/http-outcome');
+	const afterRestart = {confirmAction:async (req,res) => respond(res,await reloadedActions.confirmAction(req.user,req.body))};
 	assert.equal((await invoke(afterRestart.confirmAction, ownerId, { confirmationId: messageAction.confirmationId })).code, 200);
 	assert.equal(sentMessages.size, 1);
 

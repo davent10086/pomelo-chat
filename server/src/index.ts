@@ -4,8 +4,8 @@ import http from 'http';
 import expressWs from 'express-ws';
 import app, { registerAppRoutes } from './controller/app';
 import { startBackgroundServices, stopBackgroundServices } from './runtime';
-import { better_chat } from './utils/authenticate';
-import db, { assertDatabaseConnection, initDatabase } from './model/db';
+import { better_chat } from './infrastructure/redis';
+import db, { assertDatabaseConnection, initDatabase } from './infrastructure/database';
 
 const port = Number(process.env.PORT || 3000);
 let stopping = false;
