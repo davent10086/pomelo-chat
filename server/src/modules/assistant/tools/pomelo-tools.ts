@@ -3,6 +3,7 @@ import { accessibleRoomType, searchVisibleContacts, searchJoinedGroups } from '.
 import { searchRoomMessages, messageContextById, recentRoomMessages } from '../../messaging/public';
 import { tool } from 'langchain';
 import { z } from 'zod';
+import { assertToolRateLimit, ToolExecutionError, toolErrorResult } from './tool-runtime';
 
 export interface PomeloToolContext {
 	userId: number;
@@ -15,6 +16,7 @@ export interface PomeloToolDefinition {
 	description: string;
 	kind: 'read' | 'suggestion' | 'write';
 	inputSchema: Record<string, unknown>;
+	outputSchema: Record<string, unknown>;
 }
 
 export interface PomeloToolCall {
@@ -23,7 +25,8 @@ export interface PomeloToolCall {
 	room?: string;
 }
 
-interface PomeloToolSpec extends PomeloToolDefinition {
+interface PomeloToolSpec extends Omit<PomeloToolDefinition, 'inputSchema' | 'outputSchema'> {
+	output: z.ZodTypeAny;
 	schema: z.ZodTypeAny;
 	run: (
 		context: PomeloToolContext,
@@ -65,23 +68,26 @@ interface WriteResult {
 }
 
 const recentMessagesSchema = z.object({
-	room: z.string().optional().describe('Chat room id. Defaults to the current room.'),
-	limit: z.number().optional().describe('Message count. Defaults to 30, maximum 80.')
+	room: z
+		.string()
+		.min(1)
+		.max(255)
+		.optional()
+		.describe('Chat room id. Defaults to the current room.'),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(80)
+		.optional()
+		.describe('Message count. Defaults to 30, maximum 80.')
 });
 
 const searchMessagesSchema = z.object({
 	room: z.string().min(1).max(255).optional().describe('Room id; defaults to the current room.'),
 	query: z.string().trim().min(1).max(120).describe('Literal keyword to find in text messages.'),
-	since: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/)
-		.optional()
-		.describe('First date to include, YYYY-MM-DD.'),
-	until: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/)
-		.optional()
-		.describe('Last date to include, YYYY-MM-DD.'),
+	since: z.iso.date().optional().describe('First date to include, YYYY-MM-DD.'),
+	until: z.iso.date().optional().describe('Last date to include, YYYY-MM-DD.'),
 	beforeId: z.number().int().positive().optional().describe('Cursor from a previous result.'),
 	limit: z.number().int().min(1).max(20).optional().describe('At most 20 matches; defaults to 10.')
 });
@@ -100,26 +106,39 @@ const listTasksSchema = z.object({
 });
 
 const searchSchema = z.object({
-	query: z.string().describe('Search keyword.')
+	query: z.string().trim().min(1).max(120).describe('Search keyword.')
 });
 
 const extractTodosSchema = z.object({
-	text: z.string().describe('Text to inspect for todo items.')
+	text: z.string().min(1).max(20000).describe('Text to inspect for todo items.')
 });
 
 const suggestRepliesSchema = z.object({
-	text: z.string().describe('Recent conversation context.'),
-	count: z.number().optional().describe('Suggestion count. Defaults to 3, maximum 5.')
+	text: z.string().min(1).max(20000).describe('Recent conversation context.'),
+	count: z
+		.number()
+		.int()
+		.min(1)
+		.max(5)
+		.optional()
+		.describe('Suggestion count. Defaults to 3, maximum 5.')
 });
 
 const memorySearchSchema = z.object({
-	query: z.string().optional().describe('Keyword to search in the current user memory.'),
-	limit: z.number().optional().describe('Maximum memories to return. Defaults to 8.')
+	query: z.string().max(120).optional().describe('Keyword to search in the current user memory.'),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(20)
+		.optional()
+		.describe('Maximum memories to return. Defaults to 8.')
 });
 
 const memorySaveSchema = z.object({
 	content: z
 		.string()
+		.trim()
 		.min(1)
 		.max(1000)
 		.describe('A concise fact or preference the user explicitly asked the assistant to remember.'),
@@ -143,7 +162,8 @@ export const getRecentMessagesForRoom = async (
 	limit = 30
 ): Promise<RecentMessageRow[]> => {
 	const type = await accessibleRoomType(userId, room);
-	if (!type) return [];
+	if (!type)
+		throw new ToolExecutionError('TARGET_UNAVAILABLE', 'Room is unavailable or inaccessible.');
 	return recentRoomMessages(userId, room, type, limit);
 };
 
@@ -159,19 +179,82 @@ const presentMessage = (item: RecentMessageRow) => ({
 export const isSensitiveMemoryContent = (content: string): boolean =>
 	/(api[_ -]?key|token|password|secret|密钥|密码|口令)/i.test(content);
 
+const messageOutput = z.object({
+	id: z.number(),
+	sender: z.union([z.string(), z.number()]),
+	content: z.string(),
+	type: z.string(),
+	created_at: z.string()
+});
+const pageOutput = { hasMore: z.boolean(), nextBeforeId: z.number().optional() };
+const toolOutputs = {
+	get_recent_messages: z.object({ messages: z.array(messageOutput) }),
+	search_messages: z.object({ matches: z.array(messageOutput), ...pageOutput }),
+	get_message_context: z.object({
+		found: z.literal(true),
+		room: z.string(),
+		focusId: z.number(),
+		messages: z.array(messageOutput)
+	}),
+	list_my_tasks: z.object({
+		tasks: z.array(
+			z.object({
+				id: z.number(),
+				title: z.string(),
+				status: z.enum(['open', 'completed']),
+				assignee: z.string().nullable(),
+				due: z.string().nullable(),
+				sourceRoom: z.string().nullable()
+			})
+		),
+		...pageOutput
+	}),
+	search_contacts: z.object({
+		contacts: z.array(
+			z.object({
+				user_id: z.number(),
+				username: z.string(),
+				remark: z.string().nullable(),
+				room: z.string(),
+				name: z.string().nullable(),
+				signature: z.string().nullable()
+			})
+		)
+	}),
+	search_groups: z.object({
+		groups: z.array(
+			z.object({
+				id: z.number(),
+				name: z.string(),
+				room: z.string(),
+				announcement: z.string().nullable()
+			})
+		)
+	}),
+	extract_todos: z.object({ todos: z.array(z.object({ title: z.string() })) }),
+	suggest_replies: z.object({ source: z.string(), suggestions: z.array(z.string()) }),
+	search_memory: z.object({
+		memories: z.array(
+			z.object({
+				id: z.number(),
+				category: z.string(),
+				content: z.string(),
+				created_at: z.string(),
+				updated_at: z.string()
+			})
+		)
+	}),
+	save_memory: z.object({ saved: z.literal(true), category: z.string(), content: z.string() }),
+	forget_memory: z.object({ deleted: z.number().int().positive() })
+};
+
 const pomeloToolSpecs: PomeloToolSpec[] = [
 	{
 		name: 'get_recent_messages',
+		output: toolOutputs.get_recent_messages,
 		description:
 			'Read recent messages from a room visible to the current user. This tool never modifies messages.',
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				room: { type: 'string', description: 'Chat room id. Defaults to the current room.' },
-				limit: { type: 'number', description: 'Message count. Defaults to 30, maximum 80.' }
-			}
-		},
 		schema: recentMessagesSchema,
 		run: async (context, args) => {
 			const messages = await getRecentMessagesForRoom(
@@ -192,26 +275,16 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'search_messages',
+		output: toolOutputs.search_messages,
 		description:
 			'Search text messages in one room visible to the current user. Returns message ids and short excerpts for follow-up context lookup.',
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			required: ['query'],
-			properties: {
-				room: { type: 'string' },
-				query: { type: 'string' },
-				since: { type: 'string', description: 'YYYY-MM-DD' },
-				until: { type: 'string', description: 'YYYY-MM-DD' },
-				beforeId: { type: 'integer' },
-				limit: { type: 'integer', maximum: 20 }
-			}
-		},
 		schema: searchMessagesSchema,
 		run: async (context, args) => {
 			const room = asText(args.room) || context.currentRoom || '';
 			const type = await accessibleRoomType(context.userId, room);
-			if (!type) return { matches: [], hasMore: false };
+			if (!type)
+				throw new ToolExecutionError('TARGET_UNAVAILABLE', 'Room is unavailable or inaccessible.');
 			const result = await searchRoomMessages(context.userId, room, type, {
 				query: asText(args.query),
 				since: args.since as string | undefined,
@@ -219,7 +292,8 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 				beforeId: args.beforeId as number | undefined,
 				limit: Number(args.limit) || 10
 			});
-			if (!result) return { matches: [], hasMore: false };
+			if (!result)
+				throw new ToolExecutionError('TARGET_UNAVAILABLE', 'Room is unavailable or inaccessible.');
 			return {
 				matches: result.messages.map(item => ({
 					...presentMessage(item),
@@ -232,18 +306,10 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'get_message_context',
+		output: toolOutputs.get_message_context,
 		description:
 			'Read a message and nearby messages after checking access to its room. Use a message id from search_messages.',
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			required: ['messageId'],
-			properties: {
-				messageId: { type: 'integer' },
-				before: { type: 'integer', maximum: 5 },
-				after: { type: 'integer', maximum: 5 }
-			}
-		},
 		schema: messageContextSchema,
 		run: async (context, args) => {
 			const messageId = Number(args.messageId);
@@ -253,29 +319,24 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 				Number(args.before ?? 3),
 				Number(args.after ?? 3)
 			);
-			return result
-				? {
-						found: true,
-						room: result.room,
-						focusId: messageId,
-						messages: result.messages.map(presentMessage)
-					}
-				: { found: false, messages: [] };
+			if (!result)
+				throw new ToolExecutionError(
+					'TARGET_UNAVAILABLE',
+					'Message is unavailable or inaccessible.'
+				);
+			return {
+				found: true,
+				room: result.room,
+				focusId: messageId,
+				messages: result.messages.map(presentMessage)
+			};
 		}
 	},
 	{
 		name: 'list_my_tasks',
+		output: toolOutputs.list_my_tasks,
 		description: "List the current user's saved personal tasks. Never creates or changes tasks.",
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				status: { type: 'string', enum: ['open', 'completed', 'all'] },
-				sourceRoom: { type: 'string' },
-				beforeId: { type: 'integer' },
-				limit: { type: 'integer', maximum: 20 }
-			}
-		},
 		schema: listTasksSchema,
 		run: async (context, args) => {
 			const limit = Number(args.limit) || 10;
@@ -306,16 +367,10 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'search_contacts',
+		output: toolOutputs.search_contacts,
 		description:
 			'Search contacts visible to the current user by username, display name, or remark.',
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			required: ['query'],
-			properties: {
-				query: { type: 'string', description: 'Contact search keyword.' }
-			}
-		},
 		schema: searchSchema,
 		run: async (context, args) => {
 			const rows = await searchVisibleContacts(context.userId, asText(args.query));
@@ -324,15 +379,9 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'search_groups',
+		output: toolOutputs.search_groups,
 		description: 'Search groups joined by the current user.',
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			required: ['query'],
-			properties: {
-				query: { type: 'string', description: 'Group name search keyword.' }
-			}
-		},
 		schema: searchSchema,
 		run: async (context, args) => {
 			const rows = await searchJoinedGroups(context.userId, asText(args.query));
@@ -341,16 +390,10 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'extract_todos',
+		output: toolOutputs.extract_todos,
 		description:
-			'Extract todo suggestions from text. This tool only suggests and never writes data.',
+			'Find todo suggestions using keyword rules in text. This tool only suggests and never writes data.',
 		kind: 'suggestion',
-		inputSchema: {
-			type: 'object',
-			required: ['text'],
-			properties: {
-				text: { type: 'string', description: 'Text to inspect for todo items.' }
-			}
-		},
 		schema: extractTodosSchema,
 		run: async (_context, args) => {
 			const lines = asText(args.text)
@@ -367,16 +410,10 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'suggest_replies',
-		description: 'Generate short reply suggestions. This tool never sends messages.',
+		output: toolOutputs.suggest_replies,
+		description:
+			'Suggest short replies using predefined templates. This tool never sends messages.',
 		kind: 'suggestion',
-		inputSchema: {
-			type: 'object',
-			required: ['text'],
-			properties: {
-				text: { type: 'string', description: 'Recent conversation context.' },
-				count: { type: 'number', description: 'Suggestion count. Defaults to 3, maximum 5.' }
-			}
-		},
 		schema: suggestRepliesSchema,
 		run: async (_context, args) => {
 			const safeCount = Math.max(1, Math.min(Number(args.count) || 3, 5));
@@ -416,16 +453,10 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'search_memory',
+		output: toolOutputs.search_memory,
 		description:
 			"Read the current user's saved preferences and facts. This is private to the current user and never reads other users' memories.",
 		kind: 'read',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				query: { type: 'string', description: 'Optional keyword.' },
-				limit: { type: 'number', description: 'Maximum result count. Defaults to 8.' }
-			}
-		},
 		schema: memorySearchSchema,
 		run: async (context, args) => {
 			const query = asText(args.query).trim();
@@ -444,22 +475,18 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'save_memory',
+		output: toolOutputs.save_memory,
 		description:
 			'Save a concise private memory only when the user explicitly asks to remember, save, or keep a fact or preference. Never save secrets, passwords, API keys, or entire chat transcripts.',
 		kind: 'write',
-		inputSchema: {
-			type: 'object',
-			required: ['content'],
-			properties: {
-				content: { type: 'string', description: 'Concise fact or preference to remember.' },
-				category: { type: 'string', description: 'preference, profile, project, or instruction.' }
-			}
-		},
 		schema: memorySaveSchema,
 		run: async (context, args) => {
 			const content = asText(args.content).trim();
 			if (isSensitiveMemoryContent(content)) {
-				return { saved: false, reason: 'Secrets and credentials are not stored in memory.' };
+				throw new ToolExecutionError(
+					'INVALID_ARGUMENTS',
+					'Secrets and credentials are not stored in memory.'
+				);
 			}
 			const category = (asText(args.category).trim() || 'preference').slice(0, 32);
 			if (context.confirmationId) {
@@ -477,23 +504,30 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 	},
 	{
 		name: 'forget_memory',
+		output: toolOutputs.forget_memory,
 		description: 'Delete one saved memory by id after user confirmation.',
 		kind: 'write',
-		inputSchema: {
-			type: 'object',
-			required: ['id'],
-			properties: { id: { type: 'integer', description: 'Exact memory id.' } }
-		},
 		schema: memoryForgetSchema,
 		run: async (context, args) => {
 			const result = await repository.deleteOwnedMemory<WriteResult>([context.userId, args.id]);
-			return { deleted: result.affectedRows || 0 };
+			if (!result.affectedRows)
+				throw new ToolExecutionError(
+					'TARGET_UNAVAILABLE',
+					'Memory is unavailable or inaccessible.'
+				);
+			return { deleted: result.affectedRows };
 		}
 	}
 ];
 
 export const pomeloToolDefinitions: PomeloToolDefinition[] = pomeloToolSpecs.map(
-	({ name, description, kind, inputSchema }) => ({ name, description, kind, inputSchema })
+	({ name, description, kind, schema, output }) => ({
+		name,
+		description,
+		kind,
+		inputSchema: z.toJSONSchema(schema, { io: 'input' }),
+		outputSchema: z.toJSONSchema(output)
+	})
 );
 
 export const executePomeloTool = async (
@@ -502,16 +536,39 @@ export const executePomeloTool = async (
 ): Promise<Record<string, unknown>> => {
 	const spec = pomeloToolSpecs.find(item => item.name === call.name);
 	if (!spec) {
-		throw new Error(`Unknown tool: ${call.name}`);
+		throw new ToolExecutionError('UNKNOWN_TOOL', `Unknown tool: ${call.name}`);
 	}
 	if (spec.kind === 'write' && !context.confirmationId) {
-		throw new Error(`Tool ${call.name} requires a confirmed action`);
+		throw new ToolExecutionError(
+			'CONFIRMATION_REQUIRED',
+			`Tool ${call.name} requires a confirmed action`
+		);
 	}
-	const args = spec.schema.parse({
+	if (!Number.isSafeInteger(context.userId) || context.userId <= 0)
+		throw new ToolExecutionError('INVALID_ARGUMENTS', 'A valid user id is required.');
+	if (
+		call.args !== undefined &&
+		(!call.args || typeof call.args !== 'object' || Array.isArray(call.args))
+	)
+		throw new ToolExecutionError('INVALID_ARGUMENTS', 'Tool arguments must be an object.');
+	const parsed = spec.schema.safeParse({
 		...(call.args || {}),
 		...(call.room ? { room: call.room } : {})
-	}) as Record<string, unknown>;
-	return spec.run(context, args);
+	});
+	if (!parsed.success)
+		throw new ToolExecutionError(
+			'INVALID_ARGUMENTS',
+			parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+		);
+	await assertToolRateLimit(context.userId);
+	try {
+		const result = await spec.run(context, parsed.data as Record<string, unknown>);
+		return spec.output.parse(JSON.parse(JSON.stringify(result))) as Record<string, unknown>;
+	} catch (error) {
+		if (error instanceof ToolExecutionError) throw error;
+		console.error(`[assistant-tool] ${call.name} failed`);
+		throw new ToolExecutionError('EXECUTION_FAILED', 'Tool execution failed. Please retry later.');
+	}
 };
 
 export const buildPomeloChatTools = (
@@ -523,11 +580,15 @@ export const buildPomeloChatTools = (
 		.map(spec =>
 			tool(
 				async args => {
-					const result = await executePomeloTool(context, {
-						name: spec.name,
-						args: args as Record<string, unknown>
-					});
-					return JSON.stringify(result);
+					try {
+						const result = await executePomeloTool(context, {
+							name: spec.name,
+							args: args as Record<string, unknown>
+						});
+						return JSON.stringify(result);
+					} catch (error) {
+						return JSON.stringify(toolErrorResult(error));
+					}
 				},
 				{
 					name: spec.name,

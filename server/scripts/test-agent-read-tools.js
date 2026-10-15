@@ -48,10 +48,10 @@ const call = (userId, name, args) => executePomeloTool({ userId, currentRoom: 'r
 	assert.ok(calls.some(item => item.sql.includes("m.content like ? escape '!'") && item.values.includes('%100!%%')));
 	const second = await call(1, 'search_messages', { query: '100%', beforeId: 11 });
 	assert.deepEqual(second.matches.map(item => item.id), [10]);
-	assert.deepEqual((await call(2, 'search_messages', { query: '100%' })).matches, []);
+	await assert.rejects(call(2, 'search_messages', { query: '100%' }), error => error.code === 'TARGET_UNAVAILABLE');
 	const context = await call(1, 'get_message_context', { messageId: 11, before: 1, after: 1 });
 	assert.deepEqual(context.messages.map(item => item.id), [10, 11, 12]);
-	assert.deepEqual(await call(2, 'get_message_context', { messageId: 11 }), { found: false, messages: [] });
+	await assert.rejects(call(2, 'get_message_context', { messageId: 11 }), error => error.code === 'TARGET_UNAVAILABLE');
 	assert.deepEqual((await call(1, 'list_my_tasks', { status: 'open' })).tasks.map(item => item.id), [7]);
 	console.log('[agent-read-tools-test] all assertions passed');
 	process.exit(0);

@@ -77,8 +77,9 @@ flowchart LR
 │   └── src/utils/            # axios、WebSocket 等工具
 ├── server/                  # Express 后端
 │   ├── src/controller/       # 路由注册
-│   ├── src/model/            # MySQL pool 与建表
-│   ├── src/service/          # auth/friend/group/message/file/assistant
+│   ├── src/infrastructure/   # MySQL、Redis、文件存储与 HTTP 基础设施
+│   ├── src/model/            # 数据库迁移命令与配置
+│   ├── src/modules/          # identity/social/messaging/files/rtc/assistant/realtime
 │   ├── src/mcp/              # Pomelo MCP stdio server
 │   └── scripts/              # Agent/MCP/安全回归脚本
 ├── qa/                      # QA 自动化、Postman、AI 评测集
@@ -113,6 +114,8 @@ docker compose -f docker-compose.livekit.yml up -d
 
 默认地址是 `ws://127.0.0.1:7880`，服务端默认 key/secret 为 `devkey`/`secret`，仅可用于本地演示。前后端启动后，用三个独立浏览器配置文件登录同一群聊即可联调语音或视频通话。媒体 UDP 端口范围为 `50000-50100`，HTTP/WebSocket 为 `7880`，RTC TCP 回退端口为 `7881`。
 
+本地部署固定为 LiveKit `v1.13.9`，已与当前客户端完成真实媒体回归。启动 LiveKit 后运行 `pnpm test:real-rtc`：测试会启动隔离的前后端，用两个 Chromium 浏览器验证私聊语音和视频的邀请、接听、双向 RTP 数据接收、视频画面解码和挂断清理。摄像头和麦克风使用浏览器生成的测试媒体，不访问物理设备；HTTP、信令和媒体传输均不模拟。本机 Redis 仅监听 IPv6 时，先设置 `$env:REDIS_URL_TEST = 'redis://[::1]:6379/15'`。测试不覆盖跨公网 NAT/TURN、物理设备和群通话。
+
 可通过环境变量覆盖服务端连接信息：`LIVEKIT_URL`、`LIVEKIT_HTTP_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`。`POST /rtc/join-token` 会在验证当前用户是该私聊/群聊成员后，返回仅限对应房间、10 分钟有效的发布与订阅 token；`POST /rtc/invite` 仅投递业务邀请，不转发 SDP 或 ICE candidate。
 
 ## 消息链路
@@ -139,6 +142,8 @@ sequenceDiagram
 
 ## AI Agent 与 MCP
 
+AI 聊天、总结和回复建议统一使用 `/assistant/agent` 与 `/assistant/agent/stream`；旧 `/assistant/chat`、`/assistant/chat/stream`、`/assistant/next-steps` 已移除，前后端需同步升级。总结与回复建议使用 `context.readOnly: true`，不调用模型工具、不读取长期记忆、不产生确认操作。普通 Agent 对话仍通过显式确认执行写操作。
+
 ```mermaid
 flowchart TB
   Input["用户输入"] --> Coordinator["coordinator_agent"]
@@ -158,7 +163,7 @@ flowchart TB
   Model --> Output["Markdown response + agentSteps/toolTrace"]
 ```
 
-内置工具位于 `server/src/service/assistant/tools/pomelo-tools.ts`：
+内置工具位于 `server/src/modules/assistant/tools/pomelo-tools.ts`：
 
 - `get_recent_messages`
 - `search_messages`、`get_message_context`：在已授权会话内搜索文本并读取命中消息的前后文。
@@ -170,13 +175,19 @@ flowchart TB
 - `search_memory`
 - `save_memory`、`forget_memory`：仅在确认动作执行时写入；删除记忆按当前用户的记忆 ID 精确定位，确认时显示目标内容。通用工具接口会先返回待确认动作，本地 stdio MCP 不暴露这两个写工具。
 
-外部 MCP 配置由 `MCP_SERVERS_JSON` 读取，实现在 `server/src/service/assistant/tools/external-mcp.ts`。本地 stdio MCP server 位于 `server/src/mcp/pomelo-stdio.ts`，启动脚本为 `pnpm --filter pomelo-chat-server mcp:stdio`。每个外部服务必须用 `allowedUserIds` 指定一个获授权的用户，并通过 `readTools`、`writeTools` 显式列出可用工具；未列出的工具不会暴露。不同用户应使用不同名称和凭据的服务配置，避免共享远端会话。写工具还须在 `idempotencyKeys` 中配置参数名，且远端工具输入 schema 必须把该参数列为必填字符串；远端也必须用此参数去重。缺少该契约的已声明写工具不会暴露。示例：`{"name":"calendar_user_1","url":"https://example.com/mcp","allowedUserIds":[1],"readTools":["list_events"],"writeTools":["create_event"],"idempotencyKeys":{"create_event":"requestId"}}`。
+外部 MCP 配置由 `MCP_SERVERS_JSON` 读取，实现在 `server/src/modules/assistant/adapters/external-mcp.ts`。本地 stdio MCP server 位于 `server/src/mcp/pomelo-stdio.ts`，启动脚本为 `pnpm --filter pomelo-chat-server mcp:stdio`。每个外部服务必须用 `allowedUserIds` 指定一个获授权的用户，并通过 `readTools`、`writeTools` 显式列出可用工具；未列出的工具不会暴露。不同用户应使用不同名称和凭据的服务配置，避免共享远端会话。写工具还须在 `idempotencyKeys` 中配置参数名，且远端工具输入 schema 必须把该参数列为必填字符串；远端也必须用此参数去重。缺少该契约的已声明写工具不会暴露。示例：`{"name":"calendar_user_1","url":"https://example.com/mcp","allowedUserIds":[1],"readTools":["list_events"],"writeTools":["create_event"],"idempotencyKeys":{"create_event":"requestId"}}`。
+
+内置工具以 Zod 作为参数和结果契约的唯一来源，自动生成 MCP 的 `inputSchema` / `outputSchema`。查询词最长 120 字符，建议和提取文本最长 20000 字符，条数参数必须为范围内整数。空查询结果正常返回；无权限或不存在的目标统一返回 `TARGET_UNAVAILABLE`，不泄露目标是否存在。工具失败使用 `isError` 和稳定错误码；数据库等内部错误不会直接返回给模型或客户端。
+
+所有内部工具执行及外部 MCP 调用共用 Redis 原子限流：每个用户每 60 秒最多 120 次，与 Agent 请求限流分开计数；Redis 不可用时暂停工具执行。外部工具保留远端 JSON Schema，并按 `nextCursor` 完成分页；重复游标、重复工具名或重复服务名会被拒绝。模型可见名称由服务名、工具名及稳定身份摘要组成，最长 63 字符。升级后须重新发现工具，已有外部工具待确认动作需取消后重新提出，不使用旧名称猜测匹配。
+
+`pnpm --filter pomelo-chat-server test:tool-contracts` 验证契约一致性、输入边界、错误脱敏、分页、名称冲突及真实 Redis 并发限流；已加入 `pnpm test:integration`。`test:mcp` 额外检查 stdio 输出、结构化结果和参数错误。
 
 Agent 产生的发消息草稿、任务创建和外部 MCP 写操作都必须经用户确认。待确认期限保存在 Redis，执行状态及结果保存在 MySQL；`GET /assistant/actions/:id` 可查询结果。服务端会再次校验用户、聊天目标与动作有效期；确认后可通过 `/assistant/tasks` 查看和更新个人任务。AI 助手窗口可选择会话整理最近 30 条消息的事项，并逐项勾选保存。
 
 ## 数据模型
 
-启动后端时，`server/src/model/db.ts` 会按顺序创建以下 MySQL 表：
+启动后端时，`server/src/infrastructure/database.ts` 会按顺序创建以下 MySQL 表：
 
 ```mermaid
 erDiagram

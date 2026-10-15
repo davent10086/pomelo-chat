@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 require('ts-node/register/transpile-only');
 
-const { externalMcpManager, isMcpToolAllowed, hasMcpIdempotencyContract } = require('../src/modules/assistant/adapters/external-mcp');
+const { externalMcpManager, isMcpToolAllowed, hasMcpIdempotencyContract, externalToolName } = require('../src/modules/assistant/adapters/external-mcp');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { executePomeloTool, buildPomeloChatTools } = require('../src/modules/assistant/tools/pomelo-tools');
 
@@ -33,14 +33,14 @@ const configure = (name, extra) => {
 	configure('unclassified', {});
 	assert.deepEqual(await externalMcpManager.getTools(1), []);
 	configure('read_only', { readTools: ['list'] });
-	assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), ['mcp_read_only_list']);
+	assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), [externalToolName('read_only', 'list')]);
 	assert.deepEqual(await externalMcpManager.getTools(2), []);
-	assert.deepEqual((await externalMcpManager.buildTools(1)).map(item => item.name), ['mcp_read_only_list']);
+	assert.deepEqual((await externalMcpManager.buildTools(1)).map(item => item.name), [externalToolName('read_only', 'list')]);
 	configure('mixed', { readTools: ['list'], writeTools: ['create'], idempotencyKeys: { create: 'requestId' } });
-	assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), ['mcp_mixed_list', 'mcp_mixed_create']);
-	assert.deepEqual((await externalMcpManager.buildTools(1)).map(item => item.name), ['mcp_mixed_list']);
-	assert.equal(await externalMcpManager.isWriteTool('mcp_mixed_create', 1), true);
-	assert.equal(await externalMcpManager.isWriteTool('mcp_mixed_create', 2), false);
+	assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), [externalToolName('mixed', 'list'), externalToolName('mixed', 'create')]);
+	assert.deepEqual((await externalMcpManager.buildTools(1)).map(item => item.name), [externalToolName('mixed', 'list')]);
+	assert.equal(await externalMcpManager.isWriteTool(externalToolName('mixed', 'create'), 1), true);
+	assert.equal(await externalMcpManager.isWriteTool(externalToolName('mixed', 'create'), 2), false);
 	configure('shared', { allowedUserIds: [1, 2], readTools: ['list'] });
 	assert.deepEqual(await externalMcpManager.getTools(1), []);
 
@@ -58,7 +58,7 @@ const configure = (name, extra) => {
 	try {
 		configure('transient', { readTools: ['list'] });
 		assert.deepEqual(await externalMcpManager.getTools(1), []);
-		assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), ['mcp_transient_list']);
+		assert.deepEqual((await externalMcpManager.getTools(1)).map(item => item.definition.name), [externalToolName('transient', 'list')]);
 		assert.equal(connectionAttempts, 2);
 		let closes = 0;
 		Client.prototype.connect = () => new Promise(() => undefined);

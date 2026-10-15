@@ -7,7 +7,10 @@ import {
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { tool } from 'langchain';
-import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/server/validators/ajv';
+import type { JsonSchemaType } from '@modelcontextprotocol/server';
+import { assertToolRateLimit, ToolExecutionError, toolErrorResult } from '../tools/tool-runtime';
 
 interface ExternalMcpServerConfig {
 	name: string;
@@ -107,18 +110,28 @@ const parseConfig = (): ExternalMcpServerConfig[] => {
 	try {
 		const parsed: unknown = JSON.parse(raw);
 		if (!Array.isArray(parsed)) throw new Error('MCP_SERVERS_JSON must be an array.');
-		return parsed
+		const configs = parsed
 			.map(parseServerConfig)
 			.filter((item): item is ExternalMcpServerConfig => item !== null);
+		const names = configs.map(item => item.name);
+		return configs.filter(item => {
+			if (names.indexOf(item.name) === names.lastIndexOf(item.name)) return true;
+			console.error('[assistant-mcp] duplicate server name rejected');
+			return false;
+		});
 	} catch (error: unknown) {
 		console.error(`[assistant-mcp] invalid MCP_SERVERS_JSON: ${errorMessage(error)}`);
 		return [];
 	}
 };
 
-const safeName = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
-
-const sharedArgsSchema = z.record(z.string(), z.unknown());
+export const externalToolName = (server: string, name: string): string => {
+	const identity = JSON.stringify([server, name]);
+	const suffix = createHash('sha256').update(identity).digest('hex').slice(0, 16);
+	const label = `${server}_${name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42);
+	return `mcp_${label}_${suffix}`;
+};
+const schemaValidator = new AjvJsonSchemaValidator();
 const MCP_TIMEOUT_MS = 5000;
 const TOOL_CACHE_MS = 60000;
 
@@ -278,7 +291,12 @@ class ExternalMcpManager {
 			item => item.enabled !== false && item.allowedUserIds?.includes(userId)
 		);
 		const result = [] as Array<{
-			definition: Record<string, unknown>;
+			definition: {
+				name: string;
+				description: string;
+				kind: string;
+				inputSchema: Record<string, unknown>;
+			};
 			serverName: string;
 			invoke: (args: Record<string, unknown>) => Promise<unknown>;
 			requiresConfirmation: boolean;
@@ -292,11 +310,26 @@ class ExternalMcpManager {
 					const connected = await this.connect(config);
 					let cached = this.toolCache.get(key);
 					if (!cached || cached.expiresAt <= Date.now()) {
-						const listed = await withTimeout(
-							connected.client.listTools(),
-							`MCP ${config.name} tools`
-						);
-						cached = { expiresAt: Date.now() + TOOL_CACHE_MS, tools: listed.tools || [] };
+						const tools: Awaited<ReturnType<Client['listTools']>>['tools'] = [];
+						const seen = new Set<string>();
+						let cursor: string | undefined;
+						do {
+							const listed = await withTimeout(
+								connected.client.listTools(cursor ? { cursor } : undefined),
+								`MCP ${config.name} tools`
+							);
+							tools.push(...listed.tools);
+							cursor = listed.nextCursor;
+							if (cursor !== undefined) {
+								if (!cursor || seen.has(cursor) || seen.size >= 100)
+									throw new Error('Invalid or excessive MCP pagination');
+								seen.add(cursor);
+							}
+						} while (cursor !== undefined);
+						const names = tools.map(item => item.name);
+						if (new Set(names).size !== names.length)
+							throw new Error('Duplicate remote tool names');
+						cached = { expiresAt: Date.now() + TOOL_CACHE_MS, tools };
 						this.toolCache.set(key, cached);
 					}
 					for (const remoteTool of cached.tools) {
@@ -309,16 +342,24 @@ class ExternalMcpManager {
 							);
 							continue;
 						}
-						const name = `mcp_${safeName(config.name)}_${safeName(remoteTool.name)}`;
+						const name = externalToolName(config.name, remoteTool.name);
+						const validate = schemaValidator.getValidator(remoteTool.inputSchema as JsonSchemaType);
 						group.push({
 							definition: {
 								name,
-								description: `[External MCP: ${config.name}] ${remoteTool.description || remoteTool.name}. Input schema: ${JSON.stringify(remoteTool.inputSchema || {})}`,
+								description: `[External MCP: ${config.name}] ${remoteTool.description || remoteTool.name}`,
 								kind: 'external',
 								inputSchema: remoteTool.inputSchema || { type: 'object' }
 							},
 							serverName: config.name,
 							invoke: async args => {
+								const validation = validate(args);
+								if (!validation.valid)
+									throw new ToolExecutionError(
+										'INVALID_ARGUMENTS',
+										validation.errorMessage || 'Invalid tool arguments.'
+									);
+								await assertToolRateLimit(userId);
 								try {
 									return await withTimeout(
 										connected.client.callTool({ name: remoteTool.name, arguments: args }),
@@ -334,13 +375,20 @@ class ExternalMcpManager {
 						});
 					}
 				} catch (error: unknown) {
+					group.length = 0;
 					this.invalidate(key);
 					console.error(`[assistant-mcp] failed to load ${config.name}: ${errorMessage(error)}`);
 				}
 				return group;
 			})
 		);
-		result.push(...groups.flat());
+		const all = groups.flat();
+		const names = all.map(item => item.definition.name);
+		result.push(
+			...all.filter(
+				item => names.indexOf(item.definition.name) === names.lastIndexOf(item.definition.name)
+			)
+		);
 		return result;
 	}
 
@@ -349,11 +397,20 @@ class ExternalMcpManager {
 		return remoteTools
 			.filter(remote => !remote.requiresConfirmation)
 			.map(remote =>
-				tool(async args => JSON.stringify(await remote.invoke(args as Record<string, unknown>)), {
-					name: String(remote.definition.name),
-					description: String(remote.definition.description),
-					schema: sharedArgsSchema
-				})
+				tool(
+					async args => {
+						try {
+							return JSON.stringify(await remote.invoke(args as Record<string, unknown>));
+						} catch (error) {
+							return JSON.stringify(toolErrorResult(error));
+						}
+					},
+					{
+						name: String(remote.definition.name),
+						description: String(remote.definition.description),
+						schema: remote.definition.inputSchema
+					}
+				)
 			);
 	}
 

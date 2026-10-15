@@ -31,15 +31,18 @@ const normalized = normalizeAgentRequest('room-1', {
 });
 assert.deepEqual(normalized, {
 	room: 'room-1',
-	context: { currentChatType: 'group', currentReceiverId: 42, recentMessagesText: 'context', memoryEnabled: true }
+	context: { currentChatType: 'group', currentReceiverId: 42, recentMessagesText: 'context', memoryEnabled: true, readOnly: false }
 });
 assert.deepEqual(normalizeAgentRequest('x'.repeat(129), { currentChatType: 'invalid', currentReceiverId: 'nope' }), {
 	room: undefined,
-	context: { currentChatType: undefined, currentReceiverId: undefined, recentMessagesText: undefined, memoryEnabled: true }
+	context: { currentChatType: undefined, currentReceiverId: undefined, recentMessagesText: undefined, memoryEnabled: true, readOnly: false }
 });
 assert.equal(normalizeAgentRequest('room-1', { memoryEnabled: false }).context.memoryEnabled, false);
 
 
+
+assert.equal(normalizeAgentRequest(undefined, { readOnly: true }).context.readOnly, true);
+assert.equal(normalizeAgentRequest(undefined, { readOnly: 'true' }).context.readOnly, false);
 
 console.log('[agent-routing-test] all assertions passed');
 process.exit(0);

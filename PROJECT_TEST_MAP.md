@@ -35,7 +35,7 @@ Generated: 2026-07-21
 
 ## 4. Database and State
 
-- MySQL via `mysql` pool in `server/src/model/db.ts`.
+- MySQL via `mysql` pool in `server/src/infrastructure/database.ts`.
 - Tables initialized on server start:
   - `user`
   - `friend_group`
@@ -45,7 +45,7 @@ Generated: 2026-07-21
   - `message`
   - `message_statistics`
   - `assistant_memory`
-- Redis via `ioredis` in `server/src/utils/authenticate.ts`.
+- Redis via `ioredis` in `server/src/infrastructure/redis.ts`.
   - Token whitelist: `token:<username>`.
   - AI rate limits: `ai_rate:<userId>` and `ai_agent_rate:<userId>`.
 - In-memory fallback maps:
@@ -60,9 +60,6 @@ Generated: 2026-07-21
   - `DEEPSEEK_BASE_URL`
   - `DEEPSEEK_MODEL`
 - Non-Agent endpoints:
-  - `POST /assistant/chat`
-  - `POST /assistant/chat/stream`
-  - `POST /assistant/next-steps`
 - Agent endpoints:
   - `POST /assistant/agent`
   - `POST /assistant/agent/stream`
@@ -75,8 +72,8 @@ Generated: 2026-07-21
 
 ## 6. Agent Architecture
 
-- Orchestrator: `server/src/service/assistant/agent-orchestrator.ts`.
-- LLM Agent: `server/src/service/assistant/agent.ts`.
+- Orchestrator: `server/src/modules/assistant/agent-orchestrator.ts`.
+- LLM Agent: `server/src/modules/assistant/agent.ts`.
 - Agent roles:
   - `coordinator_agent`: request routing and result merge.
   - `chat_context_agent`: loads recent visible room messages.
@@ -146,8 +143,8 @@ Notification WebSocket:
 
 AI SSE:
 
-- `POST /assistant/chat/stream`: proxies provider SSE chunks.
-- `POST /assistant/agent/stream`: emits Agent lifecycle events and final Agent result.
+- `POST /assistant/agent/stream`: shared chat/summary SSE with lifecycle events, text deltas, resets and final Agent result.
+- `POST /assistant/agent`: shared chat/reply-suggestion endpoint. Summaries and suggestions use `context.readOnly: true`, disabling model tools, memory reads and confirmation proposals. The old chat/next-steps routes were removed.
 
 ## 9. Authentication Flow
 
@@ -202,7 +199,20 @@ AI SSE:
 
 ## P0/P1 integrated regressions
 
+- `qa/playwright/address-book.e2e.spec.ts`: real friend editing/group creation, contact filtering, group details and invitation entry, plus a delayed friend-detail response that must not replace the current selection. Data requests are owned by `useAddressBook`; tree, editor and group details own their presentation.
+- The isolated Playwright backend uses a larger API request budget because all functional fixtures share one IP. This does not change production rate limits or establish capacity evidence.
+- `server/scripts/test-db-migrations.js`: concurrent initialization on two pooled connections, then repeated migration; validates the MySQL lock and idempotent execution after splitting schema and migration ownership.
+- `server/scripts/test-agent-stream.js`: normal streaming retains metadata extraction; read-only streaming performs no extra metadata request and creates no confirmation proposals.
+
+- Reply suggestions share `client/src/hooks/useReplySuggestions.ts`: bounded context, local fallback, debounce, cancellation and stale-result suppression. Keyboard selection inserts the selected reply into the existing draft.
+- Assistant session delegates task cards, memory management and confirm/query/cancel operations to dedicated hooks. Uncertain writes query the server without automatic resubmission; retry remains an explicit user operation, and task selection is preserved on the server.
+- `qa/playwright/assistant-interactions.e2e.spec.ts` covers delayed suggestions after typing or cancellation, selected-task confirmation, duplicate UI operations, lost write responses, explicit retry, Agent action confirmation and memory deletion confirmation/cancellation.
+
 - `server/scripts/test-system-integrity.js`: real isolated MySQL/Redis, registration races, duplicate contacts, transactional message sequence and ACK, outbox retry after Redis failure, attachment authorization and metadata recovery, paged history, read cursor monotonicity, legacy migration replay, session replacement/revocation, and RTC cancellation/timeout state.
 - `qa/playwright/system-regressions.e2e.spec.ts`: real login, private chat delivery, AI suggestion insertion, room switching, deterministic streaming updates, and password change.
 - `server/scripts/run-isolated-tests.js system|migrations|browser`: local runner creates and removes only its own test database; credentials come from `server/.env` without accessing business tables.
 - CI runs migration, system, browser, existing regression suites, and both production builds. LiveKit media/device behavior and real LLM provider availability remain outside these deterministic regressions.
+
+### 工具契约回归
+
+`server/scripts/test-tool-contracts.js`（`test:tool-contracts`，纳入 `test:integration`）：Zod/JSON Schema 一致性、输入与输出校验、错误脱敏、不可访问目标与空结果区分、外部 MCP 分页及游标循环、原名和截断重名、远端嵌套参数契约、Redis 共享限流及故障拒绝执行。分页与远端调用使用模拟服务；限流使用真实 Redis 隔离键。

@@ -15,7 +15,7 @@ import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 import { getFileSuffixByName } from '@/utils/File';
 import { uploadFile } from '@/utils/file-upload';
-import request from '@/utils/request';
+import { useReplySuggestions } from '@/hooks/useReplySuggestions';
 import { userStorage } from '@/utils/storage';
 
 const ChatTool = (props: IChatToolProps) => {
@@ -44,56 +44,29 @@ const ChatTool = (props: IChatToolProps) => {
 	const imageRef = useRef<HTMLInputElement>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
 
-	const [suggestions, setSuggestions] = useState<string[]>([]);
-	const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-	const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-	const [previewText, setPreviewText] = useState<string>('');
-	const suggestionGeneration = useRef(0);
-	const suggestionFetchAbort = useRef<AbortController | null>(null);
-
-	const buildContextText = (limit = 10) => {
-		const msgs = recentMessages || [];
-		const last = msgs.slice(Math.max(0, msgs.length - limit));
-		return last
-			.map(
-				(m: { sender_name?: string; content?: string }) =>
-					`${m.sender_name || '用户'}: ${m.content || ''}`
-			)
-			.join('\n');
-	};
-
-	const heuristicSuggestions = (prefix: string, count = 3) => {
-		const lastMsg =
-			recentMessages && recentMessages.length
-				? recentMessages[recentMessages.length - 1].content
-				: '';
-		const userPref = user && typeof user.pref === 'string' ? user.pref : '';
-		const base = lastMsg || prefix || '关于这个话题';
-		const items = [
-			`${base}，我觉得可以这样说：`,
-			`关于${base}，可以考虑：...`,
-			`${base}，我的建议是：` + (userPref ? `（偏好：${userPref}）` : '')
-		];
-		return items.slice(0, count);
+	const {
+		suggestions,
+		loading: suggestionsLoading,
+		refresh,
+		cancel
+	} = useReplySuggestions(recentMessages, {
+		scope: `${user.id}:${curChatInfo.room}`
+	});
+	const [selectedIndex, setSelectedIndex] = useState(-1);
+	const showSuggestions = suggestions.length > 0;
+	const previewText = suggestions[selectedIndex] || '';
+	const cancelSuggestions = () => {
+		cancel();
+		setSelectedIndex(-1);
 	};
 
 	const changeInputValue = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-		suggestionGeneration.current++;
+		cancelSuggestions();
 		setInputValue(e.target.value);
-		if (showSuggestions) {
-			setShowSuggestions(false);
-			setSuggestions([]);
-			setSelectedIndex(-1);
-			setPreviewText('');
-			if (suggestionFetchAbort.current) {
-				suggestionFetchAbort.current.abort();
-				suggestionFetchAbort.current = null;
-			}
-		}
 	};
-
 	const addEmoji = (emoji: string) => {
-		setInputValue(prevValue => prevValue + emoji);
+		cancelSuggestions();
+		setInputValue(prev => prev + emoji);
 	};
 
 	const insertTextAtCursor = (text: string) => {
@@ -127,63 +100,10 @@ const ChatTool = (props: IChatToolProps) => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// H4: 通过后端代理获取建议（不暴露 API Key）
-	const fetchSuggestionsFromBackend = async (prefixText: string) => {
-		if (suggestionFetchAbort.current) suggestionFetchAbort.current.abort();
-		const controller = new AbortController();
-		suggestionFetchAbort.current = controller;
-
-		const prompt = `基于下面的对话历史，给出最多5条可作为回复或继续对话的短语（简洁，中文，每条不超过50字），并根据用户画像风格适当调整：\n\n对话历史：\n${buildContextText(10)}\n\n当前输入片段：\n${prefixText}\n\n返回格式：用换行分隔列出候选。`;
-
-		const res = await request.post<{ contextText: string; count: number }, { steps: string[] }>(
-			'/assistant/next-steps',
-			{
-				contextText: prompt.slice(-7000),
-				count: 5
-			},
-			{ signal: controller.signal }
-		);
-		if (controller.signal.aborted) throw new Error('cancelled');
-		const steps = res.data.data.steps || [];
-		return steps.slice(0, 5);
-	};
-
-	const triggerSuggestions = async (prefixText: string) => {
-		const epoch = ++suggestionGeneration.current;
-		setShowSuggestions(false);
-		setSuggestions([]);
+	const triggerSuggestions = async (prefix: string) => {
 		setSelectedIndex(-1);
-		setPreviewText('');
-		try {
-			let items: string[] = [];
-			try {
-				items = await fetchSuggestionsFromBackend(prefixText);
-			} catch {
-				if (epoch !== suggestionGeneration.current || suggestionFetchAbort.current?.signal.aborted)
-					return;
-				items = heuristicSuggestions(prefixText, 5);
-			}
-			if (epoch === suggestionGeneration.current && items && items.length) {
-				setSuggestions(items);
-				setSelectedIndex(0);
-				setShowSuggestions(true);
-				setPreviewText(items[0]);
-			}
-		} catch {
-			showMessage('error', '生成建议失败');
-		}
-	};
-
-	const cancelSuggestions = () => {
-		suggestionGeneration.current++;
-		if (suggestionFetchAbort.current) {
-			suggestionFetchAbort.current.abort();
-			suggestionFetchAbort.current = null;
-		}
-		setShowSuggestions(false);
-		setSuggestions([]);
-		setSelectedIndex(-1);
-		setPreviewText('');
+		const items = await refresh(prefix);
+		if (items.length) setSelectedIndex(0);
 	};
 
 	const getCursor = () => {
@@ -192,30 +112,9 @@ const ChatTool = (props: IChatToolProps) => {
 	};
 
 	const handleSuggestionClick = (text: string) => {
-		if (!text) return;
-		const el = textareaRef.current!;
-		const { start, end } = getCursor();
-		const newVal = inputValue.slice(0, start) + text + inputValue.slice(end);
-		setInputValue(newVal);
-		setShowSuggestions(false);
-		setSuggestions([]);
-		setSelectedIndex(-1);
-		setPreviewText('');
-		const newPos = start + text.length;
-		requestAnimationFrame(() => {
-			el.focus();
-			el.setSelectionRange(newPos, newPos);
-		});
+		insertTextAtCursor(text);
+		cancelSuggestions();
 	};
-
-	useEffect(() => {
-		return () => {
-			if (suggestionFetchAbort.current) {
-				suggestionFetchAbort.current.abort();
-				suggestionFetchAbort.current = null;
-			}
-		};
-	}, []);
 
 	useEffect(() => {
 		if (externalInsertText?.text) {
@@ -225,20 +124,7 @@ const ChatTool = (props: IChatToolProps) => {
 	}, [externalInsertText?.id]);
 
 	const acceptSuggestion = () => {
-		if (!previewText) return;
-		const el = textareaRef.current!;
-		const { start, end } = getCursor();
-		const newVal = inputValue.slice(0, start) + previewText + inputValue.slice(end);
-		setInputValue(newVal);
-		setShowSuggestions(false);
-		setSuggestions([]);
-		setSelectedIndex(-1);
-		setPreviewText('');
-		const newPos = start + previewText.length;
-		requestAnimationFrame(() => {
-			el.focus();
-			el.setSelectionRange(newPos, newPos);
-		});
+		if (previewText) handleSuggestionClick(previewText);
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -254,7 +140,7 @@ const ChatTool = (props: IChatToolProps) => {
 			const prefix = inputValue.slice(0, start);
 			triggerSuggestions(prefix);
 		} else if (e.key === 'Escape') {
-			if (showSuggestions) {
+			if (showSuggestions || suggestionsLoading) {
 				e.preventDefault();
 				cancelSuggestions();
 			}

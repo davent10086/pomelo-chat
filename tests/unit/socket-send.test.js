@@ -2,8 +2,8 @@ process.env.TS_NODE_PROJECT = require('node:path').join(process.cwd(), 'server',
 require('../../server/node_modules/ts-node/register/transpile-only');
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { sendSocketFrame } = require('../../server/src/utils/socket-send');
-const { forEachConcurrent } = require('../../server/src/utils/parallel');
+const { sendSocketFrame } = require('../../server/src/modules/realtime/socket-send');
+const { forEachConcurrent } = require('../../server/src/shared/parallel');
 
 test('slow socket is terminated before buffering more data; healthy socket receives frame', () => {
 	let sent = 0, terminated = 0;

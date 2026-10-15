@@ -18,7 +18,7 @@
     "test:unit": "node --test tests/unit/*.test.js",
     "test:database": "node --test tests/database/*.test.js",
     "test:api": "pnpm --filter pomelo-chat-server test:http-errors",
-    "test:integration": "pnpm --filter pomelo-chat-server test:agent-routing && pnpm --filter pomelo-chat-server test:agent-stream && pnpm --filter pomelo-chat-server test:agent-read-tools && pnpm --filter pomelo-chat-server test:message-protocol && pnpm --filter pomelo-chat-server test:p2-regressions && pnpm --filter pomelo-chat-server test:agent-actions && pnpm --filter pomelo-chat-server test:mcp-policy",
+    "test:integration": "pnpm --filter pomelo-chat-server test:agent-routing && pnpm --filter pomelo-chat-server test:agent-stream && pnpm --filter pomelo-chat-server test:agent-read-tools && pnpm --filter pomelo-chat-server test:tool-contracts && pnpm --filter pomelo-chat-server test:message-protocol && pnpm --filter pomelo-chat-server test:p2-regressions && pnpm --filter pomelo-chat-server test:agent-actions && pnpm --filter pomelo-chat-server test:mcp-policy",
     "test:security": "pnpm --filter pomelo-chat-server test:security",
     "test:qa": "node qa/run-qa.js",
     "test:coverage": "node --test --experimental-test-coverage tests/unit/*.test.js tests/database/*.test.js",
@@ -29,7 +29,9 @@
     "lint:fix": "pnpm --filter pomelo-chat-server lint:fix && pnpm --filter pomelo-chat-client lint:fix",
     "prettier": "pnpm --filter pomelo-chat-server prettier && pnpm --filter pomelo-chat-client prettier",
     "test:system": "pnpm --filter pomelo-chat-server test:system",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:real-chat": "node server/scripts/run-isolated-tests.js browser real-chat.e2e.spec.ts",
+    "test:real-rtc": "node server/scripts/run-isolated-tests.js browser real-rtc.e2e.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0"

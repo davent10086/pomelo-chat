@@ -2,9 +2,7 @@ import type { Request, Response } from 'express';
 import { respond } from '../../infrastructure/http-outcome';
 import type { Actor } from '../../shared/actor';
 export const createHttpHandlers = (
-	application: typeof import('./actions') &
-		typeof import('./agent-application') &
-		typeof import('./legacy-application')
+	application: typeof import('./actions') & typeof import('./agent-application')
 ) => ({
 	confirmAction: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.confirmAction(req.user as Actor, req.body || {}));
@@ -35,11 +33,5 @@ export const createHttpHandlers = (
 	},
 	taskCandidates: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.taskCandidates(req.user as Actor, req.body || {}));
-	},
-	chat: async (req: Request, res: Response): Promise<void> => {
-		respond(res, await application.chat(req.user as Actor, req.body || {}));
-	},
-	nextSteps: async (req: Request, res: Response): Promise<void> => {
-		respond(res, await application.nextSteps(req.user as Actor, req.body || {}));
 	}
 });

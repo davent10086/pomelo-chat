@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { toolErrorResult } from '../modules/assistant/tools/tool-runtime';
 import { McpServer, fromJsonSchema, type JsonSchemaType } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
@@ -10,13 +11,14 @@ import {
 
 const parseUserId = (): number => {
 	const userId = Number(process.env.POMELO_MCP_USER_ID);
-	if (!Number.isFinite(userId) || userId <= 0) {
+	if (!Number.isSafeInteger(userId) || userId <= 0) {
 		throw new Error('POMELO_MCP_USER_ID must be set to a valid Pomelo user id.');
 	}
 	return userId;
 };
 
-const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+const errorMessage = (error: unknown): string =>
+	error instanceof Error ? error.message : String(error);
 
 export const createPomeloMcpServer = (context: PomeloToolContext): McpServer => {
 	const server = new McpServer(
@@ -37,22 +39,32 @@ export const createPomeloMcpServer = (context: PomeloToolContext): McpServer => 
 			{
 				title: definition.name,
 				description: `${definition.description} Kind: ${definition.kind}.`,
-				inputSchema: fromJsonSchema(definition.inputSchema as JsonSchemaType)
+				inputSchema: fromJsonSchema(definition.inputSchema as JsonSchemaType),
+				outputSchema: fromJsonSchema(definition.outputSchema as JsonSchemaType),
+				annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
 			},
 			async args => {
-				const result = await executePomeloTool(context, {
-					name: definition.name,
-					args: args as Record<string, unknown>
-				});
-				return {
-					content: [
-						{
-							type: 'text' as const,
-							text: JSON.stringify(result, null, 2)
-						}
-					],
-					structuredContent: result
-				};
+				try {
+					const result = await executePomeloTool(context, {
+						name: definition.name,
+						args: args as Record<string, unknown>
+					});
+					return {
+						content: [
+							{
+								type: 'text' as const,
+								text: JSON.stringify(result, null, 2)
+							}
+						],
+						structuredContent: result
+					};
+				} catch (error) {
+					const result = toolErrorResult(error);
+					return {
+						isError: true,
+						content: [{ type: 'text' as const, text: JSON.stringify(result) }]
+					};
+				}
 			}
 		);
 	}

@@ -2,6 +2,8 @@
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const mysql = require('mysql2');
+const fs = require('node:fs');
+const Redis = require('ioredis');
 const mode = process.argv[2] || 'system';
 if (!['system', 'browser', 'migrations', 'backend'].includes(mode))
 	throw new Error('Expected system, browser, migrations, or backend');
@@ -15,11 +17,16 @@ const configuration = {
 	password: process.env.DB_PASSWORD || ''
 };
 const database = `pomelo_${mode}_test_${Date.now()}`;
+const redisPrefix = `${database}:`;
+const testFilesRoot = path.join(root, 'tmp', 'tests');
+fs.mkdirSync(testFilesRoot, { recursive: true });
+const uploadRoot = fs.mkdtempSync(path.join(testFilesRoot, 'chat-uploads-'));
 const connection = mysql.createConnection(configuration);
 connection.query('CREATE DATABASE ??', [database], error => {
 	if (error) {
 		console.error('[isolated-tests] create failed:', error.code);
 		connection.end();
+		fs.rmSync(uploadRoot, { recursive: true, force: true });
 		process.exitCode = 1;
 		return;
 	}
@@ -45,17 +52,39 @@ connection.query('CREATE DATABASE ??', [database], error => {
 			NODE_ENV: 'test',
 			DATABASE_URL_TEST: url.toString(),
 			REDIS_URL_TEST: process.env.REDIS_URL_TEST || 'redis://127.0.0.1:6379/15',
+			TEST_REDIS_KEY_PREFIX: redisPrefix,
+			TEST_RTC: process.env.TEST_RTC || (process.argv.slice(3).includes('real-rtc.e2e.spec.ts') ? '1' : '0'),
+			...(mode === 'browser' ? { UPLOAD_ROOT: uploadRoot } : {}),
 			TS_NODE_FILES: 'true'
 		},
 		stdio: 'inherit'
 	});
-	child.on('exit', code => {
+	child.on('exit', async (code, signal) => {
+		if (signal || code === null) code = 1;
+		// Only browser services use this per-run prefix; never flush a Redis database.
+		if (mode === 'browser') {
+			const redis = new Redis(process.env.REDIS_URL_TEST || 'redis://127.0.0.1:6379/15', { retryStrategy: () => null });
+			try {
+				let cursor = '0';
+				do {
+					const result = await redis.scan(cursor, 'MATCH', `${redisPrefix}*`, 'COUNT', 100);
+					cursor = result[0];
+					if (result[1].length) await redis.del(...result[1]);
+				} while (cursor !== '0');
+			} catch (error) {
+				console.error('[isolated-tests] Redis cleanup failed:', error.message);
+				code = code || 1;
+			} finally { redis.disconnect(); }
+		}
+		if (path.dirname(uploadRoot) !== testFilesRoot || !path.basename(uploadRoot).startsWith('chat-uploads-'))
+			throw new Error('Unsafe upload cleanup target');
+		fs.rmSync(uploadRoot, { recursive: true, force: true });
 		if (!/^pomelo_(system|browser|migrations|backend)_test_\d+$/.test(database))
 			throw new Error('Unsafe cleanup target');
 		connection.query('DROP DATABASE ??', [database], err => {
 			if (err) console.error('[isolated-tests] cleanup failed:', err.code);
 			connection.end();
-			process.exitCode = code || 0;
+			process.exitCode = err ? 1 : code || 0;
 		});
 	});
 });

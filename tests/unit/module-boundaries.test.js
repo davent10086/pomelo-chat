@@ -2,6 +2,12 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {checkSources} = require('../../server/scripts/test-architecture');
 
+test('all backend layers reject removed compatibility imports', () => {
+	for (const file of ['controller/routes/assistant.ts', 'composition.ts', 'modules/assistant/agent.ts']) {
+		assert.ok(checkSources({ [file]: "import { old } from '" + (file.includes('/') ? '../../service/assistant/agent' : './service/assistant/agent') + "';" }).some(error => error.includes('legacy import')));
+	}
+});
+
 test('architecture check rejects internal imports, transport leakage and module cycles', () => {
 	const errors = checkSources({
 		'modules/social/application.ts': "import {save} from '../messaging/persistence'; import type {Request} from 'express';",

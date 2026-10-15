@@ -1,455 +1,102 @@
 import { WechatOutlined } from '@ant-design/icons';
-import { Tabs, Tree, Tooltip, TabsProps, Form, Input, Select, Button, Modal, Empty } from 'antd';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
-
-import {
-	getFriendList,
-	getFriendInfoById,
-	getFriendGroup,
-	updateFriendInfo,
-	createFriendGroup,
-	getGroupChatList,
-	getGroupChatInfo
-} from './api';
+import { Tabs, Tooltip, Modal, Form, Input, Empty, type TabsProps } from 'antd';
+import { forwardRef, useImperativeHandle, useState } from 'react';
+import { TabType, type IAddressBookProps } from './type';
+import { useAddressBook } from './useAddressBook';
+import { FriendTree } from './FriendTree';
+import { FriendDetails } from './FriendDetails';
+import { GroupDetails } from './GroupDetails';
 import styles from './index.module.less';
-import {
-	IFriendInfo,
-	IFriendGroupListItem,
-	IGroupChatItem,
-	IAddressBookProps,
-	TabType,
-	IFriendInfoForm
-} from './type';
-import type { DirectoryTreeProps } from 'antd/es/tree';
-
-import { StatusIconList } from '@/assets/icons';
-import CreateGroupChatModal from '@/components/CreateGroupChatModal';
-import { IFriendGroupItem, IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
 import ImageLoad from '@/components/ImageLoad';
 import SearchContainer from '@/components/SearchContainer';
-import useShowMessage from '@/hooks/useShowMessage';
-// AI 助手卡片组件，提供内置 AI 助手入口
 import AiAssistantCard from '@/components/AiAssistantCard';
-import { HttpStatus } from '@/utils/constant';
 import { userStorage } from '@/utils/storage';
 
-const { DirectoryTree } = Tree;
-
-const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
-	const { handleChooseChat } = props;
+const AddressBook = forwardRef(({ handleChooseChat }: IAddressBookProps, ref) => {
 	const user = userStorage.getItem();
-	const showMessage = useShowMessage();
-
+	const data = useAddressBook(user);
 	const [searchQuery, setSearchQuery] = useState('');
-	const keyword = searchQuery.trim().toLocaleLowerCase();
-	const matches = (...values: (string | undefined)[]) =>
-		values.some(value => value?.toLocaleLowerCase().includes(keyword));
-	const [curTab, setCurTab] = useState<string>(TabType.FRIEND); // 当前 tab 是好友还是群聊
-	// 好友相关状态
-	const [friendList, setFriendList] = useState<IFriendGroupItem[]>([]); // 好友列表
-	const [curFriendInfo, setCurFriendInfo] = useState<IFriendInfo>(); // 当前选中的好友信息
-	const [groupList, setGroupList] = useState<IFriendGroupListItem[]>([]); // 好友分组列表
-	const [friendInfoFormInstance] = Form.useForm<IFriendInfoForm>(); // 好友信息表单实例
-	const [openCreateGroupModal, setOpenCreateGroupModal] = useState(false); // 是否打开新建分组的 modal
-	const [newGroupName, setNewGroupName] = useState(''); // 新建分组的名称
-	// 群聊相关状态
-	const [groupChatList, setGroupChatList] = useState<IGroupChatItem[]>([]); // 群聊列表
-	const [curGroupChatInfo, setCurGroupChatInfo] = useState<IGroupChatInfo>(); // 当前选中的群聊信息
-	const [openCreateModal, setCreateModal] = useState(false); // 是否打开创建群聊的 modal
-
-	// 难点: 如何将后端返回的数据转换成 Tree 组件需要的数据格式
-	const treeData = friendList
-		.map(group => ({
-			...group,
-			friend: group.friend.filter(friend => matches(friend.remark, friend.username))
-		}))
-		.filter(group => !keyword || group.friend.length > 0)
-		.map(group => {
-			return {
-				title: (
-					<span>
-						{group.name}&nbsp;&nbsp;&nbsp;&nbsp;{group.online_counts}/{group.friend.length}
-					</span>
-				),
-				key: `group-${group.name}`, // 根据实际情况生成唯一的 key，这里简单使用了随机数
-				selectable: false,
-				children: group.friend.map(friend => ({
-					title: (
-						<div className={styles.nodeContent}>
-							<ImageLoad src={friend.avatar} />
-							<span>{friend.remark}</span>
-							<span className={styles.friendStatus}>
-								<Tooltip
-									placement="bottomLeft"
-									title={
-										friend.online_status === 'offline'
-											? StatusIconList[1].text
-											: StatusIconList[0].text
-									}
-									arrow={false}
-								>
-									<span
-										className={`iconfont ${
-											friend.online_status === 'offline'
-												? StatusIconList[1].icon
-												: StatusIconList[0].icon
-										}`}
-									></span>
-								</Tooltip>
-							</span>
-						</div>
-					),
-					key: String(friend.id),
-					isLeaf: true
-				}))
-			};
-		});
-	// 根据节点的 key 获取节点的信息
-	/**
-	 * 根据节点ID获取节点信息
-	 *
-	 * 通过好友ID从服务器获取详细的好友信息，并设置到当前选中的好友信息状态中
-	 * 同时更新好友信息表单的数据
-	 *
-	 * @param id - 好友ID
-	 */
-	const getNodeInfoById = async (id: number) => {
-		try {
-			const res = await getFriendInfoById(id);
-			if (res.code === HttpStatus.SUCCESS && res.data) {
-				setCurFriendInfo(res.data);
-				friendInfoFormInstance.setFieldsValue({
-					username: res.data.username,
-					name: res.data.name,
-					remark: res.data.remark,
-					group: res.data.group_id
-				});
-			} else {
-				showMessage('error', '获取好友信息失败');
-			}
-		} catch {
-			showMessage('error', '获取好友信息失败');
-		}
-	};
-	/**
-	 * 处理树形结构节点选择事件
-	 *
-	 * 当用户在好友树中选择一个好友节点时，触发此函数
-	 * 获取被选中节点的好友信息并显示
-	 *
-	 * @param selectedKeys - 被选中的节点key数组
-	 * @param info - 节点相关信息对象
-	 */
-	const onSelect: DirectoryTreeProps['onSelect'] = (selectedKeys, info) => {
-		// 获取节点信息
-		getNodeInfoById(Number(info.node.key));
-	};
-
-	/**
-	 * 刷新好友列表
-	 *
-	 * 从服务器获取最新的好友列表数据并更新状态
-	 * 如果请求成功，更新friendList状态；如果失败，显示错误消息
-	 */
-	const refreshFriendList = async () => {
-		try {
-			const res = await getFriendList();
-			if (res.code === HttpStatus.SUCCESS && res.data) {
-				setFriendList(res.data);
-			} else {
-				showMessage('error', '获取好友列表失败');
-			}
-		} catch {
-			showMessage('error', '获取好友列表失败');
-		}
-	};
-
-	/**
-	 * 获取好友分组列表
-	 *
-	 * 从服务器获取好友分组列表数据并更新状态
-	 * 如果请求成功，更新groupList状态；如果失败，显示错误消息
-	 */
-	const getFriendGroupList = async () => {
-		try {
-			const res = await getFriendGroup();
-			if (res.code === HttpStatus.SUCCESS && res.data) {
-				setGroupList(res.data);
-			} else {
-				showMessage('error', '获取好友分组列表失败');
-			}
-		} catch {
-			showMessage('error', '获取好友分组列表失败');
-		}
-	};
-
-	/**
-	 * 更新好友信息
-	 *
-	 * 验证表单数据后，向服务器发送请求更新好友的备注和分组信息
-	 * 更新成功后刷新好友列表并显示成功消息，失败则显示错误消息
-	 */
-	const updateFriend = () => {
-		friendInfoFormInstance.validateFields().then(async values => {
-			try {
-				const params = {
-					friend_id: curFriendInfo!.friend_id,
-					remark: values.remark ? values.remark : curFriendInfo!.username, // 备注为空时默认为好友的用户名
-					group_id: values.group
-				};
-				const res = await updateFriendInfo(params);
-				if (res.code === HttpStatus.SUCCESS) {
-					showMessage('success', '修改成功');
-					refreshFriendList();
-				} else {
-					showMessage('error', '修改失败，请重试');
-				}
-			} catch {
-				showMessage('error', '修改失败，请重试');
-			}
-		});
-	};
-
-	/**
-	 * 创建新的好友分组
-	 *
-	 * 验证分组名称后，向服务器发送请求创建新的好友分组
-	 * 创建成功后刷新好友列表和分组列表，关闭模态框并显示成功消息
-	 * 如果分组名称为空或请求失败，则显示相应的错误消息
-	 */
-	const createGroup = async () => {
-		if (!newGroupName) {
-			showMessage('error', '请输入分组名称');
-			return;
-		}
-
-		try {
-			const params = {
-				user_id: user.id,
-				username: user.username,
-				name: newGroupName
-			};
-			const res = await createFriendGroup(params);
-			if (res.code === HttpStatus.SUCCESS) {
-				showMessage('success', '新建成功');
-				refreshFriendList();
-				getFriendGroupList();
-				setOpenCreateGroupModal(false);
-			} else {
-				showMessage('error', '新建失败，请重试');
-			}
-		} catch {
-			showMessage('error', '新建失败，请重试');
-		}
-	};
-
-	/**
-	 * 刷新群聊列表
-	 *
-	 * 从服务器获取最新的群聊列表数据并更新状态
-	 * 如果请求成功，更新groupChatList状态；如果失败，显示错误消息
-	 */
-	const refreshGroupChatList = async () => {
-		try {
-			const res = await getGroupChatList();
-			if (res.code === HttpStatus.SUCCESS) {
-				setGroupChatList(res.data);
-			} else {
-				showMessage('error', '获取群聊列表失败');
-			}
-		} catch {
-			showMessage('error', '获取群聊列表失败');
-		}
-	};
-
-	/**
-	 * 处理选择群聊事件
-	 *
-	 * 当用户点击某个群聊时，获取该群聊的详细信息并设置为当前选中的群聊
-	 *
-	 * @param item - 被选中的群聊项
-	 */
-	const handleSelectGroupChat = async (item: IGroupChatItem) => {
-		try {
-			const res = await getGroupChatInfo(item.id);
-			if (res.code === HttpStatus.SUCCESS) {
-				setCurGroupChatInfo(res.data);
-			} else {
-				showMessage('error', '获取群聊信息失败');
-			}
-		} catch {
-			showMessage('error', '获取群聊信息失败');
-		}
-	};
-
-	// 群聊具体信息 tabs 标签切换
-	const infoItems: TabsProps['items'] = [
-		{
-			key: TabType.FRIEND,
-			label: '首页',
-			children: (
-				<div className={styles.homePage}>
-					<span>
-						<b> 群主：</b>
-						{curGroupChatInfo?.creator_username}
-					</span>
-					<span>
-						<b> 群创建时间：</b> 本群创建于
-						{curGroupChatInfo?.created_at.split('.')[0].replace('T', ' ')}
-					</span>
-					<span>
-						<b> 群人数：</b>
-						{curGroupChatInfo?.members.length}
-					</span>
-				</div>
-			)
-		},
-		{
-			key: TabType.GROUP_CHAT,
-			label: '成员',
-			children: (
-				<div className={styles.memberTable}>
-					<div className={styles.tableTitle}>
-						<li> 用户名 </li>
-						<li> 群昵称 </li>
-						<li> 加入时间 </li>
-						<li> 最后发言时间 </li>
-					</div>
-					<div className={styles.tableContent}>
-						{curGroupChatInfo?.members.map(item => {
-							return (
-								<div className={styles.tableItem} key={item.user_id}>
-									<li>{item.username}</li>
-									<li>{item.nickname}</li>
-									<li>{item.created_at.split('.')[0].replace('T', ' ')}</li>
-									<li>{item.lastMessageTime?.split('.')[0].replace('T', '') || '暂无'}</li>
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			)
-		}
-	];
-
-	/**
-	 * 控制创建群聊模态框的显示与隐藏
-	 *
-	 * 用于打开或关闭邀请好友加入群聊的模态框
-	 *
-	 * @param visible - 是否显示模态框
-	 */
-	const handleCreateModal = (visible: boolean) => {
-		setCreateModal(visible);
-	};
-
-	useEffect(() => {
-		refreshFriendList();
-		getFriendGroupList();
-		refreshGroupChatList();
-	}, []);
-
-	// 鼠标右键内容
-	const addContent = (key: number) => {
-		if (key === 1) {
-			return (
+	const [curTab, setCurTab] = useState(TabType.FRIEND);
+	const [openCreateGroupModal, setOpenCreateGroupModal] = useState(false);
+	const [newGroupName, setNewGroupName] = useState('');
+	const { curFriendInfo, curGroupChatInfo, refreshFriendList, refreshGroupChatList } = data;
+	useImperativeHandle(ref, () => ({ refreshFriendList, refreshGroupChatList }), [
+		refreshFriendList,
+		refreshGroupChatList
+	]);
+	const titleLabel = (tab: TabType) => (
+		<Tooltip
+			placement="bottomLeft"
+			arrow={false}
+			overlayClassName="addContent"
+			trigger="contextMenu"
+			title={
 				<ul>
-					<li onClick={refreshFriendList}> 刷新列表 </li>
 					<li
-						onClick={() => {
-							setOpenCreateGroupModal(true);
-						}}
+						onClick={() =>
+							void (tab === TabType.FRIEND ? refreshFriendList() : refreshGroupChatList())
+						}
 					>
-						新建分组
+						刷新列表
 					</li>
+					{tab === TabType.FRIEND && (
+						<li
+							onClick={() => {
+								setNewGroupName('');
+								setOpenCreateGroupModal(true);
+							}}
+						>
+							新建分组
+						</li>
+					)}
 				</ul>
-			);
-		} else {
-			return (
-				<ul>
-					<li onClick={refreshGroupChatList}> 刷新列表 </li>
-				</ul>
-			);
-		}
-	};
-
-	/**
-	 * 生成标签标题元素
-	 *
-	 * 为Tabs组件生成带有右键菜单功能的标题元素
-	 * 根据传入的key值确定是好友标签还是群聊标签，并添加相应的右键菜单
-	 *
-	 * @param key - 标签类型标识符 (1表示好友，2表示群聊)
-	 * @returns 带有Tooltip的JSX元素
-	 */
-	const titleLabel = (key: number) => {
-		const title = key === 1 ? '好友' : '群聊';
-		return (
-			<Tooltip
-				placement="bottomLeft"
-				title={addContent(key)}
-				arrow={false}
-				overlayClassName="addContent"
-				trigger={'contextMenu'}
-			>
-				{title}
-			</Tooltip>
-		);
-	};
+			}
+		>
+			{tab === TabType.FRIEND ? '好友' : '群聊'}
+		</Tooltip>
+	);
+	const keyword = searchQuery.trim().toLocaleLowerCase();
+	const groups = data.groupChatList.filter(
+		group => !keyword || group.name.toLocaleLowerCase().includes(keyword)
+	);
 	const items: TabsProps['items'] = [
 		{
 			key: TabType.FRIEND,
-			label: titleLabel(1),
+			label: titleLabel(TabType.FRIEND),
 			children: (
 				<div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-					{/* 内置智能助手入口（前端虚拟联系人） */}
 					<AiAssistantCard userId={user.id} onChooseChat={handleChooseChat} />
-					{/* 好友树 */}
-					{treeData.length === 0 ? (
-						<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
-					) : (
-						<div className={styles.friendTree}>
-							<DirectoryTree onSelect={onSelect} treeData={treeData} icon={null} showIcon={false} />
-						</div>
-					)}
+					<FriendTree
+						friendList={data.friendList}
+						query={searchQuery}
+						onSelect={id => void data.selectFriend(id)}
+					/>
 				</div>
 			)
 		},
 		{
 			key: TabType.GROUP_CHAT,
-			label: titleLabel(2),
-			children:
-				groupChatList.filter(item => matches(item.name)).length === 0 ? (
-					<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
-				) : (
-					<div className={styles.groupChatList}>
-						{groupChatList
-							.filter(item => matches(item.name))
-							.map(item => {
-								return (
-									<div
-										className={`${styles.groupChat} ${
-											curGroupChatInfo?.id === item.id ? styles.curGroupChatInfo : ''
-										}`}
-										key={item.id}
-										onClick={() => handleSelectGroupChat(item)}
-									>
-										<ImageLoad src={item.avatar} />
-										<span>{item.name}</span>
-									</div>
-								);
-							})}
-					</div>
-				)
+			label: titleLabel(TabType.GROUP_CHAT),
+			children: groups.length ? (
+				<div className={styles.groupChatList}>
+					{groups.map(group => (
+						<div
+							key={group.id}
+							onClick={() => void data.selectGroup(group)}
+							className={`${styles.groupChat} ${curGroupChatInfo?.id === group.id ? styles.curGroupChatInfo : ''}`}
+						>
+							<ImageLoad src={group.avatar} />
+							<span>{group.name}</span>
+						</div>
+					))}
+				</div>
+			) : (
+				<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+			)
 		}
 	];
-	const onChange = (key: string) => {
-		setCurTab(key);
-	};
-
-	// 用 useMemo 包裹，避免每次都重新渲染导致展开的好友列表收起
-	const LeftContainer = useMemo(() => {
-		return (
+	return (
+		<div className={styles.addressBook}>
 			<div className={styles.leftContainer}>
 				<div className={styles.search}>
 					<SearchContainer
@@ -460,153 +107,64 @@ const AddressBook = forwardRef((props: IAddressBookProps, ref) => {
 				</div>
 				<div className={styles.list}>
 					<div className={styles.addressBookTabs}>
-						<Tabs centered defaultActiveKey="1" items={items} onChange={onChange}></Tabs>
+						<Tabs
+							centered
+							activeKey={curTab}
+							items={items}
+							onChange={key => setCurTab(key as TabType)}
+						/>
 					</div>
 				</div>
 			</div>
-		);
-	}, [friendList, groupChatList, curGroupChatInfo, searchQuery]);
-
-	/**
-	 * 暴露组件内部方法给父组件使用
-	 *
-	 * 通过ref将组件内部的方法暴露给父组件，使父组件可以调用这些方法
-	 * 主要暴露刷新好友列表和刷新群聊列表的方法
-	 */
-	useImperativeHandle(ref, () => ({
-		refreshFriendList,
-		refreshGroupChatList
-	}));
-	return (
-		<>
-			<div className={styles.addressBook}>
-				{LeftContainer}
-				<div className={styles.rightContainer}>
-					{curTab === TabType.FRIEND && curFriendInfo !== undefined && (
-						<div className={styles.infoModal}>
-							<div className={styles.infoContainerHead}>
-								<div className={styles.avatar}>
-									<ImageLoad src={curFriendInfo.avatar} />
-								</div>
-								<div className={styles.info}>
-									<div className={styles.username}>{curFriendInfo.username}</div>
-									<div className={`icon iconfont icon-gexingqianming ${styles.signature}`}>
-										{curFriendInfo.signature ? curFriendInfo.signature : '暂无个性签名'}
-									</div>
-								</div>
-							</div>
-							<div className={styles.changeContainer}>
-								<Form name="friendInfoForm" form={friendInfoFormInstance}>
-									<Form.Item label="账号" name="username">
-										<Input readOnly />
-									</Form.Item>
-									<Form.Item label="昵称" name="name">
-										<Input readOnly />
-									</Form.Item>
-									<Form.Item label="备注" name="remark">
-										<Input placeholder="请输入好友备注" />
-									</Form.Item>
-									<Form.Item label="分组" name="group">
-										<Select
-											size="small"
-											notFoundContent="暂无分组"
-											placeholder="请选择分组"
-											options={groupList.map(item => {
-												return {
-													label: item.name,
-													value: item.id
-												};
-											})}
-										/>
-									</Form.Item>
-								</Form>
-							</div>
-							<div className={styles.btns}>
-								<Button
-									onClick={() => {
-										updateFriend();
-									}}
-								>
-									保存信息
-								</Button>
-								<Button
-									type="primary"
-									onClick={() => {
-										handleChooseChat(curFriendInfo);
-									}}
-								>
-									发送消息
-								</Button>
-							</div>
-						</div>
-					)}
-					{curTab === TabType.GROUP_CHAT && curGroupChatInfo !== undefined && (
-						<div className={styles.infoModal}>
-							<div className={styles.infoContainerHead}>
-								<div className={styles.avatar}>
-									<ImageLoad src={curGroupChatInfo.avatar} />
-								</div>
-								<div className={styles.info}>
-									<div className={styles.username}>{curGroupChatInfo.name}</div>
-									<div className={`icon iconfont icon-qungonggao ${styles.signature}`}>
-										{curGroupChatInfo.announcement ? curGroupChatInfo.announcement : '暂无公告'}
-									</div>
-								</div>
-							</div>
-							<div className={styles.infoContainerBody}>
-								<Tabs centered defaultActiveKey="1" items={infoItems}></Tabs>
-							</div>
-							<div className={styles.btns}>
-								<Button onClick={() => handleCreateModal(true)}> 邀请好友 </Button>
-								<Button
-									type="primary"
-									onClick={() => {
-										handleChooseChat(curGroupChatInfo);
-									}}
-								>
-									发送消息
-								</Button>
-							</div>
-						</div>
-					)}
-					{curTab === TabType.FRIEND && curFriendInfo === undefined && <WechatOutlined />}
-					{curTab === TabType.GROUP_CHAT && curGroupChatInfo === undefined && <WechatOutlined />}
-				</div>
-				{openCreateGroupModal && (
-					<Modal
-						title="新建分组"
-						open={openCreateGroupModal}
-						onCancel={() => setOpenCreateGroupModal(false)}
-						onOk={() => createGroup()}
-						cancelText="取消"
-						okText="确定"
-						width="4rem"
-					>
-						<Form name="createGroupForm">
-							<Form.Item name="groupName">
-								<Input
-									placeholder="请输入分组名称"
-									onChange={e => {
-										setNewGroupName(e.target.value);
-									}}
-								/>
-							</Form.Item>
-						</Form>
-					</Modal>
-				)}
-				{openCreateModal && (
-					<CreateGroupChatModal
-						openmodal={openCreateModal}
-						groupChatInfo={curGroupChatInfo}
-						handleModal={handleCreateModal}
-						type={'invite'}
-					/>
-				)}
+			<div className={styles.rightContainer}>
+				{curTab === TabType.FRIEND &&
+					(curFriendInfo ? (
+						<FriendDetails
+							key={curFriendInfo.friend_id}
+							curFriendInfo={curFriendInfo}
+							groupList={data.groupList}
+							onSave={data.saveFriend}
+							handleChooseChat={handleChooseChat}
+						/>
+					) : (
+						<WechatOutlined />
+					))}
+				{curTab === TabType.GROUP_CHAT &&
+					(curGroupChatInfo ? (
+						<GroupDetails
+							key={curGroupChatInfo.id}
+							curGroupChatInfo={curGroupChatInfo}
+							handleChooseChat={handleChooseChat}
+						/>
+					) : (
+						<WechatOutlined />
+					))}
 			</div>
-		</>
+			{openCreateGroupModal && (
+				<Modal
+					title="新建分组"
+					open
+					onCancel={() => setOpenCreateGroupModal(false)}
+					onOk={async () => {
+						if (await data.createGroup(newGroupName)) setOpenCreateGroupModal(false);
+					}}
+					cancelText="取消"
+					okText="确定"
+					width="4rem"
+				>
+					<Form name="createGroupForm">
+						<Form.Item name="groupName">
+							<Input
+								placeholder="请输入分组名称"
+								value={newGroupName}
+								onChange={event => setNewGroupName(event.target.value)}
+							/>
+						</Form.Item>
+					</Form>
+				</Modal>
+			)}
+		</div>
 	);
 });
-
-// 指定显示名称
 AddressBook.displayName = 'AddressBook';
 export default AddressBook;

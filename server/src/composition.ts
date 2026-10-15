@@ -17,7 +17,6 @@ import {
 } from './modules/realtime/public';
 import * as actions from './modules/assistant/actions';
 import * as agent from './modules/assistant/agent-application';
-import * as legacy from './modules/assistant/legacy-application';
 import { createHttpHandlers as identityHandlers } from './modules/identity/http';
 import { createHttpHandlers as socialHandlers } from './modules/social/http';
 import { createHttpHandlers as messagingHandlers } from './modules/messaging/http';
@@ -48,7 +47,7 @@ export const socialHttp = socialHandlers(social);
 export const messagingHttp = messagingHandlers({ ...messaging, ...messageSearch });
 export const filesHttp = fileHandlers(files);
 export const rtcHttp = rtcHandlers(rtc);
-export const assistantHttp = assistantHandlers({ ...actions, ...agent, ...legacy });
+export const assistantHttp = assistantHandlers({ ...actions, ...agent });
 export const authenticateUploadAccess = createUploadAccessMiddleware(
 	verifyTokenWithSession,
 	isAuthenticatedPayload

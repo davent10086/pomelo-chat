@@ -6,7 +6,7 @@ import { IChatContainerProps } from './type';
 import AIChatSummary from '@/components/AIChatSummary';
 import MessageShow from '@/components/MessageShow';
 import { IMessageItem } from '@/components/MessageShow/type';
-import request from '@/utils/request';
+import { useReplySuggestions } from '@/hooks/useReplySuggestions';
 import { mergeMessages } from '@/utils/message-merge';
 
 // M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
@@ -45,16 +45,8 @@ const ChatContainer = (props: IChatContainerProps) => {
 	const anchor = useRef<{ key: string; offset: number }>();
 	const isAtBottomRef = useRef<boolean>(true);
 
-	const [nextSteps, setNextSteps] = useState<string[]>([]);
 	const [nextCollapsed, setNextCollapsed] = useState<boolean>(false);
-	const [nextLoading, setNextLoading] = useState<boolean>(false);
-	const seedRef = useRef<number>(0);
-	// M7: 防抖定时器
-	const nextRequest = useRef<AbortController>();
 	const [layoutVersion, setLayoutVersion] = useState(0);
-	const nextStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-	// M5: 缓存上限，避免内存泄漏
 
 	// M6: 测量高度缓存
 	const measuredHeights = useRef<Map<string, number>>(new Map());
@@ -66,95 +58,16 @@ const ChatContainer = (props: IChatContainerProps) => {
 	useEffect(() => {
 		onAtBottomChange?.(isAtBottom);
 	}, [isAtBottom, onAtBottomChange]);
-	const buildContextText = (limit = 12) => {
-		const msgs = allMessages || [];
-		const last = msgs.slice(Math.max(0, msgs.length - limit));
-		return last
-			.map(
-				(m: { sender_name?: string; content?: string }) =>
-					`${m.sender_name || '用户'}: ${m.content || ''}`
-			)
-			.join('\n');
-	};
-
-	const heuristicNextSteps = (count = 3) => {
-		const last =
-			allMessages && allMessages.length
-				? (allMessages[allMessages.length - 1] as { content?: string }).content || ''
-				: '';
-		const isQuestion = /[?？]$/.test(last) || /(吗|么|是否|怎么|怎样|如何)/.test(last);
-		const mentionTime = /(今天|明天|后天|今晚|这周|下周|周[一二三四五六日天])/.test(last);
-		const seed = seedRef.current % 3;
-		const templates: string[][] = [
-			[
-				'收到，我来跟进这件事，预计今天内给你反馈。',
-				'我们安排一次 30 分钟讨论，确定范围与时间表。',
-				'我先整理一个要点清单，稍后发你确认。'
-			],
-			[
-				'我这边先出一个初版方案，我们一起评审下可行性。',
-				'方便的话，把相关资料/示例发我，我先评估工作量。',
-				'我来拉个小群，相关同学一起对齐下细节。'
-			],
-			[
-				'我创建一个待办清单，按优先级推进并同步进度。',
-				'这块我先试一下，遇到问题再和你确认。',
-				'我们定一个里程碑节点，按节点回顾与复盘。'
-			]
-		];
-		const items = templates[seed].slice(0, count);
-		if (isQuestion) items[0] = '我先给出一个初步答复，你看是否符合预期？';
-		if (mentionTime) items[1] = '要不我们定个时间点，我这边按时提交结果。';
-		return items.slice(0, count);
-	};
-
-	// H4: 通过后端代理调用（不暴露 API Key）
-	const fetchNextStepsFromBackend = async () => {
-		const prompt = `基于以下最近的对话内容，给出不超过5条"下一步行动建议"，要求：\n1) 中文，简洁，每条不超过30字\n2) 可直接点击作为回复开头或行动声明\n3) 不要编号，按行返回\n\n对话：\n${buildContextText(12)}`;
-		nextRequest.current?.abort();
-		const controller = new AbortController();
-		nextRequest.current = controller;
-		const res = await request.post<{ contextText: string; count: number }, { steps: string[] }>(
-			'/assistant/next-steps',
-			{ contextText: prompt.slice(-7000), count: 5 },
-			{ signal: controller.signal }
-		);
-		const steps = res.data.data.steps || [];
-		return steps.slice(0, 5);
-	};
-
-	const refreshNextSteps = async () => {
-		setNextLoading(true);
-		seedRef.current += 1;
-		try {
-			let items: string[] = [];
-			try {
-				items = await fetchNextStepsFromBackend();
-			} catch {
-				items = heuristicNextSteps(3);
-			}
-			if (!nextRequest.current?.signal.aborted) setNextSteps(items.slice(0, 3));
-		} finally {
-			setNextLoading(false);
-		}
-	};
-
-	// M7: 防抖 refreshNextSteps，避免每条消息都触发
-	useEffect(() => {
-		if (nextStepsTimerRef.current) {
-			clearTimeout(nextStepsTimerRef.current);
-		}
-		nextStepsTimerRef.current = setTimeout(() => {
-			refreshNextSteps();
-		}, 1500);
-		return () => {
-			if (nextStepsTimerRef.current) {
-				clearTimeout(nextStepsTimerRef.current);
-			}
-		};
-	}, [allMessages.length]);
-
-	useEffect(() => () => nextRequest.current?.abort(), []);
+	const {
+		suggestions: nextSteps,
+		loading: nextLoading,
+		refresh: refreshNextSteps
+	} = useReplySuggestions(allMessages, {
+		scope: allMessages[0]?.room || '',
+		count: 3,
+		maxLength: 30,
+		debounceMs: 1500
+	});
 	useEffect(() => {
 		const wrapper = messagesWrapRef.current;
 		if (!wrapper) return;
@@ -460,7 +373,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 							<button
 								type="button"
 								className={styles.next_btn}
-								onClick={refreshNextSteps}
+								onClick={() => void refreshNextSteps()}
 								disabled={nextLoading}
 							>
 								{nextLoading ? '加载中…' : '换一批'}

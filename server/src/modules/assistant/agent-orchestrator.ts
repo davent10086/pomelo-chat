@@ -5,6 +5,8 @@ export interface AgentContext {
 	currentReceiverId?: number;
 	recentMessagesText?: string;
 	memoryEnabled?: boolean;
+	/** Text-only assistance cannot call model tools or create confirmation proposals. */
+	readOnly?: boolean;
 }
 
 export interface AgentStep {

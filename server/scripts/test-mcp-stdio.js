@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const assert = require('node:assert/strict');
 const { spawn } = require('child_process');
 const path = require('path');
 
@@ -55,8 +56,11 @@ child.stdout.on('data', chunk => {
 		try {
 			msg = JSON.parse(raw);
 		} catch {
-			continue;
+			child.kill('SIGTERM');
+			console.error('[mcp-test] Non-JSON data on stdout');
+			process.exit(1);
 		}
+		assert.equal(msg.jsonrpc, '2.0');
 		if (msg.id !== undefined && pending.has(msg.id)) {
 			const { resolve, reject } = pending.get(msg.id);
 			pending.delete(msg.id);
@@ -83,7 +87,7 @@ child.on('exit', code => {
 	try {
 		console.log(`[mcp-test] User id: ${userId}`);
 		const init = await send(1, 'initialize', {
-			protocolVersion: '2025-06-18',
+			protocolVersion: '2025-11-25',
 			capabilities: {},
 			clientInfo: {
 				name: 'pomelo-mcp-test',
@@ -110,6 +114,13 @@ child.on('exit', code => {
 				count: 2
 			}
 		});
+		assert.notEqual(call.isError, true);
+		assert.equal(call.structuredContent.suggestions.length, 2);
+		const search = tools.find(item => item.name === 'search_messages');
+		assert.equal(search.inputSchema.properties.query.minLength, 1);
+		assert.ok(search.outputSchema);
+		const invalid = await send(4, 'tools/call', { name: 'suggest_replies', arguments: { text: 'test', count: 1.5 } });
+		assert.equal(invalid.isError, true);
 		console.log('[mcp-test] Tool call result:');
 		console.log(JSON.stringify(call.structuredContent || call.content, null, 2));
 		child.kill('SIGTERM');

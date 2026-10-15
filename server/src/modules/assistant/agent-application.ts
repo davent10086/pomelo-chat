@@ -1,3 +1,5 @@
+import { ToolExecutionError, toolErrorResult } from './tools/tool-runtime';
+import { TaskCandidatesSchema, validateTaskCandidateSources } from './agent-response';
 export interface AgentChatInput {
 	input?: unknown;
 	room?: unknown;
@@ -19,8 +21,6 @@ import {
 	MODEL,
 	UPSTREAM_TIMEOUT_MS,
 	API_BASE,
-	TaskCandidatesSchema,
-	validateTaskCandidateSources,
 	API_KEY,
 	MAX_INPUT_LENGTH,
 	checkRateLimit,
@@ -100,8 +100,18 @@ export const callAgentTool = async (
 		return success({ name, result });
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));
-		console.error('[assistant-agent] callAgentTool error:', err.message);
-		return failure(CommonStatus.PARAM_ERR);
+		const result = toolErrorResult(err);
+		const code =
+			err instanceof ToolExecutionError
+				? err.code === 'RATE_LIMITED'
+					? AssistantStatus.RATE_LIMIT_ERR
+					: err.code === 'TARGET_UNAVAILABLE' || err.code === 'UNKNOWN_TOOL'
+						? CommonStatus.NOT_FOUND
+						: err.code === 'EXECUTION_FAILED'
+							? CommonStatus.SERVER_ERR
+							: CommonStatus.PARAM_ERR
+				: CommonStatus.SERVER_ERR;
+		return { code, data: result };
 	}
 };
 export const taskCandidates = async (

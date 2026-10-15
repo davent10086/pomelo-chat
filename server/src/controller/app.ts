@@ -14,6 +14,7 @@ import fileRouter from './routes/file';
 import assistantRouter from './routes/assistant';
 import { authenticateUploadAccess } from '../composition';
 import { createRateLimiter } from '../infrastructure/rate-limit';
+import { uploadRoot } from '../infrastructure/file-storage';
 
 const app = express();
 let routesRegistered = false;
@@ -83,8 +84,7 @@ const apiRateLimit = createRateLimiter({
 	name: 'api',
 	windowSeconds: Number(process.env.API_RATE_LIMIT_WINDOW_SECONDS || 60),
 	max: Number(process.env.API_RATE_LIMIT_MAX || 240),
-	skip: req =>
-		req.path.includes('/assistant/chat/stream') || req.path.includes('/assistant/agent/stream')
+	skip: req => req.path === '/assistant/agent/stream'
 });
 
 /**
@@ -112,7 +112,7 @@ export const registerAppRoutes = (): void => {
 	routesRegistered = true;
 
 	app.use(securityHeaders);
-	app.use('/uploads', authenticateUploadAccess, staticDownload, express.static('uploads'));
+	app.use('/uploads', authenticateUploadAccess, staticDownload, express.static(uploadRoot));
 
 	/**
 	 * 处理 HTTP 请求体中的参数

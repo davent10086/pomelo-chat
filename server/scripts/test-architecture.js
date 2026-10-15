@@ -21,7 +21,7 @@ const ownership = {
 const moduleOf = file => /^modules\/([^/]+)\//.exec(file)?.[1];
 const adapter = file =>
 	moduleOf(file) === 'realtime' ||
-	/(?:^|\/)(?:http|middleware|access-http|agent-http|legacy-http)\.ts$/.test(file);
+	/(?:^|\/)(?:http|middleware|access-http|agent-http)\.ts$/.test(file);
 function checkSources(sources) {
 	const errors = [],
 		graph = new Map();
@@ -57,7 +57,7 @@ function checkSources(sources) {
 						errors.push(`${file}: direct SQL import outside repository`);
 					if (own && own !== 'realtime' && file.endsWith('/public.ts') && adapter(`${target}.ts`))
 						errors.push(`${file}: public API exports a transport adapter`);
-					if (own && /^(service|utils|model)\//.test(target))
+					if (/^(service|utils)\/|^model\/db$/.test(target))
 						errors.push(`${file}: legacy import ${specifier}`);
 					if (own && other && own !== other && !/(?:^|\/)(public|contracts)$/.test(target))
 						errors.push(`${file}: imports internal file of ${other}: ${specifier}`);

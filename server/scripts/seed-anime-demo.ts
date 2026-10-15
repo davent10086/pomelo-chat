@@ -4,8 +4,8 @@ process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
 
 import bcrypt from 'bcrypt';
 
-import db, { assertDatabaseConnection, initDatabase } from '../src/model/db';
-import { withTransaction } from '../src/utils/query';
+import db, { assertDatabaseConnection, initDatabase } from '../src/infrastructure/database';
+import { withTransaction } from '../src/infrastructure/database-query';
 
 type WriteResult = { insertId: number };
 type UserRow = { id: number; username: string; name: string; avatar: string };

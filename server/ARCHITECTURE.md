@@ -4,6 +4,12 @@ The backend runs in one Node.js process. HTTP, WebSocket, SSE, migrations and ba
 tasks keep their existing startup and shutdown behavior. Modules communicate through
 ordinary function calls; this refactor introduces no additional services or databases.
 
+`infrastructure/database.ts` owns connection configuration, the pool and test-target guards.
+`infrastructure/database/schema.ts` holds table definitions in foreign-key order, while
+`infrastructure/database/migrations.ts` executes schema changes and historical repairs.
+Each initialization owns its connection and holds the existing MySQL migration lock through
+completion; concurrent initialization in one process is serialized without shared connection state.
+
 ## Ownership
 
 | Module | Responsibility | Owned database tables |
@@ -56,11 +62,24 @@ Delivery remains at least once; clients merge by message ID. Socket session chec
 active, and slow sockets reconnect and recover persisted history. The main Agent still uses
 parallel deterministic preprocessing, with writes requiring explicit user confirmation.
 
-## Compatibility and checks
+## Entry points and checks
 
-Old `service`, `utils` and `model/db` imports are compatibility facades. New production code
-uses the canonical module or infrastructure paths. HTTP paths, response envelopes, status
-codes, WebSocket frames, SSE events and database migrations are unchanged.
+The old `service`, `utils` and `model/db` facades have been removed. Production code, scripts
+and tests use module APIs, shared utilities, infrastructure or the composition root directly.
+The architecture check rejects compatibility imports from every backend layer.
+
+AI chat, summaries and reply suggestions share `/assistant/agent` and `/assistant/agent/stream`.
+The old `/assistant/chat`, `/assistant/chat/stream` and `/assistant/next-steps` routes have been
+removed; clients must migrate with the backend. The non-streaming chat fallback has also been
+removed. Summary and suggestion clients pass `context.readOnly: true`: the main Agent has no
+model tools, loads no long-term memory and creates no confirmation proposals. Deterministic
+preprocessing remains available. Normal Agent chat retains explicit confirmation for writes.
+Read-only streams return text without a second metadata-extraction model call. Normal streaming
+chat still extracts structured suggestions and confirmation proposals; non-streaming read-only
+suggestions retain their structured response. `agent-response.ts` owns response schemas, parsing,
+sanitization and presentation, while `agent.ts` owns execution and action proposal orchestration.
+Both streaming clients use the same SSE parser for lifecycle events, delta resets and final results.
+Other response envelopes, status codes, WebSocket frames and database migrations are unchanged.
 
 Run `pnpm --filter pomelo-chat-server test:architecture`. The TypeScript AST check rejects
 module-internal cross imports, transport dependencies in business code, writes to another
@@ -71,3 +90,24 @@ Behavior regressions use actual isolated MySQL/Redis targets and deterministic m
 Use `node server/scripts/run-isolated-tests.js backend`, `system`, `migrations` or `browser`.
 Unit tests also exercise the boundary check itself, transaction rollback, password verification,
 actor isolation, upload access, bounded fanout and socket backpressure.
+
+## Real chat path
+
+Run `pnpm test:real-chat` from the repository root. This starts the real backend and Vite
+frontend on ports 3199 and 5199, and runs two Chromium clients without HTTP response stubs
+or WebSocket interception. It verifies browser login, persisted messages and ACKs, notification
+delivery, browser upload/merge, byte-for-byte recipient download, outsider denial, and history
+recovery without duplicates after the receiver disconnects and reloads. No model is called.
+
+The local runner creates a uniquely named MySQL test database, Redis key prefix and temporary
+upload directory, then cleans them after the browser servers exit. Configure `REDIS_URL_TEST`
+for your local Redis (for example `redis://[::1]:6379/15` for an IPv6-only listener). MySQL
+credentials come from the existing server environment. Production uploads still default to
+`server/uploads`; `UPLOAD_ROOT` changes physical storage without changing attachment URLs.
+
+`pnpm test:real-rtc` additionally requires a running LiveKit server (tested version 1.13.9).
+It exercises private audio and video invitations, acceptance, actual bidirectional RTP reception,
+decoded video dimensions, and peer connection shutdown in two Chromium contexts. Browser media
+devices are synthetic, but no HTTP, signaling or WebRTC response is stubbed. Media diagnostics
+are attached on failures. This optional test is excluded from the default browser suite because
+that suite does not start LiveKit; it does not establish public-network NAT/TURN or group-call coverage.

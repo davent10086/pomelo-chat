@@ -4,8 +4,8 @@ require('../../server/node_modules/ts-node/register/transpile-only');
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { after, before } = require('node:test');
-const { formatBytes } = require('../../server/src/utils/format');
-const { classifyIntent, chooseAgents } = require('../../server/src/service/assistant/agent-orchestrator');
+const { formatBytes } = require('../../server/src/shared/format');
+const { classifyIntent, chooseAgents } = require('../../server/src/modules/assistant/agent-orchestrator');
 const { createTestTempDirectory, cleanupTestArtifacts } = require('../helpers/test-lifecycle');
 
 before(createTestTempDirectory);

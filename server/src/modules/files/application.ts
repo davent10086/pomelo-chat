@@ -26,6 +26,7 @@ import { pipeline } from 'stream/promises';
 import { CommonStatus, FileStatus } from '../../shared/status';
 import { isAllowedUploadMime, normalizeUploadMetadata } from '../../shared/file';
 import { better_chat } from '../../infrastructure/redis';
+import { uploadRoot } from '../../infrastructure/file-storage';
 
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const MAX_CHUNK_COUNT = Number(process.env.MAX_UPLOAD_CHUNKS || 100);
@@ -43,8 +44,7 @@ const getUploadPaths = (userId: number | string, fileHash: unknown, extname: unk
 	const metadata = normalizeUploadMetadata(fileHash, extname);
 	if (!metadata) return null;
 	const dirPath = join(
-		process.cwd(),
-		'uploads',
+		uploadRoot,
 		String(userId),
 		metadata.suffix,
 		metadata.fileHash

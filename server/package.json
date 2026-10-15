@@ -26,6 +26,7 @@
     "test:security": "node scripts/test-security-regressions.js",
     "test:message-protocol": "node scripts/test-message-protocol.js",
     "test:mcp": "node scripts/test-mcp-stdio.js",
+    "test:tool-contracts": "node scripts/test-tool-contracts.js",
     "test:mcp-policy": "node scripts/test-mcp-policy.js",
     "mcp:stdio": "ts-node --files src/mcp/pomelo-stdio.ts",
     "lint": "eslint . --ext .ts --max-warnings=0",

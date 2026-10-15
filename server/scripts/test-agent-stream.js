@@ -5,12 +5,20 @@ const Module = require('node:module');
 require('ts-node/register/transpile-only');
 
 process.env.DEEPSEEK_API_KEY = 'test-key';
+const modelConfigs = [];
+let externalToolLoads = 0;
+let actionProposals = 0;
+let memoryReads = 0;
+let textOnly = false;
+let metadataExtractions = 0;
+const suggested = { content: '文本总结', todos: [{ title: '不要保存这个待办' }], replySuggestions: ['建议回复'], memorySuggestion: { content: '不要保存这个记忆' } };
 
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
 	if (request === 'langchain') return {
 		tool: () => ({}),
-		createAgent: () => ({
+		createAgent: config => { modelConfigs.push(config); return ({
+			invoke: async () => ({ structuredResponse: suggested }),
 			streamEvents: async () => ({
 				messages: (async function* () {
 					yield { text: (async function* () { yield '你好'; yield '，世界'; })() };
@@ -21,11 +29,11 @@ Module._load = function (request, parent, isMain) {
 				})(),
 				output: Promise.resolve({ messages: [{ _getType: () => 'ai', content: '最终答案' }] })
 			})
-		})
+		}); }
 	};
 	if (request === '@langchain/openai') return {
 		ChatOpenAI: class {
-			withStructuredOutput() { return { invoke: async () => ({ todos: [], replySuggestions: [] }) }; }
+			withStructuredOutput() { metadataExtractions++; return { invoke: async () => textOnly ? suggested : ({ todos: [], replySuggestions: [] }) }; }
 		}
 	};
 	return originalLoad.call(this, request, parent, isMain);
@@ -36,11 +44,15 @@ orchestrator.runAgentOrchestrator = async () => ({
 	preToolTrace: [], observations: {}, intent: 'chat', agentTrace: ['coordinator_agent'], agentSteps: []
 });
 const external = require('../src/modules/assistant/adapters/external-mcp');
-external.externalMcpManager.buildTools = async () => [];
-const { better_chat } = require('../src/utils/authenticate');
+external.externalMcpManager.buildTools = async () => { externalToolLoads++; return []; };
+const actions = require('../src/modules/assistant/actions');
+actions.createPendingAction = async () => { actionProposals++; throw new Error('unexpected proposal'); };
+const tools = require('../src/modules/assistant/tools/pomelo-tools');
+tools.executePomeloTool = async () => { memoryReads++; return { memories: [] }; };
+const { better_chat } = require('../src/infrastructure/redis');
 better_chat.incr = async () => 1;
 better_chat.expire = async () => 1;
-const { agentStream } = require('../src/service/assistant/agent');
+const { agentStream } = require('../src/modules/assistant/agent-http');
 
 const response = new EventEmitter();
 const chunks = [];
@@ -50,7 +62,7 @@ response.write = chunk => { chunks.push(chunk); return true; };
 response.end = () => { response.writableEnded = true; };
 
 agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnabled: false } } }, response)
-	.then(() => {
+	.then(async () => {
 		const output = chunks.join('');
 		assert.match(output, /event: delta\ndata: \{"delta":"你好","reset":false\}/);
 		assert.match(output, /event: delta\ndata: \{"delta":"，世界","reset":false\}/);
@@ -60,6 +72,27 @@ agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnab
 		assert.ok(output.indexOf('event: delta') < output.indexOf('"content":"最终答案"'));
 		assert.match(output, /data: \[DONE\]/);
 		assert.equal(response.writableEnded, true);
+		assert.equal(metadataExtractions, 1, 'normal streaming chat retains metadata extraction');
+		textOnly = true;
+		const { agentChat } = require('../src/modules/assistant/agent-application');
+		const result = await agentChat({ id: 1 }, { input: '总结', context: { readOnly: true } });
+		assert.equal(result.data.content, '文本总结');
+		assert.deepEqual(result.data.replySuggestions, ['建议回复']);
+		assert.deepEqual(result.data.actions, []);
+		const readonlyResponse = new EventEmitter();
+		const readonlyChunks = [];
+		readonlyResponse.setHeader = () => {};
+		readonlyResponse.flushHeaders = () => {};
+		readonlyResponse.write = chunk => readonlyChunks.push(chunk);
+		readonlyResponse.end = () => { readonlyResponse.writableEnded = true; };
+		await agentStream({ user: { id: 1 }, body: { input: '总结', context: { readOnly: true } } }, readonlyResponse);
+		assert.match(readonlyChunks.join(''), /"actions":\[\]/);
+		assert.match(readonlyChunks.join(''), /data: \[DONE\]/);
+		assert.deepEqual(modelConfigs.slice(1).map(config => config.tools), [[], []]);
+		assert.equal(externalToolLoads, 1);
+		assert.equal(actionProposals, 0);
+		assert.equal(memoryReads, 0);
+		assert.equal(metadataExtractions, 1, 'read-only streaming makes no extra metadata request');
 		console.log('[agent-stream-test] all assertions passed');
 		process.exit(0);
 	})

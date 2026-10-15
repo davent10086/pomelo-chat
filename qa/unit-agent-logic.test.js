@@ -7,10 +7,11 @@ process.env.TS_NODE_PROJECT = path.join(process.cwd(), 'tsconfig.json');
 require('../server/node_modules/dotenv').config({ path: path.join(process.cwd(), '.env') });
 require('../server/node_modules/ts-node/register/transpile-only');
 
-const { classifyIntent, chooseAgents } = require('../server/src/service/assistant/agent-orchestrator');
-const { normalizeAgentRequest, validateTaskCandidateSources } = require('../server/src/service/assistant/agent');
-const { normalizeUploadMetadata } = require('../server/src/utils/file');
-const { hasMcpIdempotencyContract } = require('../server/src/service/assistant/tools/external-mcp');
+const { classifyIntent, chooseAgents } = require('../server/src/modules/assistant/agent-orchestrator');
+const { normalizeAgentRequest } = require('../server/src/modules/assistant/agent');
+const { validateTaskCandidateSources } = require('../server/src/modules/assistant/agent-response');
+const { normalizeUploadMetadata } = require('../server/src/shared/file');
+const { hasMcpIdempotencyContract } = require('../server/src/modules/assistant/adapters/external-mcp');
 
 const agents = (input, room) => chooseAgents(input, room).map(step => step.agent);
 
@@ -35,7 +36,7 @@ assert.deepEqual(normalizeAgentRequest('room-1', {
   recentMessagesText: 'context'
 }), {
   room: 'room-1',
-  context: { currentChatType: 'group', currentReceiverId: 42, recentMessagesText: 'context', memoryEnabled: true }
+  context: { currentChatType: 'group', currentReceiverId: 42, recentMessagesText: 'context', memoryEnabled: true, readOnly: false }
 });
 
 assert.equal(normalizeAgentRequest('x'.repeat(129), {

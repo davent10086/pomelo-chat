@@ -107,15 +107,19 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
       if (frame.content !== "gap-hidden-message") socket.send(raw);
     });
   });
-  await page.route("**/assistant/next-steps", (route) =>
-    route.fulfill({
+  await page.route("**/assistant/agent", (route) => {
+    const payload = route.request().postDataJSON();
+    expect(payload.context.readOnly).toBe(true);
+    expect(payload.context.memoryEnabled).toBe(false);
+    expect(payload.input).toBeTruthy();
+    return route.fulfill({
       json: {
         code: 200,
         message: "success",
-        data: { steps: ["已收到，我来确认细节", "请补充信息"] },
+        data: { content: "回复建议", replySuggestions: ["已收到，我来确认细节", "请补充信息"] },
       },
-    }),
-  );
+    });
+  });
   await page.goto("/login");
   await page.getByPlaceholder("请输入用户名").fill(a.username);
   await page.getByPlaceholder("请输入密码").fill(a.password);
@@ -192,6 +196,21 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
     .first()
     .click();
   await expect(input).toHaveValue(/已有草稿/);
+  await page.route("**/assistant/agent/stream", async route => {
+    const payload = route.request().postDataJSON();
+    expect(payload.context.readOnly).toBe(true);
+    expect(payload.context.recentMessagesText).toContain("browser-message");
+    await route.fulfill({
+      contentType: "text/event-stream",
+      body: 'event: delta\ndata: {"delta":"旧总结","reset":false}\n\nevent: delta\ndata: {"delta":"统一接口总结","reset":true}\n\ndata: {"content":"统一接口总结","actions":[]}\n\ndata: [DONE]\n\n',
+    });
+  });
+  await page.getByRole("button", { name: "AI总结聊天记录", exact: true }).click();
+  const summaryDialog = page.getByRole("dialog", { name: "聊天记录总结" });
+  await expect(summaryDialog).toContainText("统一接口总结");
+  await expect(summaryDialog).not.toContainText("旧总结");
+  await summaryDialog.getByRole("button", { name: /关\s*闭/ }).click();
+  await page.unroute("**/assistant/agent/stream");
   await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
   await expect(input).toHaveValue("");
   await page.route("**/assistant/agent/stream", async (route) => {

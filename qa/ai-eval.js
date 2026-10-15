@@ -8,9 +8,9 @@ process.env.TS_NODE_PROJECT = path.join(process.cwd(), 'tsconfig.json');
 require('../server/node_modules/dotenv').config({ path: path.join(process.cwd(), '.env') });
 require('../server/node_modules/ts-node/register/transpile-only');
 
-const { classifyIntent, chooseAgents } = require('../server/src/service/assistant/agent-orchestrator');
-const { executePomeloTool } = require('../server/src/service/assistant/tools/pomelo-tools');
-const { normalizeUploadMetadata } = require('../server/src/utils/file');
+const { classifyIntent, chooseAgents } = require('../server/src/modules/assistant/agent-orchestrator');
+const { executePomeloTool } = require('../server/src/modules/assistant/tools/pomelo-tools');
+const { normalizeUploadMetadata } = require('../server/src/shared/file');
 
 const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'ai-eval-cases.json'), 'utf8'));
 const secretLeakRegex = /sk-[A-Za-z0-9_-]{20,}|DEEPSEEK_API_KEY\s*=|api[_ -]?key\s*[:=]\s*['"]?[A-Za-z0-9_-]{16,}|systemPrompt\s*[:=]|system prompt\s*[:=]/i;

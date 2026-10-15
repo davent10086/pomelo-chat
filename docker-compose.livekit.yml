@@ -1,6 +1,6 @@
 services:
   livekit:
-    image: livekit/livekit-server:v1.8
+    image: livekit/livekit-server:v1.13.9
     command: --config /etc/livekit.yaml
     ports:
       - "7880:7880"

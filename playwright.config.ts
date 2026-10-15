@@ -6,13 +6,17 @@ if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST)
   );
 export default defineConfig({
   testDir: "./qa/playwright",
-  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts"],
+  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
   workers: 1,
   timeout: 30000,
   use: {
     baseURL: "http://127.0.0.1:5199",
     headless: true,
     trace: "retain-on-failure",
+    ...(process.env.TEST_RTC === '1' ? {
+      permissions: ['camera', 'microphone'],
+      launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] },
+    } : {}),
   },
   webServer: [
     {
@@ -25,10 +29,13 @@ export default defineConfig({
         NODE_ENV: "test",
         PORT: "3199",
         REDIS_URL: process.env.REDIS_URL_TEST,
-        REDIS_KEY_PREFIX: "browser-regression:",
+        REDIS_KEY_PREFIX: process.env.TEST_REDIS_KEY_PREFIX || "browser-regression:",
+        ...(process.env.UPLOAD_ROOT ? { UPLOAD_ROOT: process.env.UPLOAD_ROOT } : {}),
         JWT_SECRET: "browser-regression-secret",
         DEEPSEEK_API_KEY: "",
         REQUEST_LOGS: "false",
+        // Functional fixtures share one IP; production keeps its default limit.
+        API_RATE_LIMIT_MAX: "10000",
       },
     },
     {

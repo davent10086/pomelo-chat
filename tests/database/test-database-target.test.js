@@ -3,7 +3,7 @@ require('../../server/node_modules/ts-node/register/transpile-only');
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { assertTestDatabaseTarget } = require('../../server/src/model/db');
+const { assertTestDatabaseTarget } = require('../../server/src/infrastructure/database');
 
 test('database test guard rejects production-like targets and accepts explicit test targets', () => {
 	assert.throws(() => assertTestDatabaseTarget('pomelo-chat'), /test database/i);

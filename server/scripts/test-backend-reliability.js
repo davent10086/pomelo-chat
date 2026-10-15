@@ -5,10 +5,10 @@ if (!process.env.DATABASE_URL_TEST) throw new Error('DATABASE_URL_TEST is requir
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'backend-reliability-test';
 require('ts-node/register/transpile-only');
-const { initDatabase, default: db } = require('../src/model/db');
+const { initDatabase, default: db } = require('../src/infrastructure/database');
 const { Query, withTransaction } = require('../src/infrastructure/database-query');
-const { persistMessage } = require('../src/service/message/persistence');
-const { MessageOutboxWorker } = require('../src/service/message/outbox');
+const { persistMessage } = require('../src/modules/messaging/persistence');
+const { MessageOutboxWorker } = require('../src/modules/messaging/outbox');
 const { createFriendApplication, createGroupApplication } = require('../src/modules/social/public');
 const { createHttpHandlers } = require('../src/modules/social/http');
 const effects = {
@@ -24,7 +24,7 @@ const services = createHttpHandlers({
 });
 const friendService = services,
 	groupService = services;
-const { better_chat } = require('../src/utils/authenticate');
+const { better_chat } = require('../src/infrastructure/redis');
 const prefix = `backend_${randomUUID().slice(0, 8)}`;
 const workers = [];
 const userIds = [];

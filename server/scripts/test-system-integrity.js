@@ -26,12 +26,13 @@ const originalConnect = net.Socket.prototype.connect;
 let importConnections = 0;
 net.Socket.prototype.connect = function (...args) { importConnections++; return originalConnect.apply(this, args); };
 
-const { initDatabase, default: db } = require('../src/model/db');
+const { initDatabase, default: db } = require('../src/infrastructure/database');
 const { Query } = require('../src/infrastructure/database-query');
-const { better_chat } = require('../src/utils/authenticate');
+const { better_chat } = require('../src/infrastructure/redis');
 const { default: app, registerAppRoutes } = require('../src/controller/app');
-const { flushMessageOutbox } = require('../src/service/message/outbox');
-const { createCall, getCall, transitionCall } = require('../src/service/rtc/calls');
+const { flushMessageOutbox } = require('../src/modules/messaging/outbox');
+const { rtcCalls } = require('../src/composition');
+const { createCall, getCall, transitionCall } = rtcCalls;
 const WebSocket = require('ws');
 const { startBackgroundServices, stopBackgroundServices } = require('../src/runtime');
 net.Socket.prototype.connect = originalConnect;
@@ -504,7 +505,7 @@ async function finish(code) {
 	try {
 		await stopBackgroundServices();
 		assert.equal(activeTimers.size, 0, 'shutdown also removes active presence heartbeats');
-		assert.equal(require('../src/utils/notification-connections').notificationUsers().length, 0);
+		assert.equal(require('../src/modules/realtime/connections').notificationUsers().length, 0);
 		for (const ws of sockets) assert.equal(ws.readyState, WebSocket.CLOSED);
 	} catch (error) { console.error('[runtime cleanup]', error); code = 1; }
 	for (const ws of sockets) ws.terminate();

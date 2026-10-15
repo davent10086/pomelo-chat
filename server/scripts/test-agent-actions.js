@@ -81,9 +81,10 @@ queryModule.Query = async (sql, values = []) => {
 
 const messageService = require('../src/modules/messaging/writes');
 messageService.sendConfirmedTextMessage = async (_userId, _room, _type, _content, id) => { sentMessages.add(id); };
-const { createPendingAction, cancelAction, confirmAction, getActionStatus } = require('../src/service/assistant/actions');
-const { callAgentTool } = require('../src/service/assistant/agent');
-const { better_chat } = require('../src/utils/authenticate');
+const { createPendingAction } = require('../src/modules/assistant/actions');
+const { assistantHttp } = require('../src/composition');
+const { cancelAction, confirmAction, getActionStatus, callAgentTool } = assistantHttp;
+const { better_chat } = require('../src/infrastructure/redis');
 const { externalMcpManager } = require('../src/modules/assistant/adapters/external-mcp');
 const { canAccessRoom } = require('../src/modules/assistant/tools/pomelo-tools');
 const invoke = async (handler, userId, body, params = {}) => {

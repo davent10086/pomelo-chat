@@ -6,7 +6,7 @@ const expressWs = require('express-ws');
 
 process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
 const appModule = require('../src/controller/app');
-const { better_chat } = require('../src/utils/authenticate');
+const { better_chat } = require('../src/infrastructure/redis');
 
 const request = (server, options, body = '') => new Promise((resolve, reject) => {
   const port = server.address().port;
@@ -44,6 +44,12 @@ const main = async () => {
     const missing = await request(server, { method: 'GET', path: '/api/chat/v1/auth/login' });
     assert.equal(missing.status, 404);
     assert.equal(JSON.parse(missing.text).code, 1007);
+
+    for (const path of ['/assistant/chat', '/assistant/chat/stream', '/assistant/next-steps']) {
+      const retired = await request(server, { method: 'POST', path: `/api/chat/v1${path}` });
+      assert.equal(retired.status, 404);
+      assert.equal(JSON.parse(retired.text).code, 1007);
+    }
   } finally {
     await new Promise(resolve => server.close(resolve));
     better_chat.disconnect();
