@@ -54,6 +54,54 @@ const configure = (name, names) => {
 	assert.equal((await call('search_contacts', { query: 'test' })).contacts[0].unexpected, undefined);
 	directory.searchJoinedGroups = async () => [{ id: 1, name: 'test', room: 'room', announcement: null }];
 	assert.equal((await call('search_groups', { query: 'test' })).groups[0].id, 1);
+	const { memorySaveSchema, memoryForgetSchema } = require('../src/modules/assistant/tools/memory-contracts');
+	const { createPendingAction } = require('../src/modules/assistant/actions');
+	for (const payload of [{ content: ' ' }, { content: 'password: example' }, { content: 'x'.repeat(1001) }, { content: 'ok', category: 'x'.repeat(33) }]) {
+		assert.equal(memorySaveSchema.safeParse(payload).success, false);
+		await assert.rejects(createPendingAction(userId, 'save_memory', payload), /Invalid memory proposal/);
+		await assert.rejects(executePomeloTool({ userId, confirmationId: 'test' }, { name: 'save_memory', args: payload }), error => error.code === 'INVALID_ARGUMENTS');
+	}
+	assert.equal(memoryForgetSchema.safeParse({ id: 1.5 }).success, false);
+	await assert.rejects(createPendingAction(userId, 'forget_memory', { id: 1.5 }), /Invalid memory deletion/);
+	let memoryReads = 0;
+	repository.searchOwnedMemories = async () => { memoryReads++; return [{ id: 1, category: 'preference', content: 'cached', created_at: '2026-01-01', updated_at: '2026-01-01' }]; };
+	const cache = new Map();
+	const cachedRead = (args, id = userId, memoryReads = cache) => executePomeloTool({ userId: id, memoryReads }, { name: 'search_memory', args });
+	const [left, right] = await Promise.all([cachedRead({ query: ' same ' }), cachedRead({ query: 'same', limit: 8 })]);
+	assert.equal(memoryReads, 1);
+	left.memories[0].content = 'changed';
+	assert.equal(right.memories[0].content, 'cached');
+	await cachedRead({ query: 'other' });
+	await cachedRead({ query: 'same', limit: 9 });
+	await cachedRead({ query: 'same' }, userId + 1);
+	await cachedRead({ query: 'same' }, userId, new Map());
+	assert.equal(memoryReads, 5, 'different query, limit, user or request must not reuse a result');
+	repository.searchOwnedMemories = async () => { memoryReads++; throw new Error('temporary'); };
+	await assert.rejects(cachedRead({ query: 'retry' }));
+	repository.searchOwnedMemories = async () => { memoryReads++; return []; };
+	assert.deepEqual(await cachedRead({ query: 'retry' }), { memories: [] });
+	assert.equal(memoryReads, 7, 'failed reads must not stay cached');
+	const { consumeRateLimit } = require('../src/infrastructure/rate-counter');
+	const rateKey = `shared-counter:${userId}`;
+	const counts = await Promise.all(Array.from({ length: 10 }, () => consumeRateLimit(rateKey, 3, 60, 'reject')));
+	assert.equal(counts.filter(Boolean).length, 3);
+	assert.ok(await better_chat.ttl(rateKey) > 0);
+	await better_chat.set(rateKey, '1');
+	assert.equal(await consumeRateLimit(rateKey, 3, 60, 'reject'), true);
+	assert.ok(await better_chat.ttl(rateKey) > 0, 'repair old counters without an expiry');
+	const evalOriginal = better_chat.eval;
+	const nowOriginal = Date.now;
+	let now = nowOriginal();
+	better_chat.eval = async () => { throw new Error('offline'); };
+	Date.now = () => now;
+	try {
+		assert.equal(await consumeRateLimit('fallback-test', 1, 60, 'local'), true);
+		assert.equal(await consumeRateLimit('fallback-test', 1, 60, 'local'), false);
+		now += 60001;
+		assert.equal(await consumeRateLimit('fallback-test', 1, 60, 'local'), true);
+		await assert.rejects(consumeRateLimit('fallback-test', 1, 60, 'reject'), /offline/);
+	} finally { better_chat.eval = evalOriginal; Date.now = nowOriginal; }
+	await better_chat.del(rateKey, `ai_tool_rate:${userId + 1}`);
 	let requests = [];
 	const remoteSchema = { type: 'object', properties: { query: { type: 'string', enum: ['ok'] }, options: { type: 'object', properties: { count: { type: 'integer', minimum: 1 } }, required: ['count'] } }, required: ['query', 'options'] };
 	let invoked = [];

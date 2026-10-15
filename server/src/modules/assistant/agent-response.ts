@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { memorySaveSchema } from './tools/memory-contracts';
 import type { AgentAction } from './actions';
 import type { AgentStep } from './agent-orchestrator';
 
@@ -78,11 +79,7 @@ export const AgentResponseSchema = z.object({
 		.default([])
 		.describe('可点击填入输入框的回复建议，最多 5 条'),
 	draftMessage: z.string().optional().describe('可选消息草稿，不自动发送'),
-	memorySuggestion: z
-		.object({
-			content: z.string().min(1).max(1000),
-			category: z.string().max(32).optional()
-		})
+	memorySuggestion: memorySaveSchema
 		.optional()
 		.describe('仅当用户明确要求记住时，提出待确认的记忆内容，不写入')
 });

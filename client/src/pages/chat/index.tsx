@@ -70,7 +70,6 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		agentResult,
 		liveAgentEvents,
 		agentStreaming,
-		insertTextRequest,
 		memoryEnabled,
 		memoryModalOpen,
 		memoryList,
@@ -83,7 +82,6 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		taskCandidateLoading,
 		selectedTaskIndexes,
 		taskActionStatus,
-		insertAgentText,
 		openMemoryManager,
 		handleMemoryEnabledChange,
 		deleteMemory,
@@ -101,6 +99,14 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const historyMsg = assistantSelected ? assistant.messages : normal.historyMsg;
 	const newMessage = assistantSelected ? [] : normal.newMessage;
 
+	const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string; room: string }>();
+	const insertAgentText = (text?: string) => {
+		if (text && curChatInfo)
+			setInsertTextRequest(previous => ({
+				id: (previous?.id || 0) + 1, text, room: curChatInfo.room
+			}));
+	};
+
 	const chooseRoom = (item: IMessageListItem, sourceId?: number) => {
 		if (curChatInfo?.room === item.room) {
 			if (sourceId && !isAssistantListItem(item)) void normal.locate(sourceId);
@@ -108,6 +114,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		}
 		normal.leave();
 		assistant.leave();
+		setInsertTextRequest(undefined);
 		setFocusMessageId(sourceId);
 		setCurChatInfo(item);
 		if (isAssistantListItem(item)) assistant.enter();
@@ -251,6 +258,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											historyLoading={normal.loading}
 											onLoadMoreHistory={normal.loadOlder}
 											focusMessageId={normal.focusId}
+											onInsertText={insertAgentText}
 										/>
 									</div>
 									<div className={styles.chat_input}>
@@ -260,7 +268,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											sendMessage={sendMessage}
 											recentMessages={assistantSelected ? assistant.messages : normal.messages}
 											userProfile={user}
-											externalInsertText={insertTextRequest}
+											externalInsertText={insertTextRequest?.room === curChatInfo.room ? insertTextRequest : undefined}
 										/>
 									</div>
 								</div>

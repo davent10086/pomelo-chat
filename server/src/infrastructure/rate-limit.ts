@@ -2,7 +2,7 @@ import type { Request, RequestHandler } from 'express';
 
 import { AssistantStatus } from '../shared/status';
 import { RespError } from './http-response';
-import { better_chat } from '../infrastructure/redis';
+import { consumeRateLimit } from './rate-counter';
 
 interface RateLimitOptions {
 	name: string;
@@ -11,8 +11,6 @@ interface RateLimitOptions {
 	key?: (req: Request) => string;
 	skip?: (req: Request) => boolean;
 }
-
-const localBuckets = new Map<string, number[]>();
 
 const defaultKey = (req: Request): string => {
 	const userId = req.user?.id;
@@ -23,7 +21,6 @@ const defaultKey = (req: Request): string => {
 };
 
 export const createRateLimiter = (options: RateLimitOptions): RequestHandler => {
-	const windowMs = options.windowSeconds * 1000;
 	return async (req, res, next) => {
 		if (req.method === 'OPTIONS' || options.skip?.(req)) {
 			next();
@@ -31,26 +28,11 @@ export const createRateLimiter = (options: RateLimitOptions): RequestHandler => 
 		}
 		const identity = options.key?.(req) || defaultKey(req);
 		const key = `rate:${options.name}:${identity}`;
-		try {
-			const count = await better_chat.incr(key);
-			if (count === 1) await better_chat.expire(key, options.windowSeconds);
-			if (count > options.max) {
-				res.setHeader('Retry-After', String(options.windowSeconds));
-				RespError(res, AssistantStatus.RATE_LIMIT_ERR);
-				return;
-			}
-			next();
-		} catch {
-			const now = Date.now();
-			const bucket = (localBuckets.get(key) || []).filter(item => now - item < windowMs);
-			if (bucket.length >= options.max) {
-				res.setHeader('Retry-After', String(options.windowSeconds));
-				RespError(res, AssistantStatus.RATE_LIMIT_ERR);
-				return;
-			}
-			bucket.push(now);
-			localBuckets.set(key, bucket);
-			next();
+		if (!(await consumeRateLimit(key, options.max, options.windowSeconds, 'local'))) {
+			res.setHeader('Retry-After', String(options.windowSeconds));
+			RespError(res, AssistantStatus.RATE_LIMIT_ERR);
+			return;
 		}
+		next();
 	};
 };

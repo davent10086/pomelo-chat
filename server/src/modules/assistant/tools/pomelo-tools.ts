@@ -3,12 +3,15 @@ import { accessibleRoomType, searchVisibleContacts, searchJoinedGroups } from '.
 import { searchRoomMessages, messageContextById, recentRoomMessages } from '../../messaging/public';
 import { tool } from 'langchain';
 import { z } from 'zod';
+import { memorySaveSchema, memoryForgetSchema, MEMORY_QUERY_MAX_LENGTH } from './memory-contracts';
 import { assertToolRateLimit, ToolExecutionError, toolErrorResult } from './tool-runtime';
 
 export interface PomeloToolContext {
 	userId: number;
 	currentRoom?: string;
 	confirmationId?: string;
+	/** Owned by one Agent invocation; never shared across requests. */
+	memoryReads?: Map<string, Promise<Record<string, unknown>>>;
 }
 
 export interface PomeloToolDefinition {
@@ -125,7 +128,12 @@ const suggestRepliesSchema = z.object({
 });
 
 const memorySearchSchema = z.object({
-	query: z.string().max(120).optional().describe('Keyword to search in the current user memory.'),
+	query: z
+		.string()
+		.trim()
+		.max(MEMORY_QUERY_MAX_LENGTH)
+		.optional()
+		.describe('Keyword to search in the current user memory.'),
 	limit: z
 		.number()
 		.int()
@@ -133,24 +141,6 @@ const memorySearchSchema = z.object({
 		.max(20)
 		.optional()
 		.describe('Maximum memories to return. Defaults to 8.')
-});
-
-const memorySaveSchema = z.object({
-	content: z
-		.string()
-		.trim()
-		.min(1)
-		.max(1000)
-		.describe('A concise fact or preference the user explicitly asked the assistant to remember.'),
-	category: z
-		.string()
-		.max(32)
-		.optional()
-		.describe('Memory category, such as preference, profile, project, or instruction.')
-});
-
-const memoryForgetSchema = z.object({
-	id: z.number().int().positive().describe('Exact memory id to delete.')
 });
 
 export const canAccessRoom = async (userId: number, room: string): Promise<boolean> =>
@@ -176,9 +166,6 @@ const presentMessage = (item: RecentMessageRow) => ({
 	type: item.media_type,
 	created_at: item.created_at
 });
-export const isSensitiveMemoryContent = (content: string): boolean =>
-	/(api[_ -]?key|token|password|secret|密钥|密码|口令)/i.test(content);
-
 const messageOutput = z.object({
 	id: z.number(),
 	sender: z.union([z.string(), z.number()]),
@@ -482,23 +469,13 @@ const pomeloToolSpecs: PomeloToolSpec[] = [
 		schema: memorySaveSchema,
 		run: async (context, args) => {
 			const content = asText(args.content).trim();
-			if (isSensitiveMemoryContent(content)) {
-				throw new ToolExecutionError(
-					'INVALID_ARGUMENTS',
-					'Secrets and credentials are not stored in memory.'
-				);
-			}
 			const category = (asText(args.category).trim() || 'preference').slice(0, 32);
-			if (context.confirmationId) {
-				await repository.saveMemoryIdempotently([
-					context.userId,
-					category,
-					content,
-					context.confirmationId
-				]);
-			} else {
-				await repository.insertMemory([context.userId, category, content]);
-			}
+			await repository.saveMemoryIdempotently([
+				context.userId,
+				category,
+				content,
+				context.confirmationId
+			]);
 			return { saved: true, category, content };
 		}
 	},
@@ -560,14 +537,34 @@ export const executePomeloTool = async (
 			'INVALID_ARGUMENTS',
 			parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
 		);
-	await assertToolRateLimit(context.userId);
+	const run = async (): Promise<Record<string, unknown>> => {
+		await assertToolRateLimit(context.userId);
+		try {
+			const result = await spec.run(context, parsed.data as Record<string, unknown>);
+			return spec.output.parse(JSON.parse(JSON.stringify(result))) as Record<string, unknown>;
+		} catch (error) {
+			if (error instanceof ToolExecutionError) throw error;
+			console.error(`[assistant-tool] ${call.name} failed`);
+			throw new ToolExecutionError(
+				'EXECUTION_FAILED',
+				'Tool execution failed. Please retry later.'
+			);
+		}
+	};
+	if (call.name !== 'search_memory' || !context.memoryReads) return run();
+	const args = parsed.data as { query?: string; limit?: number };
+	const key = JSON.stringify([context.userId, args.query || '', args.limit ?? 8]);
+	const cache = context.memoryReads;
+	let pending = cache.get(key);
+	if (!pending) {
+		pending = run();
+		cache.set(key, pending);
+	}
 	try {
-		const result = await spec.run(context, parsed.data as Record<string, unknown>);
-		return spec.output.parse(JSON.parse(JSON.stringify(result))) as Record<string, unknown>;
+		return structuredClone(await pending);
 	} catch (error) {
-		if (error instanceof ToolExecutionError) throw error;
-		console.error(`[assistant-tool] ${call.name} failed`);
-		throw new ToolExecutionError('EXECUTION_FAILED', 'Tool execution failed. Please retry later.');
+		if (cache.get(key) === pending) cache.delete(key);
+		throw error;
 	}
 };
 

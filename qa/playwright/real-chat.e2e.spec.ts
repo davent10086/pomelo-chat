@@ -1,4 +1,5 @@
-import { test, expect, request, type Page } from '@playwright/test';
+import { createUserFactory, connectFriends, login } from './helpers/chat';
+import { test, expect, request } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
 // No response stubs or WebSocket interception: both browsers use the running app.
@@ -13,31 +14,10 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     if (socket.url().includes('/auth/user_channel'))
       socket.on('framereceived', frame => notifications.push(String(frame.payload)));
   });
-  const create = async (index: number) => {
-    const username = `real_${stamp}_${index}`, password = 'RealChat123!';
-    const registered = await api.post('auth/register', { data: {
-      username, password, phone: `13${String(stamp + index).slice(-9)}`, avatar: ''
-    } });
-    expect(registered.ok()).toBeTruthy();
-    const logged = await api.post('auth/login', { data: { username, password } });
-    expect(logged.ok()).toBeTruthy();
-    return { username, password, ...(await logged.json()).data };
-  };
-  const login = async (target: Page, user: { username: string; password: string }) => {
-    await target.goto('http://127.0.0.1:5199/login');
-    await target.getByPlaceholder('请输入用户名').fill(user.username);
-    await target.getByPlaceholder('请输入密码').fill(user.password);
-    await target.locator('button[type=submit]').click();
-    await expect(target).toHaveURL(/\/$/);
-  };
+  const create = createUserFactory(api, 'real');
   try {
     const a = await create(1), b = await create(2), outsider = await create(3);
-    const added = await api.post('friend/add_friend', {
-      headers: { Authorization: `Bearer ${a.token}` }, data: { id: b.info.id, username: b.username }
-    });
-    expect(added.ok()).toBeTruthy();
-    const list = await api.get('message/chat_list', { headers: { Authorization: `Bearer ${a.token}` } });
-    const room = (await list.json()).data[0].room;
+    const room = await connectFriends(api, a, b);
     await login(page, a);
     await login(peer, b);
     a.token = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pomelo-chat.authToken') || '""'));

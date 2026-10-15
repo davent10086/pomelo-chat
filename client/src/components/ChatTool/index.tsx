@@ -1,5 +1,5 @@
 import { Button, Spin, Tooltip } from 'antd';
-import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
@@ -19,18 +19,12 @@ import { useReplySuggestions } from '@/hooks/useReplySuggestions';
 import { userStorage } from '@/utils/storage';
 
 const ChatTool = (props: IChatToolProps) => {
-	const {
-		curChatInfo,
-		sendMessage,
-		recentMessages = [],
-		userProfile,
-		onInsertText,
-		externalInsertText
-	} = props;
+	const { curChatInfo, sendMessage, recentMessages = [], userProfile, externalInsertText } = props;
 	// H11: userStorage.getItem() 已返回对象
 	const user = userProfile && Object.keys(userProfile).length ? userProfile : userStorage.getItem();
 	const showMessage = useShowMessage();
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const insertionCursor = useRef<number>();
 	const {
 		text: inputValue,
 		setValue: setInputValue,
@@ -71,34 +65,19 @@ const ChatTool = (props: IChatToolProps) => {
 
 	const insertTextAtCursor = (text: string) => {
 		if (!text) return;
-		const el = textareaRef.current!;
 		const { start, end } = getCursor();
+		insertionCursor.current = start + text.length;
 		setInputValue(previous => previous.slice(0, start) + text + previous.slice(end));
-		const newPos = start + text.length;
-		requestAnimationFrame(() => {
-			el.focus();
-			el.setSelectionRange(newPos, newPos);
-		});
 	};
-
-	// M2: 监听 ChatContainer 的"下一步建议"插入事件
-	// 由于 ChatContainer 与 ChatTool 无共同父组件可直接传 prop，保留 window 事件但用具名常量
-	// 依赖项仅 []，避免每次 inputValue 变化都重注册（insertTextAtCursor 内部读取最新 inputValue 通过闭包）
-	useEffect(() => {
-		const handler = (e: Event) => {
-			const detail = (e as CustomEvent<{ text: string }>).detail;
-			if (detail?.text) {
-				if (onInsertText) {
-					onInsertText(detail.text);
-				} else {
-					insertTextAtCursor(detail.text);
-				}
-			}
-		};
-		window.addEventListener('next-steps-insert', handler as EventListener);
-		return () => window.removeEventListener('next-steps-insert', handler as EventListener);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	useLayoutEffect(() => {
+		const position = insertionCursor.current;
+		const element = textareaRef.current;
+		if (position === undefined || !element) return;
+		insertionCursor.current = undefined;
+		element.focus();
+		element.setSelectionRange(position, position);
+		saveSelection();
+	}, [inputValue, saveSelection]);
 
 	const triggerSuggestions = async (prefix: string) => {
 		setSelectedIndex(-1);

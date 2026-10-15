@@ -9,6 +9,8 @@ const modelConfigs = [];
 let externalToolLoads = 0;
 let actionProposals = 0;
 let memoryReads = 0;
+const memoryQueries = [];
+const modelOptions = [];
 let textOnly = false;
 let metadataExtractions = 0;
 const suggested = { content: '文本总结', todos: [{ title: '不要保存这个待办' }], replySuggestions: ['建议回复'], memorySuggestion: { content: '不要保存这个记忆' } };
@@ -33,6 +35,7 @@ Module._load = function (request, parent, isMain) {
 	};
 	if (request === '@langchain/openai') return {
 		ChatOpenAI: class {
+			constructor(options) { modelOptions.push(options); }
 			withStructuredOutput() { metadataExtractions++; return { invoke: async () => textOnly ? suggested : ({ todos: [], replySuggestions: [] }) }; }
 		}
 	};
@@ -48,10 +51,9 @@ external.externalMcpManager.buildTools = async () => { externalToolLoads++; retu
 const actions = require('../src/modules/assistant/actions');
 actions.createPendingAction = async () => { actionProposals++; throw new Error('unexpected proposal'); };
 const tools = require('../src/modules/assistant/tools/pomelo-tools');
-tools.executePomeloTool = async () => { memoryReads++; return { memories: [] }; };
+tools.executePomeloTool = async (_context, call) => { memoryReads++; memoryQueries.push(call.args.query); return { memories: [] }; };
 const { better_chat } = require('../src/infrastructure/redis');
-better_chat.incr = async () => 1;
-better_chat.expire = async () => 1;
+better_chat.eval = async () => 1;
 const { agentStream } = require('../src/modules/assistant/agent-http');
 
 const response = new EventEmitter();
@@ -93,7 +95,19 @@ agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnab
 		assert.equal(actionProposals, 0);
 		assert.equal(memoryReads, 0);
 		assert.equal(metadataExtractions, 1, 'read-only streaming makes no extra metadata request');
-		console.log('[agent-stream-test] all assertions passed');
+		assert.equal(modelOptions[0].temperature, 0.3);
+        assert.equal(modelOptions[0].maxRetries, 1);
+        const { createAssistantModel } = require('../src/modules/assistant/model');
+        createAssistantModel({ temperature: 0 });
+        assert.equal(modelOptions.at(-1).temperature, 0);
+        assert.equal(modelOptions.at(-1).maxRetries, undefined);
+        assert.equal(modelOptions.at(-1).timeout, modelOptions[0].timeout);
+        assert.deepEqual(modelOptions.at(-1).configuration, modelOptions[0].configuration);
+        suggested.todos = []; delete suggested.memorySuggestion;
+        const longReply = await agentChat({ id: 1 }, { input: 'x'.repeat(1000), context: { memoryEnabled: true } });
+        assert.equal(longReply.code, 200);
+        assert.equal(memoryQueries.at(-1).length, 120, 'preload must respect the memory query contract');
+        console.log('[agent-stream-test] all assertions passed');
 		process.exit(0);
 	})
 	.catch(error => { console.error(error); process.exit(1); });

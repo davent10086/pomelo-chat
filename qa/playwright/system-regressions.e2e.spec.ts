@@ -1,12 +1,10 @@
 import { test, expect, request } from "@playwright/test";
+import { setup, createUserFactory } from "./helpers/chat";
 
 test("contact search paginates, encodes keywords, and ignores superseded requests", async ({ page }) => {
   const api = await request.newContext({ baseURL: "http://127.0.0.1:3199/api/chat/v1/" });
-  const stamp = Date.now();
-  const username = `search_${stamp}`;
-  const password = "Search123!";
+  const { username, password } = await createUserFactory(api, 'search')(1);
   try {
-    expect((await api.post("auth/register", { data: { username, password, phone: `13${String(stamp).slice(-9)}`, avatar: "" } })).ok()).toBeTruthy();
     await page.goto("/login");
     await page.getByPlaceholder("请输入用户名").fill(username);
     await page.getByPlaceholder("请输入密码").fill(password);
@@ -63,43 +61,7 @@ test("contact search paginates, encodes keywords, and ignores superseded request
 test("real login, message ACK, suggestions, room isolation, streaming and password change", async ({
   page,
 }) => {
-  const api = await request.newContext({
-    baseURL: "http://127.0.0.1:3199/api/chat/v1/",
-  });
-  const stamp = Date.now();
-  const create = async (index: number) => {
-    const username = `browser_${stamp}_${index}`,
-      password = "Browser123!";
-    const registered = await api.post("auth/register", {
-      data: {
-        username,
-        password,
-        phone: `13${String(stamp + index).slice(-9)}`,
-        avatar: "",
-      },
-    });
-    expect(registered.ok()).toBeTruthy();
-    const logged = (
-      await (
-        await api.post("auth/login", { data: { username, password } })
-      ).json()
-    ).data;
-    return { username, password, ...logged };
-  };
-  const a = await create(1),
-    b = await create(2);
-  await api.post("friend/add_friend", {
-    headers: { Authorization: `Bearer ${a.token}` },
-    data: { id: b.info.id, username: b.username },
-  });
-  const chats = (
-    await (
-      await api.get("message/chat_list", {
-        headers: { Authorization: `Bearer ${a.token}` },
-      })
-    ).json()
-  ).data;
-  const room = chats[0].room;
+  const { api, a, b, room } = await setup();
   await page.routeWebSocket("**/message/connect_chat?**", (socket) => {
     const server = socket.connectToServer();
     server.onMessage((raw) => {

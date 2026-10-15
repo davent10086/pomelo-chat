@@ -31,7 +31,8 @@ const ChatContainer = (props: IChatContainerProps) => {
 		focusMessageId,
 		onRetry,
 		onCancelRetry,
-		onAtBottomChange
+		onAtBottomChange,
+		onInsertText
 	} = props;
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const messagesWrapRef = useRef<HTMLDivElement>(null);
@@ -393,13 +394,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 								<button
 									key={idx}
 									className={styles.chip}
-									onClick={() => {
-										// M2: 改用全局事件仍是最简方式（ChatContainer 与 ChatTool 无共同父组件可直接传 prop）
-										// 但为避免魔法字符串风险，封装为具名事件
-										window.dispatchEvent(
-											new CustomEvent('next-steps-insert', { detail: { text: s } })
-										);
-									}}
+									onClick={() => onInsertText?.(s)}
 									type="button"
 								>
 									{s}

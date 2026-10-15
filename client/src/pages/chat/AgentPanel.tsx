@@ -1,6 +1,7 @@
 import { Button, Empty, Switch, Tabs } from 'antd';
 
 import styles from './index.module.less';
+import { ActionControls, actionStatusLabels } from './ActionControls';
 import type {
 	AgentAction,
 	AgentEvent,
@@ -118,48 +119,25 @@ const AgentPanel = ({
 								: action.type === 'save_memory'
 									? '保存记忆'
 									: '草稿发送'}
-						：
-						{
-							{
-								pending: '待确认',
-								executing: '执行中',
-								completed: '已完成',
-								cancelled: '已取消',
-								expired: '已过期'
-							}[action.status || 'pending']
-						}
+						：{actionStatusLabels[action.status || 'pending']}
 					</div>
 					{action.type === 'save_memory' && <p>{String(action.payload.content || '')}</p>}
-					<div className={styles.actionControls}>
-						<Button
-							size="small"
-							type="primary"
-							disabled={!!action.status && action.status !== 'pending'}
-							loading={pendingActionId === action.confirmationId}
-							onClick={() => onConfirmAction(action)}
-						>
-							{action.type === 'create_tasks'
+					<ActionControls
+						status={action.status || 'pending'}
+						busy={pendingActionId === action.confirmationId}
+						confirmLabel={
+							action.type === 'create_tasks'
 								? '确认创建'
 								: action.type === 'external_mcp'
 									? '确认执行'
 									: action.type === 'save_memory'
 										? '确认保存'
-										: '确认发送'}
-						</Button>
-						<Button size="small" onClick={() => onCheckAction(action)}>
-							查询结果／重试
-						</Button>
-						<Button
-							size="small"
-							disabled={
-								pendingActionId === action.confirmationId ||
-								(!!action.status && action.status !== 'pending')
-							}
-							onClick={() => onCancelAction(action)}
-						>
-							取消
-						</Button>
-					</div>
+										: '确认发送'
+						}
+						onConfirm={() => onConfirmAction(action)}
+						onCancel={() => onCancelAction(action)}
+						onQuery={() => onCheckAction(action)}
+					/>
 				</div>
 			))}
 
@@ -348,40 +326,17 @@ const AgentPanel = ({
 										</div>
 									))}
 									{taskCandidateResult?.action && (
-										<div className={styles.actionControls}>
-											<span>
-												{taskActionStatus?.status === 'pending'
-													? '待确认'
-													: taskActionStatus?.status === 'executing'
-														? '执行中'
-														: taskActionStatus?.status === 'completed'
-															? '已完成'
-															: taskActionStatus?.status === 'expired'
-																? '已过期'
-																: '已取消'}
-											</span>
-											<Button
-												size="small"
-												type="primary"
-												disabled={
-													!selectedTaskIndexes.length || taskActionStatus?.status !== 'pending'
-												}
-												loading={pendingActionId === taskCandidateResult.action.confirmationId}
-												onClick={onConfirmSelectedTasks}
-											>
-												确认保存所选
-											</Button>
-											<Button
-												size="small"
-												disabled={taskActionStatus?.status !== 'pending'}
-												onClick={onCancelSelectedTasks}
-											>
-												取消
-											</Button>
-											<Button size="small" onClick={onCheckTaskStatus}>
-												查询结果／重试确认
-											</Button>
-										</div>
+										<ActionControls
+											status={taskActionStatus?.status || 'pending'}
+											busy={pendingActionId === taskCandidateResult.action.confirmationId}
+											confirmLabel="确认保存所选"
+											queryLabel="查询结果／重试确认"
+											canConfirm={selectedTaskIndexes.length > 0}
+											showStatus
+											onConfirm={onConfirmSelectedTasks}
+											onCancel={onCancelSelectedTasks}
+											onQuery={onCheckTaskStatus}
+										/>
 									)}
 								</div>
 								{hasTodos && (

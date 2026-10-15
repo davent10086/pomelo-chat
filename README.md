@@ -64,7 +64,7 @@ flowchart LR
 | 认证 | JWT, Redis token whitelist |
 | AI | LangChain `createAgent`, `ChatOpenAI`, DeepSeek-compatible API |
 | MCP | `@modelcontextprotocol/sdk`, stdio / SSE / streamable HTTP |
-| 文件 | Multer, fs-extra, uploads 静态受控访问 |
+| 文件 | Multer, Node.js fs, uploads 静态受控访问 |
 
 ## 代码结构
 
@@ -418,3 +418,17 @@ QA 不依赖静态账号。每次运行创建 `qa_<runId>_*` 用户、好友关�
 ## License
 
 ISC
+
+### 共享交互逻辑与依赖维护
+
+音视频弹窗共用 `client/src/hooks/useCallController.ts`，由它处理邀请、接听、超时和幂等挂断；`useLiveKitCall.ts` 只管理媒体连接和轨道释放。取消后迟到的邀请会结束服务端通话，不再加入媒体。下一步建议和 Copilot 草稿统一经过聊天页按当前房间插入输入框，不使用全局插入事件。
+
+依赖统一使用根目录 `pnpm-lock.yaml`；安装从工作区根目录执行 `pnpm install --frozen-lockfile`。已移除旧客户端锁文件、未使用的 React Refresh 插件、Router 5 类型包和 fs-extra 依赖。普通流式 Agent 的结构化提取仍负责生成待确认任务、草稿及记忆，保留该步骤；只读总结和建议请求继续跳过它。
+
+### 共享限流、记忆契约与确认控件
+
+HTTP、Agent 和工具统一使用 `server/src/infrastructure/rate-counter.ts` 原子计数，保留各自额度和 Redis 故障策略：HTTP 与 Agent 使用本地窗口降级，工具暂停执行。计数与过期在同一段 Lua 中完成，并修复没有 TTL 的旧计数键。
+
+`memory-contracts.ts` 统一记忆提议、模型结构化结果及工具执行的字段约束；提议和执行仍分别校验。预加载查询最多 120 字符，避免长输入使记忆读取被参数校验拒绝。同一次 Agent 调用仅复用用户、规范化查询词和条数相同的记忆结果；失败不缓存，结果按副本返回，不跨请求或用户共享。
+
+主 Agent 与事项整理共用 `model.ts` 的连接配置，分别保留温度及重试设置。Copilot 普通操作和所选待办操作共用 `ActionControls.tsx`，保留原有确认、取消、查询及显式重试路径。

@@ -1,5 +1,7 @@
 import { createAgent } from 'langchain';
-import { ChatOpenAI } from '@langchain/openai';
+import { createAssistantModel } from './model';
+export { API_BASE, API_KEY, MODEL, UPSTREAM_TIMEOUT_MS } from './model';
+import { MEMORY_QUERY_MAX_LENGTH } from './tools/memory-contracts';
 import {
 	AgentResponseSchema,
 	parseAgentInvocation,
@@ -13,7 +15,7 @@ import {
 	type AgentResult
 } from './agent-response';
 
-import { better_chat } from '../../infrastructure/redis';
+import { consumeRateLimit } from '../../infrastructure/rate-counter';
 import { runAgentOrchestrator, type AgentContext, type AgentEvent } from './agent-orchestrator';
 import { buildPomeloChatTools, executePomeloTool } from './tools/pomelo-tools';
 import { externalMcpManager } from './adapters/external-mcp';
@@ -24,20 +26,11 @@ import {
 	POMELO_AGENT_USER_INSTRUCTION
 } from './agent-prompts';
 
-export const API_BASE = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(
-	/\/v1\/?$/,
-	''
-);
-export const API_KEY = process.env.DEEPSEEK_API_KEY || '';
-export const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
-export const UPSTREAM_TIMEOUT_MS = 30000;
 const AGENT_RECURSION_LIMIT = 12;
 export const MAX_INPUT_LENGTH = 8000;
 export const MAX_CONTEXT_LENGTH = 20000;
 export const MAX_ROOM_LENGTH = 128;
 const RATE_LIMIT_PER_MIN = 20;
-
-const rateLimitMap = new Map<string, number[]>();
 
 export const normalizeAgentRequest = (
 	room: unknown,
@@ -68,24 +61,8 @@ export const normalizeAgentRequest = (
 	};
 };
 
-export const checkRateLimit = async (userId: number | string): Promise<boolean> => {
-	const key = String(userId);
-	try {
-		const redisKey = `ai_agent_rate:${key}`;
-		const count = await better_chat.incr(redisKey);
-		if (count === 1) {
-			await better_chat.expire(redisKey, 60);
-		}
-		return count <= RATE_LIMIT_PER_MIN;
-	} catch {
-		const now = Date.now();
-		const arr = (rateLimitMap.get(key) || []).filter(t => now - t < 60000);
-		if (arr.length >= RATE_LIMIT_PER_MIN) return false;
-		arr.push(now);
-		rateLimitMap.set(key, arr);
-		return true;
-	}
-};
+export const checkRateLimit = (userId: number | string): Promise<boolean> =>
+	consumeRateLimit(`ai_agent_rate:${userId}`, RATE_LIMIT_PER_MIN, 60, 'local');
 
 export const buildActions = async (
 	userId: number,
@@ -162,13 +139,18 @@ export const runLangChainAgent = async (
 ): Promise<AgentResult> => {
 	if (signal?.aborted) throw new DOMException('Client disconnected', 'AbortError');
 	const agentPlan = await runAgentOrchestrator({ userId, input, room, context, onEvent });
+	const toolContext = {
+		userId,
+		currentRoom: room,
+		memoryReads: new Map<string, Promise<Record<string, unknown>>>()
+	};
 	let memoryContext: Record<string, unknown> = { memories: [] };
 	if (!context?.readOnly && context?.memoryEnabled !== false) {
 		try {
-			memoryContext = await executePomeloTool(
-				{ userId, currentRoom: room },
-				{ name: 'search_memory', args: { query: input, limit: 8 } }
-			);
+			memoryContext = await executePomeloTool(toolContext, {
+				name: 'search_memory',
+				args: { query: input.trim().slice(0, MEMORY_QUERY_MAX_LENGTH), limit: 8 }
+			});
 		} catch {
 			// Memory is optional; a database or legacy-schema failure must not block chat.
 		}
@@ -178,23 +160,13 @@ export const runLangChainAgent = async (
 		.map(item => item.tool);
 	const excludedTools =
 		context?.memoryEnabled === false ? [...preloadedTools, 'search_memory'] : preloadedTools;
-	const model = new ChatOpenAI({
-		model: MODEL,
-		apiKey: API_KEY,
-		temperature: 0.3,
-		timeout: UPSTREAM_TIMEOUT_MS,
-		maxRetries: 1,
-		streamUsage: false,
-		configuration: {
-			baseURL: `${API_BASE}/v1`
-		}
-	});
+	const model = createAssistantModel({ temperature: 0.3, maxRetries: 1 });
 	const agent = createAgent({
 		model,
 		tools: context?.readOnly
 			? []
 			: [
-					...buildPomeloChatTools({ userId, currentRoom: room }, { exclude: excludedTools }),
+					...buildPomeloChatTools(toolContext, { exclude: excludedTools }),
 					...(await externalMcpManager.buildTools(userId))
 				],
 		...(onTextDelta ? {} : { responseFormat: AgentResponseSchema }),

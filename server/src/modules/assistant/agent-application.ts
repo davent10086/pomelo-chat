@@ -13,15 +13,11 @@ export interface CallAgentToolInput {
 export interface TaskCandidatesInput {
 	room?: unknown;
 }
-import { ChatOpenAI } from '@langchain/openai';
+import { createAssistantModel, API_KEY } from './model';
 import { canAccessRoom, getRecentMessagesForRoom } from './tools/pomelo-tools';
 import { CommonStatus, AssistantStatus } from '../../shared/status';
 import {
 	MAX_ROOM_LENGTH,
-	MODEL,
-	UPSTREAM_TIMEOUT_MS,
-	API_BASE,
-	API_KEY,
 	MAX_INPUT_LENGTH,
 	checkRateLimit,
 	normalizeAgentRequest,
@@ -129,13 +125,7 @@ export const taskCandidates = async (
 		);
 		if (!messages.length) return success({ todos: [], action: null });
 		if (!API_KEY) return failure(CommonStatus.SERVER_ERR);
-		const model = new ChatOpenAI({
-			model: MODEL,
-			apiKey: API_KEY,
-			temperature: 0,
-			timeout: UPSTREAM_TIMEOUT_MS,
-			configuration: { baseURL: `${API_BASE}/v1` }
-		});
+		const model = createAssistantModel({ temperature: 0 });
 		const extractor = model.withStructuredOutput(TaskCandidatesSchema, { method: 'jsonMode' });
 		const extracted = await extractor.invoke([
 			{

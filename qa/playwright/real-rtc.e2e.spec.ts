@@ -1,3 +1,4 @@
+import { createUserFactory, connectFriends, login, setup } from './helpers/chat';
 import { test, expect, request, type Page } from '@playwright/test';
 
 for (const mode of ['audio', 'video'] as const) {
@@ -8,7 +9,9 @@ for (const mode of ['audio', 'video'] as const) {
     const peer = await peerContext.newPage();
     let completed = false;
     const logs: string[] = [];
+    const endCounts = { caller: 0, receiver: 0 };
     for (const [name, target] of [['caller', page], ['receiver', peer]] as const) {
+      target.on('request', request => { if (request.url().endsWith('/rtc/end')) endCounts[name]++; });
       target.on('console', message => { if (message.type() === 'error' || message.type() === 'warning') logs.push(`${name}: ${message.text().replace(/access_token=[^&\s']+/g, 'access_token=[redacted]')}`); });
       target.on('pageerror', error => logs.push(`${name}: ${error.message}`));
     }
@@ -39,28 +42,12 @@ for (const mode of ['audio', 'video'] as const) {
       }
       return bytes;
     }, kind);
-    const stamp = Date.now();
-    const create = async (index: number) => {
-      const username = `rtc_${stamp}_${index}`, password = 'RtcReal123!';
-      expect((await api.post('auth/register', { data: { username, password, phone: `13${String(stamp + index).slice(-9)}`, avatar: '' } })).ok()).toBeTruthy();
-      const response = await api.post('auth/login', { data: { username, password } });
-      expect(response.ok()).toBeTruthy();
-      return { username, password, ...(await response.json()).data };
-    };
-    const login = async (target: Page, user: { username: string; password: string }) => {
-      await target.goto('http://127.0.0.1:5199/login');
-      await target.getByPlaceholder('请输入用户名').fill(user.username);
-      await target.getByPlaceholder('请输入密码').fill(user.password);
-      await target.locator('button[type=submit]').click();
-      await expect(target).toHaveURL(/\/$/);
-    };
+    const create = createUserFactory(api, 'rtc');
     try {
       await instrument(page);
       await instrument(peer);
       const a = await create(1), b = await create(2);
-      expect((await api.post('friend/add_friend', { headers: { Authorization: `Bearer ${a.token}` }, data: { id: b.info.id, username: b.username } })).ok()).toBeTruthy();
-      const list = await api.get('message/chat_list', { headers: { Authorization: `Bearer ${a.token}` } });
-      const room = (await list.json()).data[0].room;
+      const room = await connectFriends(api, a, b);
       await login(page, a);
       await login(peer, b);
       await page.locator(`[id="chatList_${room}"]`).click();
@@ -86,6 +73,7 @@ for (const mode of ['audio', 'video'] as const) {
         await expect(target.getByRole('dialog')).toHaveCount(0);
         await expect.poll(() => target.evaluate(() => (window as unknown as { rtcConnections: RTCPeerConnection[] }).rtcConnections.every(pc => pc.connectionState === 'closed'))).toBeTruthy();
       }
+      await expect.poll(() => endCounts).toEqual({ caller: 1, receiver: 1 });
       completed = true;
     } finally {
       if (!completed) {
@@ -107,5 +95,38 @@ for (const mode of ['audio', 'video'] as const) {
       await peerContext.close();
       await api.dispose();
     }
+  });
+}
+
+for (const mode of ['audio', 'video'] as const) {
+  test(`${mode} 取消后迟到的邀请会关闭且不会再加入媒体`, async ({ page, browser }) => {
+    const { api, a, b, room } = await setup();
+    const peerContext = await browser.newContext();
+    const peer = await peerContext.newPage();
+    let release!: () => void;
+    const wait = new Promise<void>(resolve => { release = resolve; });
+    let invited = false, ended = 0, joined = 0;
+    page.on('request', request => {
+      if (request.url().endsWith('/rtc/end')) ended++;
+      if (request.url().endsWith('/rtc/join-token')) joined++;
+    });
+    await page.route('**/rtc/invite', async route => {
+      const response = await route.fetch();
+      expect(response.ok()).toBeTruthy();
+      invited = true;
+      await wait;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    try {
+      await login(peer, b, room);
+      await login(page, a, room);
+      await page.locator(mode === 'audio' ? 'button.icon-dianhua' : 'button.icon-video').click();
+      await expect.poll(() => invited).toBe(true);
+      await page.getByAltText('挂断').click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      release();
+      await expect.poll(() => ended).toBe(1);
+      expect(joined).toBe(0);
+    } finally { release(); await peerContext.close(); await api.dispose(); }
   });
 }

@@ -174,16 +174,6 @@ export const saveMemoryIdempotently = <T = unknown>(
 	);
 };
 
-export const insertMemory = <T = unknown>(
-	bindings: unknown,
-	executor: SqlQuery = Query
-): Promise<T> => {
-	return executor<T>(
-		'INSERT INTO assistant_memory (user_id, category, content) VALUES (?, ?, ?)',
-		bindings
-	);
-};
-
 export const deleteOwnedMemory = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query

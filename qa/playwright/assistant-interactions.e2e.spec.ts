@@ -150,3 +150,33 @@ test("assistant actions preserve task selection, query uncertain writes and retr
     expect(confirmations[3]).toEqual({ confirmationId: "memory-2" });
   } finally { releaseConfirm(); await api.dispose(); }
 });
+
+
+test('suggestion chips and Copilot use one scoped cursor insertion path', async ({ page }) => {
+  const { api, a, room } = await setup();
+  await page.route('**/assistant/agent', route => route.fulfill({ json: { code: 200, data: { content: '建议', replySuggestions: ['统一建议'] } } }));
+  await page.route('**/assistant/agent/stream', route => route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ content: '回答', replySuggestions: ['面板建议'], todos: [], actions: [] })}\n\ndata: [DONE]\n\n` }));
+  try {
+    await login(page, a, room);
+    const input = page.getByLabel('消息输入框');
+    await input.fill('触发建议');
+    await input.press('Enter');
+    const chip = page.getByRole('button', { name: '统一建议', exact: true });
+    await expect(chip).toBeVisible();
+    await input.fill('AB');
+    await input.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(1, 1));
+    await chip.click();
+    await expect(input).toHaveValue('A统一建议B');
+    await chip.click();
+    await expect(input).toHaveValue('A统一建议统一建议B');
+    await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
+    await expect(input).toHaveValue('');
+    await input.fill('提问');
+    await input.press('Enter');
+    await page.getByRole('button', { name: '打开 Copilot', exact: true }).click();
+    await page.getByRole('complementary', { name: 'AI Copilot 助手面板' }).getByRole('button', { name: '面板建议', exact: true }).click();
+    await expect(input).toHaveValue('面板建议');
+    await page.locator(`[id="chatList_${room}"]`).click();
+    await expect(input).toHaveValue('A统一建议统一建议B');
+  } finally { await api.dispose(); }
+});

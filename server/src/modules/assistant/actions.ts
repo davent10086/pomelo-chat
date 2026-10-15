@@ -21,7 +21,8 @@ import { better_chat } from '../../infrastructure/redis';
 import { CommonStatus } from '../../shared/status';
 import { sendConfirmedTextMessage } from '../messaging/public';
 import { externalMcpManager } from './adapters/external-mcp';
-import { executePomeloTool, isSensitiveMemoryContent } from './tools/pomelo-tools';
+import { executePomeloTool } from './tools/pomelo-tools';
+import { memorySaveSchema, memoryForgetSchema } from './tools/memory-contracts';
 
 const ACTION_TTL_SECONDS = 10 * 60;
 const actionPrefix = 'assistant:pending-action:';
@@ -146,22 +147,14 @@ export const createPendingAction = async (
 	payload: Record<string, unknown>
 ): Promise<AgentAction> => {
 	if (type === 'save_memory') {
-		const content = typeof payload.content === 'string' ? payload.content.trim() : '';
-		const category = payload.category;
-		if (
-			!content ||
-			content.length > 1000 ||
-			isSensitiveMemoryContent(content) ||
-			(category !== undefined && (typeof category !== 'string' || category.length > 32))
-		) {
-			throw new Error('Invalid memory proposal');
-		}
-		payload = { content, category: category || 'preference' };
+		const parsed = memorySaveSchema.safeParse(payload);
+		if (!parsed.success) throw new Error('Invalid memory proposal');
+		payload = { ...parsed.data, category: parsed.data.category || 'preference' };
 	}
 	if (type === 'forget_memory') {
-		const memoryId = payload.id;
-		if (typeof memoryId !== 'number' || !Number.isSafeInteger(memoryId) || memoryId <= 0)
-			throw new Error('Invalid memory deletion');
+		const parsed = memoryForgetSchema.safeParse(payload);
+		if (!parsed.success) throw new Error('Invalid memory deletion');
+		const memoryId = parsed.data.id;
 		const target = await repository.findOwnedMemory<Array<{ id: number; content: string }>>([
 			userId,
 			memoryId

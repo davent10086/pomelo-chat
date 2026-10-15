@@ -1,4 +1,4 @@
-import { better_chat } from '../../../infrastructure/redis';
+import { consumeRateLimit } from '../../../infrastructure/rate-counter';
 
 export type ToolErrorCode =
 	| 'UNKNOWN_TOOL'
@@ -31,22 +31,16 @@ export const toolErrorResult = (error: unknown) => ({
 
 // A separate tool budget permits several tool steps per Agent request. The shared
 // atomic window covers Agent, HTTP and stdio calls, including confirmed writes.
-const TOOL_RATE_SCRIPT = `
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then redis.call('EXPIRE', KEYS[1], 60) end
-return count
-`;
-
 export const assertToolRateLimit = async (userId: number): Promise<void> => {
 	if (!Number.isSafeInteger(userId) || userId <= 0)
 		throw new ToolExecutionError('INVALID_ARGUMENTS', 'A valid user id is required.');
-	let count: number;
+	let allowed: boolean;
 	try {
-		count = Number(await better_chat.eval(TOOL_RATE_SCRIPT, 1, `ai_tool_rate:${userId}`));
+		allowed = await consumeRateLimit(`ai_tool_rate:${userId}`, 120, 60, 'reject');
 	} catch {
 		throw new ToolExecutionError('EXECUTION_FAILED', 'Tool service is temporarily unavailable.');
 	}
-	if (!Number.isSafeInteger(count) || count < 1 || count > 120)
+	if (!allowed)
 		throw new ToolExecutionError(
 			'RATE_LIMITED',
 			'Tool call limit reached. Retry after one minute.'

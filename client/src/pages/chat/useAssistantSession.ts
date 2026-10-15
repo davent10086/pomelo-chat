@@ -35,7 +35,6 @@ export function useAssistantSession(
 	const [agentStreaming, setAgentStreaming] = useState(false);
 	const activeAgentStream = useRef<string>();
 	const streamAbort = useRef<AbortController>();
-	const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string }>();
 	const { aiHistory, appendAiHistory, setAiHistory, generateReply } = useAiAssistant(user);
 
 	const [messages, setMessages] = useState<IMessageItem[]>([]);
@@ -48,10 +47,6 @@ export function useAssistantSession(
 		[user.id]
 	);
 	const AI_AVATAR = getAiAvatar();
-	const insertAgentText = (text?: string) => {
-		if (!text) return;
-		setInsertTextRequest({ id: Date.now(), text });
-	};
 
 	const applyAgentStatus = async (action: AgentAction, status: ActionStatus) => {
 		setAgentResult(previous => {
@@ -235,7 +230,6 @@ export function useAssistantSession(
 		agentResult,
 		liveAgentEvents,
 		agentStreaming,
-		insertTextRequest,
 		memoryEnabled,
 		memoryModalOpen,
 		memoryList: memory.memoryList,
@@ -249,7 +243,6 @@ export function useAssistantSession(
 		selectedTaskIndexes: tasks.selectedTaskIndexes,
 		taskActionStatus: tasks.taskActionStatus,
 		AI_AVATAR,
-		insertAgentText,
 		openMemoryManager: memory.openMemoryManager,
 		handleMemoryEnabledChange: memory.handleMemoryEnabledChange,
 		deleteMemory: memory.deleteMemory,

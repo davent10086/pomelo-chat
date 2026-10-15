@@ -54,10 +54,8 @@ export interface IChatToolProps {
 	recentMessages?: IMessageItem[];
 	// 当前用户画像/配置信息（可选），用于定制化补全风格
 	userProfile?: IUserInfo;
-	// M2: 从外部插入文本（替代 window.dispatchEvent）
-	onInsertText?: (text: string) => void;
 	// 从父组件触发插入文本到输入框，id 变化时执行
-	externalInsertText?: { id: number; text: string };
+	externalInsertText?: { id: number; text: string; room: string };
 }
 import type { IMessageItem } from '@/components/MessageShow/type';
 import type { IUserInfo } from '@/utils/storage';

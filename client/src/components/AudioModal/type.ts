@@ -29,9 +29,3 @@ export enum CallStatus {
 	CALLING = 'calling'
 }
 export type callStatusType = 'initiate' | 'receive' | 'calling';
-// 在当前房间内正在通话的所有人的信息
-export interface IRoomMembersItem {
-	username: string;
-	muted: boolean;
-	showVideo?: boolean;
-}
