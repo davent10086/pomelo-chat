@@ -15,6 +15,7 @@ import {
 	getNotificationSocket,
 	notifySessionChanged
 } from './modules/realtime/public';
+import { publishReadReceipt } from './modules/realtime/public';
 import * as actions from './modules/assistant/actions';
 import * as agent from './modules/assistant/agent-application';
 import { createHttpHandlers as identityHandlers } from './modules/identity/http';
@@ -44,7 +45,7 @@ export const social = {
 export const rtc = createRtcApplication({ calls: rtcCalls, notifyUser: NotificationUser });
 export const identityHttp = identityHandlers(identity);
 export const socialHttp = socialHandlers(social);
-export const messagingHttp = messagingHandlers({ ...messaging, ...messageSearch });
+export const messagingHttp = messagingHandlers({ ...messaging, ...messageSearch }, publishReadReceipt);
 export const filesHttp = fileHandlers(files);
 export const rtcHttp = rtcHandlers(rtc);
 export const assistantHttp = assistantHandlers({ ...actions, ...agent });

@@ -55,6 +55,7 @@ export const getHistory = async (actor: Actor, parameters: GetHistoryInput): Pro
 		if (!result) return failure(CommonStatus.TOKEN_ERR);
 		return success({
 			messages: result.messages,
+			peerReadSeq: result.peerReadSeq,
 			hasMore: result.hasMore,
 			nextBeforeId: result.nextBeforeId
 		});
@@ -75,8 +76,8 @@ export const markRead = async (actor: Actor, parameters: MarkReadInput): Promise
 	try {
 		const authorized = await authorizeChatRoom(actor.id, room, type);
 		if (!authorized) return failure(CommonStatus.TOKEN_ERR);
-		await markRoomRead(actor.id, room, type, Number.isFinite(roomSeq) ? roomSeq : undefined);
-		return success({ room, read: true, roomSeq: Number.isFinite(roomSeq) ? roomSeq : undefined });
+		const actualSeq = await markRoomRead(actor.id, room, type, roomSeq);
+		return success({ room, read: true, roomSeq: actualSeq });
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error('[message] markRead error:', message);

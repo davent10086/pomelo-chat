@@ -196,6 +196,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		if (!(await validateSessionSocket(ws))) return;
 		sendFrame(ws, {
 			name: 'history',
+			peerReadSeq: history?.peerReadSeq || 0,
 			messages: history?.messages || [],
 			hasMore: history?.hasMore,
 			nextBeforeId: history?.nextBeforeId

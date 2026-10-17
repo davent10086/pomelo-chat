@@ -16,6 +16,10 @@ LiveKit server plus isolated test users and rooms; production credentials and ro
 Commands:
 
 ```powershell
+# Create a dedicated MySQL test database first, then replace these example credentials.
+$env:DATABASE_URL_TEST='mysql://root:password@127.0.0.1:3306/pomelo_chat_test'
+$env:REDIS_URL_TEST='redis://127.0.0.1:6379/15'
+
 pnpm test:unit
 pnpm test:database
 pnpm test:api
@@ -25,6 +29,12 @@ pnpm test:coverage
 pnpm test:all
 pnpm test:qa
 ```
+
+`test:all` uses the configured test database; it does not create it. For local service-backed
+checks that create and remove their own database, use `node server/scripts/run-isolated-tests.js`
+with `system`, `backend`, `migrations`, or `browser`. The runner reads local MySQL credentials
+from `server/.env`. `pnpm test:real-chat` uses that runner to verify two real browser clients,
+including private read receipts, sender refresh and offline-message read recovery.
 
 Real LLM, browser media, TURN/NAT, WebSocket load, and performance tests are intentionally not part of
 `test:all`: they require their respective isolated services and cost/device/network controls.

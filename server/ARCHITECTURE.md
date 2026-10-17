@@ -99,6 +99,14 @@ or WebSocket interception. It verifies browser login, persisted messages and ACK
 delivery, browser upload/merge, byte-for-byte recipient download, outsider denial, and history
 recovery without duplicates after the receiver disconnects and reloads. No model is called.
 
+Private read receipts use the existing persisted read cursor. A successful authorized read
+updates the cursor monotonically, then the HTTP adapter invokes a delivery callback supplied
+by composition. Local sockets and Redis fanout receive a `read_receipt` frame; private history
+includes `peerReadSeq` so refresh and reconnect restore the same state. The client shows one
+check for a sent message and two blue checks after the peer reads it. The real-chat browser
+test covers the transition, sender refresh and reading messages received while offline.
+Group chats retain unread counts and read cursors without a reader list or double checks.
+
 The local runner creates a uniquely named MySQL test database, Redis key prefix and temporary
 upload directory, then cleans them after the browser servers exit. Configure `REDIS_URL_TEST`
 for your local Redis (for example `redis://[::1]:6379/15` for an IPv6-only listener). MySQL

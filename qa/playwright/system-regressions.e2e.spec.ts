@@ -97,7 +97,7 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
       .filter({ hasText: /^browser-message$/ })
       .last(),
   ).toBeVisible();
-  await expect(page.getByText("已发送", { exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: '已发送', exact: true })).toBeVisible();
   // Drop one real server frame without closing the browser socket. The next
   // sequence must trigger HTTP catchup and restore the missing message once.
   await page.evaluate(

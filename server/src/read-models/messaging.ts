@@ -1,5 +1,16 @@
 import { Query } from '../infrastructure/database-query';
 import type { SqlQuery } from '../shared/actor';
+export const loadReadCursor = <T = unknown>(
+	bindings: unknown,
+	executor: SqlQuery = Query
+): Promise<T> =>
+	executor<T>(
+		`SELECT cr.last_read_seq FROM conversation_read cr
+		 JOIN conversation c ON c.id = cr.conversation_id
+		 WHERE c.room = ? AND cr.user_id = ?`,
+		bindings
+	);
+
 export const listPrivateChatSummaries = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query

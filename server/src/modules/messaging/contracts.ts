@@ -108,5 +108,12 @@ export interface OutboundMessage {
 export interface FanoutPayload {
 	instanceId: string;
 	room: string;
-	message: OutboundMessage;
+	message: OutboundMessage | ReadReceiptFrame;
+}
+
+export interface ReadReceiptFrame {
+	name: 'read_receipt';
+	room: string;
+	userId: UserId;
+	roomSeq: number;
 }

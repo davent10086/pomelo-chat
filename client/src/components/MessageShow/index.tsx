@@ -1,5 +1,4 @@
 import {
-	CheckCircleOutlined,
 	CloseCircleOutlined,
 	CopyOutlined,
 	DeleteOutlined,
@@ -32,6 +31,23 @@ const ChatContentPocket = () => (
 		<img src={LoadErrorImage.FILE_DELETE} draggable="false" alt="文件已过期" />
 		<span>文件已过期或被清理</span>
 	</div>
+);
+
+const DeliveryChecks = ({ read }: { read: boolean }) => (
+	<svg
+		width={read ? 22 : 16}
+		height="16"
+		viewBox={read ? '0 0 22 16' : '0 0 16 16'}
+		fill="none"
+		stroke="currentColor"
+		strokeWidth="1.8"
+		strokeLinecap="round"
+		strokeLinejoin="round"
+		aria-hidden="true"
+	>
+		<path d="M2 8l4 4 8-8" />
+		{read && <path d="M10 12l10-8" />}
+	</svg>
 );
 
 const ChatContent = (props: IChatContentProps): JSX.Element | null => {
@@ -139,7 +155,10 @@ const MessageShow = (props: IMessageShowProps) => {
 		if (status === 'failed')
 			return { text: message.failureReason || '发送失败', icon: <CloseCircleOutlined /> };
 		if (status === 'pending') return { text: '发送中', icon: <LoadingOutlined /> };
-		return { text: '已发送', icon: <CheckCircleOutlined /> };
+		return {
+			text: message.read ? '对方已读' : '已发送',
+			icon: <DeliveryChecks read={!!message.read} />
+		};
 	})();
 
 	const handleCopy = async () => {
@@ -199,10 +218,12 @@ const MessageShow = (props: IMessageShowProps) => {
 						{statusMeta && (
 							<span
 								role="status"
-								className={`${styles.message_status} ${status === 'failed' ? styles.status_failed : ''}`}
+								title={statusMeta.text}
+								aria-label={statusMeta.text}
+								className={`${styles.message_status} ${status === 'failed' ? styles.status_failed : ''} ${message.read ? styles.status_read : ''}`}
 							>
 								{statusMeta.icon}
-								{statusMeta.text}
+								{(status === 'pending' || status === 'failed') && statusMeta.text}
 								{status === 'failed' && onRetry && (
 									<Button size="small" onClick={() => onRetry(message)} aria-label="重新发送">
 										重试

@@ -26,10 +26,16 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     const input = page.getByLabel('消息输入框');
     await input.fill(`真实消息_${stamp}`);
     await input.press('Enter');
-    await expect(page.getByText('已发送', { exact: true })).toBeVisible();
+    const firstMessage = page.locator('[data-message-index]').filter({ hasText: `真实消息_${stamp}` });
+    await expect(firstMessage.getByRole('status', { name: '已发送', exact: true })).toBeVisible();
     await expect.poll(() => notifications.some(raw => JSON.parse(raw).name === 'chatList')).toBeTruthy();
     await peer.locator(`[id="chatList_${room}"]`).click();
     await expect(peer.locator('[data-message-index]').getByText(`真实消息_${stamp}`, { exact: true })).toHaveCount(1);
+    await expect(firstMessage.getByRole('status', { name: '对方已读', exact: true })).toBeVisible();
+    await expect(firstMessage.getByRole('status', { name: '对方已读', exact: true }).locator('svg path')).toHaveCount(2);
+    await page.reload();
+    await page.locator(`[id="chatList_${room}"]`).click();
+    await expect(firstMessage.getByRole('status', { name: '对方已读', exact: true })).toBeVisible();
 
     const bytes = Buffer.from(`真实文件内容_${stamp}`);
     const mergedResponse = page.waitForResponse(response => response.url().endsWith('/file/merge_chunk'));
@@ -52,6 +58,8 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     await peer.goto('about:blank');
     await input.fill(`离线消息_${stamp}`);
     await input.press('Enter');
+    const offlineMessage = page.locator('[data-message-index]').filter({ hasText: `离线消息_${stamp}` });
+    await expect(offlineMessage.getByRole('status', { name: '已发送', exact: true })).toBeVisible();
     await expect.poll(async () => {
       const response = await api.get('message/search', { headers: { Authorization: `Bearer ${a.token}` }, params: { room, type: 'private', query: `离线消息_${stamp}` } });
       return (await response.json()).data.messages.length;
@@ -59,6 +67,7 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     await peer.goto('http://127.0.0.1:5199/');
     await peer.locator(`[id="chatList_${room}"]`).click();
     await expect(peer.locator('[data-message-index]').getByText(`离线消息_${stamp}`, { exact: true })).toHaveCount(1);
+    await expect(offlineMessage.getByRole('status', { name: '对方已读', exact: true })).toBeVisible();
     await peer.reload();
     await peer.locator(`[id="chatList_${room}"]`).click();
     await expect(peer.locator('[data-message-index]').getByText(`离线消息_${stamp}`, { exact: true })).toHaveCount(1);

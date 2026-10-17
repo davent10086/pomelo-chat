@@ -21,6 +21,8 @@ Windows 桌面开发原型已提供：微信风格主窗口、右侧贴边可折
 - 桌面助手支持流式对话、停止生成、聊天总结、回复建议与复制；用户主动开启当前聊天关联。
 - 两个窗口同步登录与退出状态，折叠不打断生成；最小化一起隐藏，关闭主窗口退出应用。
 
+桌面侧栏助手当前提供对话、总结、回复建议和复制，没有写操作确认入口；主聊天页面的 AI Copilot 提供确认式发消息、保存待办和记忆操作。
+
 ## 架构总览
 
 ```mermaid
@@ -45,9 +47,10 @@ flowchart LR
 
 ## 核心能力
 
-- 用户注册、登录、登出、找回密码、资料更新。
+- 用户注册、登录、登出、验证旧密码后修改密码、资料更新；暂不提供忘记密码后的短信或邮件找回流程。
 - 好友分组、好友搜索、好友添加、通讯录展示。
 - 单聊和群聊消息，WebSocket 实时收发，MySQL 持久化。
+- 私聊已读回执：单勾表示已发送，蓝色双勾表示对方已读；私聊、群聊均支持未读数与已读游标。
 - 群创建、群成员查询、邀请入群。
 - 文件分片上传、合并与受控访问。
 - LiveKit SFU 音视频通话（本地演示配置）。
@@ -75,6 +78,7 @@ flowchart LR
 │   ├── src/hooks/            # AI 助手等业务 hooks
 │   ├── src/pages/            # 页面
 │   └── src/utils/            # axios、WebSocket 等工具
+├── desktop/                 # Electron 桌面主窗口、侧栏助手与桌面测试
 ├── server/                  # Express 后端
 │   ├── src/controller/       # 路由注册
 │   ├── src/infrastructure/   # MySQL、Redis、文件存储与 HTTP 基础设施
@@ -99,7 +103,7 @@ flowchart LR
 | `/auth` | 用户认证、用户信息、用户 WebSocket channel |
 | `/friend` | 好友、好友分组、搜索、添加 |
 | `/group` | 群列表、群信息、建群、邀请、成员 |
-| `/message` | 聊天列表、历史分页、已读游标、聊天 WebSocket |
+| `/message` | 聊天列表、历史分页、搜索与上下文、消息核对、已读游标及私聊回执、聊天 WebSocket |
 | `/file` | 文件校验、分片上传、合并 |
 | `/rtc` | 音视频通话信令 |
 | `/assistant` | AI 聊天、流式聊天、Agent、工具调用、确认/取消动作、个人任务 |
@@ -123,22 +127,37 @@ docker compose -f docker-compose.livekit.yml up -d
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant A as Auth Middleware
+  participant P as Peer Client
+  participant H as HTTP API
   participant W as WebSocket Route
   participant D as MySQL
-  participant R as Redis
+  participant F as Outbox Worker
+  participant R as Redis Fanout
 
   C->>W: connect_chat?room&id&type (Sec-WebSocket-Protocol token)
-  W->>A: verify JWT
-  A->>R: check token whitelist
-  A-->>W: user context
-  W->>D: load room history
-  W-->>C: history[]
-  C->>W: message JSON
-  W->>D: insert message
-  W->>D: update message statistics
-  W-->>C: ack + broadcast message
+  Note over W,R: 验证 JWT、Redis 会话及房间访问权限
+  W->>D: 读取历史消息与对方已读游标
+  W-->>C: history (messages, hasMore, nextBeforeId, peerReadSeq)
+  C->>W: message JSON (clientMsgId)
+  W->>D: 事务写入消息、房间序号、统计及 outbox
+  D-->>W: commit
+  W-->>C: ack (id, client_msg_id, room_seq)
+  Note over W,F: ACK 与异步投递的到达顺序不固定
+  F->>D: 按房间顺序领取待投递消息
+  F->>R: 发布跨实例消息
+  F-->>C: 投递本地连接，按消息 ID 合并
+  F-->>P: 投递接收方连接
+  Note over F,R: 其他实例通过 Redis 订阅投递；失败重试，至少一次语义
+  P->>H: POST /message/read (room, type, roomSeq)
+  H->>D: 验证访问权限后单调推进已读游标
+  H->>R: 发布私聊 read_receipt
+  H-->>C: 向本地聊天连接投递 read_receipt
+  Note over C,P: 重连读取 history；消息缺口通过 /message/history 补齐
 ```
+
+私聊发送成功显示单勾；收到对方的 `read_receipt` 后，相应消息变为蓝色双勾，悬停提示“对方已读”。刷新或重连后通过 `peerReadSeq` 恢复状态，迟到回执不会使已读进度倒退。群聊暂不展示双勾或已读成员列表。
+
+只有聊天页面可见、消息同步完成且位于底部时，客户端才上报当前消息序号；搜索、历史定位和后台页面不推进已读游标。服务端将上报序号限制在房间实际最新序号以内，并在授权后持久化。
 
 ## AI Agent 与 MCP
 
@@ -308,11 +327,24 @@ VITE_SERVER_PORT=3000
 
 ## 本地运行
 
+准备 Node.js 20（与 CI 一致）、MySQL 8+ 和 Redis，并先创建 `DB_NAME` 指定的数据库。后端会创建和迁移表结构，不会自动创建数据库。首次运行复制环境变量示例，填写数据库凭据、JWT 密钥以及需要使用的模型配置；已有 `.env` 时直接修改，不要覆盖：
+
+```powershell
+Copy-Item server/.env.example server/.env
+Copy-Item client/.env.example client/.env
+```
+
 ```powershell
 corepack enable
 pnpm install --frozen-lockfile
+```
 
+在两个终端分别启动后端和前端：
+
+```powershell
+# 终端 1
 pnpm run dev:server
+# 终端 2
 pnpm run dev:client
 ```
 
@@ -324,7 +356,12 @@ pnpm run build
 
 ## 测试与 QA
 
+先创建专用测试数据库并设置连接串，再执行需要数据库的测试。下列地址和密码需要替换为本机隔离服务配置；`test:all` 不会自动创建该数据库：
+
 ```powershell
+$env:DATABASE_URL_TEST='mysql://root:password@127.0.0.1:3306/pomelo_chat_test'
+$env:REDIS_URL_TEST='redis://127.0.0.1:6379/15'
+
 pnpm lint
 pnpm test:all
 pnpm audit --prod --audit-level=high
@@ -336,8 +373,6 @@ pnpm --filter pomelo-chat-server test:security
 
 node qa/unit-agent-logic.test.js
 node qa/ai-eval.js
-$env:DATABASE_URL_TEST='mysql://root:password@127.0.0.1:3306/pomelo_chat_test'
-$env:REDIS_URL_TEST='redis://127.0.0.1:6379/15'
 pnpm test:qa
 ```
 
@@ -377,7 +412,7 @@ node server/scripts/run-isolated-tests.js browser
 
 会话标题旁的“搜索聊天记录”支持正文关键词、上海时区日期范围、发送者及消息类型筛选。`GET /message/search` 按消息 ID 游标分页，默认 20、最多 50 条；文本关键词按字面子串匹配。`GET /message/context` 返回授权会话内目标消息及前后各最多 20 条。点击结果进入独立历史视图，可加载两侧历史并返回最新消息。搜索、历史定位和后台页面不推进已读游标。
 
-消息服务按权限、查询、事务写入、投递、HTTP、WebSocket 拆分，原入口保留兼容导出；Redis 订阅和 outbox 由服务启动/关闭显式管理。启动兼容迁移可重复执行，并补充 `(room, type, id)` 索引。聊天页面通过会话列表、助手会话、连接同步、发送队列、历史定位和已读 hooks 分担状态。
+消息服务按权限、查询、事务写入、投递、HTTP、WebSocket 拆分；旧 `service`、`utils` 和 `model/db` 兼容门面已移除，跨模块调用使用 `public.ts` 或 `contracts.ts`。Redis 订阅和 outbox 由服务启动/关闭显式管理。启动兼容迁移可重复执行，并补充 `(room, type, id)` 索引。聊天页面通过会话列表、助手会话、连接同步、发送队列、历史定位和已读 hooks 分担状态。
 
 新增浏览器回归覆盖 ACK 丢失后刷新、离线发送恢复、多标签页恢复、旧消息搜索定位，以及真实 IndexedDB 的租约、容量、过期和账号隔离。系统回归在隔离 MySQL/Redis 中验证搜索权限、特殊字符、筛选、日期边界、游标和消息核对；运行 `node server/scripts/run-isolated-tests.js system` 或 `browser`。助手响应使用确定性桩。
 
@@ -406,8 +441,9 @@ AI Copilot 分为回复、待办、记忆三个入口，待确认操作保持可
 ## 当前已知限制
 
 - 登录使用 Redis token 白名单；重复登录会签发新 token 并使旧 token 失效，因此当前仍不是多设备并行在线模型。
-- Agent stream 接口返回 Agent 事件和最终内容，不是严格 token 级逐字流。
-- MySQL 建表在服务启动时执行，当前没有独立 migration 框架。
+- Agent stream 已支持 SSE `agent` 生命周期事件、`delta` 文本增量及最终结果；普通对话还会在正文生成后提取结构化建议和待确认动作，因此正文结束与请求完成可能有时间差。
+- MySQL 使用自研迁移机制：启动时自动执行，也可通过 `pnpm --filter pomelo-chat-server db:migrate` 单独运行；已有 `schema_migrations` 记录和数据库迁移锁，未引入第三方 migration 框架。
+- 忘记密码后的账号恢复、群聊已读成员列表尚未实现；桌面侧栏助手尚无写操作确认入口。
 - 外部 MCP 写工具需要显式确认路径，自动 Agent 不直接暴露写工具。
 - 前端生产构建存在 Vite chunk size warning，功能不受影响，但后续可做代码分包。
 

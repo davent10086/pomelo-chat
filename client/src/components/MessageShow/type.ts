@@ -16,6 +16,7 @@ export interface IMessageItem {
 	client_msg_id?: string | null;
 	clientMsgId?: string;
 	room_seq?: number;
+	read?: boolean;
 	failureReason?: string;
 	status?: 'pending' | 'sent' | 'failed';
 	sender_id: number;

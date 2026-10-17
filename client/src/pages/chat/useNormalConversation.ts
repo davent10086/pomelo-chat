@@ -3,6 +3,7 @@ import { useChatSocket } from './useChatSocket';
 import { useHistoryView } from './useHistoryView';
 import { useReadReceipt } from './useReadReceipt';
 import { mergeMessages } from '@/utils/message-merge';
+import { withReadState } from './read-state';
 
 /** All ordinary-chat state stays behind session operations. */
 export function useNormalConversation(
@@ -15,11 +16,16 @@ export function useNormalConversation(
 	const session = useChatSocket({ onError });
 	const history = useHistoryView(room, type, onError);
 	const [searchOpen, setSearchOpen] = useState(false);
-	const [atBottom, setAtBottom] = useState(false);
+	const [bottomState, setBottomState] = useState<{ room?: string; type?: string; value: boolean }>({
+		value: false
+	});
+	const onAtBottom = useCallback(
+		(value: boolean) => setBottomState({ room, type, value }),
+		[room, type]
+	);
 	const { openConversation, leaveConversation } = session;
 	useEffect(() => {
 		setSearchOpen(false);
-		setAtBottom(false);
 		if (room) openConversation({ room, type, sender_id: String(userId) });
 		return leaveConversation;
 	}, [room, type, userId, openConversation, leaveConversation]);
@@ -41,18 +47,46 @@ export function useNormalConversation(
 		room,
 		type,
 		sequence,
-		session.synchronized && atBottom && !searchOpen && !view && !history.loading
+		session.synchronized &&
+			bottomState.room === room &&
+			bottomState.type === type &&
+			bottomState.value &&
+			!searchOpen &&
+			!view &&
+			!history.loading
+	);
+	const peerReadSeq =
+		type === 'private' && session.peerRead.room === room ? session.peerRead.sequence : 0;
+	const displayHistory = useMemo(
+		() =>
+			withReadState(
+				view?.messages || session.historyMsg.filter(message => message.room === room),
+				room,
+				userId,
+				peerReadSeq
+			),
+		[view, session.historyMsg, room, userId, peerReadSeq]
+	);
+	const displayNew = useMemo(
+		() =>
+			withReadState(
+				view ? [] : session.newMessage.filter(message => message.room === room),
+				room,
+				userId,
+				peerReadSeq
+			),
+		[view, session.newMessage, room, userId, peerReadSeq]
 	);
 	const leave = useCallback(() => {
 		leaveConversation();
 		history.reset();
 		setSearchOpen(false);
-		setAtBottom(false);
+		setBottomState({ value: false });
 	}, [leaveConversation, history.reset]);
 	return {
 		messages,
-		historyMsg: view?.messages || session.historyMsg.filter(message => message.room === room),
-		newMessage: view ? [] : session.newMessage.filter(message => message.room === room),
+		historyMsg: displayHistory,
+		newMessage: displayNew,
 		locating: !!view,
 		focusId: view?.focusId,
 		hasAfter: !!view?.hasAfter,
@@ -61,7 +95,7 @@ export function useNormalConversation(
 		searchOpen,
 		toggleSearch: () => setSearchOpen(value => !value),
 		closeSearch: () => setSearchOpen(false),
-		onAtBottom: setAtBottom,
+		onAtBottom,
 		locate: history.locate,
 		returnToLatest: history.reset,
 		loadOlder: view ? () => history.load('before') : session.loadOlder,

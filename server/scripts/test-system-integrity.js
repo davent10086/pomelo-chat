@@ -343,8 +343,18 @@ const send = async (
     await Query('UPDATE message SET created_at = TIMESTAMPADD(SECOND, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) - 28800, ?) WHERE id = ?', ['2026-10-01 23:59:59', literal.id]);
     assert.equal((await searchGet({ query: '搜索字面', since: '2026-10-01', until: '2026-10-01' })).data.messages.length, 1);
     assert.equal((await searchGet({ query: '搜索字面', since: '2026-10-02' })).data.messages.length, 0);
-	await request('/message/read', { room, type: 'private', roomSeq: 50 }, b.token);
-	await request('/message/read', { room, type: 'private', roomSeq: 1 }, b.token);
+	const receiptsBefore = ca.frames.filter(frame => frame.name === 'read_receipt').length;
+	assert.notEqual((await request('/message/read', { room, type: 'private', roomSeq: 50 }, outsider.token)).code, 200);
+	assert.equal(ca.frames.filter(frame => frame.name === 'read_receipt').length, receiptsBefore);
+	assert.equal((await request('/message/read', { room, type: 'private', roomSeq: -1 }, b.token)).code, 1003);
+	assert.equal((await request('/message/read', { room, type: 'private', roomSeq: 50 }, b.token)).data.roomSeq, 50);
+	await eventually(() => ca.frames.some(frame => frame.name === 'read_receipt' && Number(frame.userId) === b.id && frame.roomSeq === 50));
+	assert.equal((await request('/message/read', { room, type: 'private', roomSeq: 1 }, b.token)).data.roomSeq, 50, 'stale reads never regress the published cursor');
+	const senderHistory = await request(`/message/history?room=${room}&type=private&limit=1`, undefined, a.token);
+	assert.equal(senderHistory.data.peerReadSeq, 50, 'offline history restores peer read progress');
+	const reconnected = await frameSocket(`${wsBase}/message/connect_chat?room=${room}&id=${a.id}&type=private`, a.token);
+	await eventually(() => reconnected.frames.some(frame => frame.name === 'history'));
+	assert.equal(reconnected.frames.find(frame => frame.name === 'history').peerReadSeq, 50);
 	assert.equal(
 		(
 			await Query(

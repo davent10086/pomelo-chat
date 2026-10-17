@@ -739,7 +739,7 @@ test.describe("touch chat interactions", () => {
     const message = page
       .locator("[data-message-index]")
       .filter({ hasText: "可搜索的触屏消息" });
-    await expect(message).toContainText("已发送");
+    await expect(message.getByRole('status', { name: '已发送', exact: true })).toBeVisible();
     await message.getByRole("button", { name: "消息更多操作" }).tap();
     await expect(
       page.getByRole("menuitem", { name: "复制", exact: true }),
@@ -777,7 +777,7 @@ test.describe("touch chat interactions", () => {
       failed.getByRole("button", { name: "重新发送", exact: true }),
     ).toBeVisible();
     await failed.getByRole("button", { name: "重新发送", exact: true }).tap();
-    await expect(failed).toContainText("已发送");
+    await expect(failed.getByRole('status', { name: '已发送', exact: true })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

@@ -2,6 +2,7 @@ import * as readModel from '../../read-models/realtime';
 import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
 import { validateSessionSocket } from './session-sockets';
+import { authorizeChatRoom } from '../social/public';
 import { NotificationUser } from './notification';
 import { sendSocketFrame } from './socket-send';
 import { forEachConcurrent } from '../../shared/parallel';
@@ -13,6 +14,7 @@ import type {
 	HistoryMessageRow,
 	ChatType
 } from '../messaging/contracts';
+import type { ReadReceiptFrame } from '../messaging/contracts';
 export const ChatRooms: Record<string, Record<string, WebSocket>> = {};
 const MESSAGE_FANOUT_CHANNEL = `${process.env.REDIS_KEY_PREFIX || ''}pomelo:message:fanout`;
 const INSTANCE_ID = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -27,10 +29,20 @@ export const sendFrame = (ws: WebSocket, frame: unknown): void => {
 	}
 };
 
-export const sendLocalRoom = async (room: string, message: OutboundMessage): Promise<void> => {
+export const sendLocalRoom = async (
+	room: string,
+	message: OutboundMessage | ReadReceiptFrame
+): Promise<void> => {
 	await forEachConcurrent(Object.entries(ChatRooms[room] || {}), 16, async ([key, ws]) => {
 		try {
-			if (await validateSessionSocket(ws)) sendFrame(ws, message);
+			if (!(await validateSessionSocket(ws))) return;
+			if (
+				'name' in message &&
+				message.name === 'read_receipt' &&
+				!(await authorizeChatRoom(key.split(':')[0], room, 'private'))
+			)
+				return;
+			sendFrame(ws, message);
 		} catch (err: unknown) {
 			const messageText = err instanceof Error ? err.message : String(err);
 			console.error('[message] send failed room=%s key=%s: %s', room, key, messageText);
@@ -38,11 +50,19 @@ export const sendLocalRoom = async (room: string, message: OutboundMessage): Pro
 	});
 };
 
-const publishRoomMessage = async (room: string, message: OutboundMessage): Promise<void> => {
+const publishRoomMessage = async (
+	room: string,
+	message: OutboundMessage | ReadReceiptFrame
+): Promise<void> => {
 	await better_chat.publish(
 		MESSAGE_FANOUT_CHANNEL,
 		JSON.stringify({ instanceId: INSTANCE_ID, room, message })
 	);
+};
+
+export const publishReadReceipt = async (frame: ReadReceiptFrame): Promise<void> => {
+	await sendLocalRoom(frame.room, frame);
+	await publishRoomMessage(frame.room, frame);
 };
 
 export const subscribeRoomFanout = async (): Promise<void> => {

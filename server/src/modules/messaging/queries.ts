@@ -35,6 +35,14 @@ export const fetchHistoryMessages = async (
 ) => {
 	const authorized = await authorizeChatRoom(userId, room, type);
 	if (!authorized) return null;
+	const peerCursor =
+		type === 'private'
+			? await readModel.loadReadCursor<Array<{ last_read_seq: number }>>([
+					room,
+					authorized.receiverId
+				])
+			: [];
+	const peerReadSeq = Number(peerCursor[0]?.last_read_seq || 0);
 	const safeLimit = Math.max(
 		1,
 		Math.min(Math.floor(Number(limit) || HISTORY_PAGE_SIZE), MAX_HISTORY_PAGE_SIZE)
@@ -49,6 +57,7 @@ export const fetchHistoryMessages = async (
 		]);
 		return {
 			authorized,
+			peerReadSeq,
 			messages: formatHistoryMessages(rows),
 			hasMore: rows.length === safeLimit,
 			nextBeforeId: rows[0]?.id
@@ -59,6 +68,7 @@ export const fetchHistoryMessages = async (
 	const rows = await readModel.listHistoryBeforeId<HistoryMessageRow[]>(params, { hasCursor });
 	return {
 		authorized,
+		peerReadSeq,
 		messages: formatHistoryMessages(rows),
 		hasMore: rows.length === safeLimit,
 		nextBeforeId: rows[0]?.id
@@ -70,16 +80,21 @@ export const markRoomRead = async (
 	room: string,
 	type: ChatType,
 	roomSeq?: number
-): Promise<void> => {
+): Promise<number> => {
 	if (!Number.isSafeInteger(roomSeq) || Number(roomSeq) < 0)
 		throw new Error('Invalid read sequence');
-	await withTransaction(async query => {
+	return withTransaction(async query => {
 		const rows = await repository.lockReadCursorConversation<
 			Array<{ id: number; last_seq: number }>
 		>([room], query);
-		if (!rows.length) return;
+		if (!rows.length) return 0;
 		const seq = Math.min(Number(roomSeq), Number(rows[0].last_seq));
 		await repository.advanceReadCursor([rows[0].id, userId, seq], query);
 		await repository.markPrivateMessagesRead([userId, room, type, seq], query);
+		const cursor = await readModel.loadReadCursor<Array<{ last_read_seq: number }>>(
+			[room, userId],
+			query
+		);
+		return Number(cursor[0]?.last_read_seq || 0);
 	});
 };

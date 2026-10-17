@@ -30,6 +30,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 	const socket = useRef<ReconnectingWebSocket | null>(null);
 	const [historyMsg, setHistoryMsg] = useState<IMessageItem[]>([]);
 	const [newMessage, setNewMessage] = useState<IMessageItem[]>([]);
+	const [peerRead, setPeerRead] = useState({ room: '', sequence: 0 });
 	const [historyCursor, setHistoryCursor] = useState<number | undefined>();
 	const [hasMoreHistory, setHasMoreHistory] = useState(false);
 
@@ -48,6 +49,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 
 	const resetMessages = useCallback(() => {
 		lastSequence.current = 0;
+		setPeerRead({ room: '', sequence: 0 });
 		setHistoryMsg([]);
 		setNewMessage([]);
 		setHistoryCursor(undefined);
@@ -59,6 +61,22 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 			closeSocket();
 			currentParams.current = connectParams;
 			const epoch = generation.current;
+			const receiveReadCursor = (sequence: number | undefined) => {
+				if (
+					epoch !== generation.current ||
+					connectParams.type !== 'private' ||
+					!Number.isSafeInteger(sequence) ||
+					Number(sequence) < 0
+				)
+					return;
+				setPeerRead(previous => ({
+					room: connectParams.room,
+					sequence: Math.max(
+						previous.room === connectParams.room ? previous.sequence : 0,
+						Number(sequence)
+					)
+				}));
+			};
 			const controller = new AbortController();
 			syncController.current = controller;
 			const token = tokenStorage.getItem();
@@ -162,6 +180,10 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 							client_msg_id?: string;
 							id?: number;
 							room_seq?: number;
+							room?: string;
+							userId?: number | string;
+							roomSeq?: number;
+							peerReadSeq?: number;
 							message?: string;
 							code?: string;
 					  }
@@ -171,7 +193,17 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 					return;
 				}
 				if (message && typeof message === 'object' && 'name' in message) {
+					if (message.name === 'read_receipt') {
+						if (
+							message.room === connectParams.room &&
+							message.userId !== undefined &&
+							String(message.userId) !== String(connectParams.sender_id)
+						)
+							receiveReadCursor(message.roomSeq);
+						return;
+					}
 					if (message.name === 'history') {
+						receiveReadCursor(message.peerReadSeq);
 						const since = lastSequence.current;
 						const batch = (message.messages || []).map(item => ({
 							...item,
@@ -203,6 +235,17 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 						return;
 					}
 					if (message.name === 'resync') {
+						if (connectParams.type === 'private') {
+							try {
+								const result = await request.get<{ peerReadSeq: number }>('/message/history', {
+									params: { room: connectParams.room, type: connectParams.type, limit: 1 },
+									signal: controller.signal
+								});
+								if (result.data.code === 200) receiveReadCursor(result.data.data.peerReadSeq);
+							} catch {
+								/* Reconnect history will restore the persisted cursor. */
+							}
+						}
 						await catchUp(recoveryCursor ?? lastSequence.current);
 						return;
 					}
@@ -333,6 +376,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 		}
 	}, [historyCursor, hasMoreHistory, onError]);
 	return {
+		peerRead,
 		retry,
 		cancel,
 		synchronized,
