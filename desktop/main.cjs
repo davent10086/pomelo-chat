@@ -137,7 +137,7 @@ app.whenReady().then(async () => {
   const width = Math.min(1100, area.width - PANEL_SIZE.width - GAP);
   mainWindow = new BrowserWindow({ x: area.x + Math.max(0, Math.round((area.width - width - PANEL_SIZE.width - GAP) / 2)),
     y: area.y + Math.max(0, Math.round((area.height - 800) / 2)), width, height: Math.min(800, area.height),
-    minWidth: Math.min(640, width), minHeight: Math.min(480, area.height), frame: false, maximizable: false, title: 'Pomelo Chat', show: false, webPreferences });
+    minWidth: Math.min(640, width), minHeight: Math.min(480, area.height), frame: false, transparent: true, backgroundColor: '#00000000', roundedCorners: true, maximizable: false, title: 'Pomelo Chat', icon: path.join(__dirname, '../client/public/yuzu-chat.png'), show: false, webPreferences });
   assistantWindow = new BrowserWindow({
     ...dockBounds(mainWindow.getBounds(), area, false).assistant, parent: mainWindow,
     frame: false, transparent: true, backgroundColor: '#00000000',

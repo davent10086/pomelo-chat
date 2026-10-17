@@ -123,7 +123,7 @@ const AIChatSummary = (props: IAIChatSummaryProps) => {
 					loading={loading}
 					className={styles.summaryButton}
 				>
-					AI总结聊天记录
+					总结聊天
 				</Button>
 			)}
 

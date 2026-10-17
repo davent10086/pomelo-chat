@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import styles from './index.module.less';
@@ -327,7 +328,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 	return (
 		<div className={styles.chat_root}>
 			<div ref={chatContainerRef} className={`${styles.chat_container}`}>
-				<AIChatSummary historyMsg={allMessages} onSummaryComplete={setSummary} />
+				{props.summarySlot ? createPortal(<AIChatSummary historyMsg={allMessages} onSummaryComplete={setSummary} />, props.summarySlot) : null}
 				{summary && (
 					<div className={`${styles.summary_display}`}>
 						<h4>AI 总结</h4>

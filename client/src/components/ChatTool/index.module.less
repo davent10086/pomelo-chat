@@ -109,7 +109,7 @@
 
 		textarea:focus-visible {
 			outline: none;
-			background-color: #fff;
+			background-color: #FFFFFF;
 			box-shadow: inset 0 1px 0 fade(#000, 4%);
 		}
 
@@ -258,14 +258,25 @@
 
 @media (min-width: 701px) {
 .chat_tool {
- position: relative; border: 0; border-top: 1px solid #dfe5e8; border-radius: 0; background: #fff;
+ position: relative; border: 0; border-top: 1px solid #E2E9F1; border-radius: 0; background: #FFFFFF;
  .chat_tool_input { order: 0; flex: 1; padding: 14px 20px 8px; background: transparent; textarea { background: transparent; font-size: 14px; } }
  .chat_tool_item { order: 1; flex: 0 0 36px; padding: 0 90px 12px 20px; align-items: center;
   .leftIcons button { margin-right: 18px; color: #666; } .rightIcons button { margin-left: 14px; color: #666; }
  }
- .chat_tool_btn { position: absolute; right: 16px; bottom: 12px; padding: 0; height: 26px;
-  :global(.ant-btn) { height: 26px; min-width: 48px; border-radius: 5px; background: #55bd72; box-shadow: none; }
+ .chat_tool_btn { position: absolute; right: 16px; bottom: 12px; padding: 0; height: 34px;
+  :global(.ant-btn) { height: 26px; min-width: 68px; border-radius: 9px; background: #3390EC; box-shadow: none; }
  }
- .suggestionBox { position: absolute; bottom: 42px; left: 10px; width: calc(100% - 20px); padding: 12px; z-index: 5; margin: 0; }
+ .suggestionBox { position: absolute; bottom: 52px; left: 10px; width: calc(100% - 20px); padding: 12px; z-index: 5; margin: 0; }
 }
+}
+
+.chat_tool .chat_tool_item .toolIcon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; margin: 0 6px 0 0; border-radius: 8px; color: #60738A; font-size: 19px; background: transparent; line-height: 1; &:hover { color: #3390EC; background: #E8F3FF; } &:focus-visible { outline: 2px solid #3390EC; outline-offset: 2px; } }
+
+@media (min-width: 701px) {
+ .chat_tool { border: 1px solid #E5ECF4; border-radius: 16px; background: #FFFFFF;
+  &:focus-within { border-color: #A7CDF5; }
+  .chat_tool_input { padding: 12px 16px 4px; }
+  .chat_tool_item { padding-left: 12px; padding-bottom: 10px; }
+  .chat_tool_btn { right: 12px; bottom: 10px; height: 34px; :global(.ant-btn) { height: 34px; border-radius: 11px; } }
+ }
 }

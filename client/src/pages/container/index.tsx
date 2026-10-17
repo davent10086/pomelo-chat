@@ -1,3 +1,4 @@
+import { MessageOutlined, ContactsOutlined, FolderOutlined, LogoutOutlined } from '@ant-design/icons';
 import { Tooltip, Button, Popover } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +24,8 @@ import { handleLogout } from '@/utils/logout';
 import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
 import { safeParse } from '@/utils/safe-parse';
 import ReconnectingWebSocket from '@/utils/websocket';
+
+const navigationIcons = { 'icon-message': <MessageOutlined />, 'icon-24px': <ContactsOutlined />, 'icon-wenjian': <FolderOutlined />, 'icon-tuichudenglu': <LogoutOutlined /> };
 
 const Container = () => {
 	const showMessage = useShowMessage();
@@ -210,7 +213,8 @@ const Container = () => {
 								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
 									<button
 										type="button"
-										className={`iconfont ${item.icon}`}
+										className={currentIcon === item.icon ? styles.navSelected : undefined}
+										aria-current={currentIcon === item.icon ? "page" : undefined}
 										aria-label={item.text}
 										onClick={() => {
 											if (item.text === '聊天' || item.text === '通讯录') {
@@ -219,9 +223,9 @@ const Container = () => {
 											}
 										}}
 										style={{
-											color: currentIcon === item.icon ? '#07c160' : '#979797'
+											color: currentIcon === item.icon ? '#3390EC' : '#697C93'
 										}}
-									></button>
+									>{navigationIcons[item.icon as keyof typeof navigationIcons]}</button>
 								</Tooltip>
 							))}
 						</ul>
@@ -230,16 +234,17 @@ const Container = () => {
 								<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
 									<button
 										type="button"
-										className={`iconfont ${item.icon}`}
+										className={currentIcon === item.icon ? styles.navSelected : undefined}
+										aria-current={currentIcon === item.icon ? "page" : undefined}
 										aria-label={item.text}
 										onClick={() => {
 											setCurrentIcon(item.icon);
 											confirmLogout();
 										}}
 										style={{
-											color: currentIcon === item.icon ? '#07c160' : '#979797'
+											color: currentIcon === item.icon ? '#3390EC' : '#697C93'
 										}}
-									></button>
+									>{navigationIcons[item.icon as keyof typeof navigationIcons]}</button>
 								</Tooltip>
 							))}
 						</ul>

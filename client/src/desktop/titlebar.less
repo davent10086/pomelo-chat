@@ -6,10 +6,15 @@
 .desktop-titlebar {
 	position: fixed; inset: 0 0 auto; height: 32px; z-index: 1000;
 	display: flex; align-items: center; justify-content: space-between;
-	background: #e6e5e8; color: #737373; font-size: 12px; padding-left: 16px;
+	background: #E9EFF5; color: #737373; font-size: 12px; padding-left: 16px;
 	-webkit-app-region: drag; user-select: none;
 	div { height: 100%; display: flex; -webkit-app-region: no-drag; }
 	button { border: 0; background: transparent; color: #666; width: 44px; font-size: 19px; cursor: pointer; }
-	button:hover { background: #d8d7da; }
+	button:hover { background: #E5EADF; }
 	.desktop-close:hover { background: #e55151; color: white; }
 }
+
+// Clip all desktop surfaces together so corners reveal the desktop, not a backing color.
+html.desktop-main-surface, .desktop-main-surface body { background: transparent !important; }
+.desktop-main-surface #root { background: #FFFFFF; border-radius: 18px 18px 0 18px; clip-path: inset(0 round 18px 18px 0 18px); }
+.desktop-titlebar { border-radius: 18px 18px 0 0; overflow: hidden; }

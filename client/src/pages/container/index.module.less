@@ -21,7 +21,7 @@
 
 	.leftContainer {
 		flex: 0 0 60px;
-		background-color: #e7ece9; // 窄侧边栏用 #EDEDED，贴近微信
+		background-color: #E9EFF5; // 窄侧边栏用 #EDEDED，贴近微信
 		display: flex;
 		align-items: center;
 		flex-direction: column;
@@ -172,3 +172,7 @@
         .rightContainer { flex: 1; }
     }
 }
+
+.container .leftContainer .iconList ul button { display: flex; align-items: center; justify-content: center; margin: 6px 0; border-radius: 13px; font-size: 21px; transition: background 120ms, color 120ms; }
+.container .leftContainer .iconList ul button.navSelected { background: #DCEEFF; color: #3390EC; }
+.container .leftContainer .iconList ul button:focus-visible { outline: 2px solid #3390EC; outline-offset: 2px; }

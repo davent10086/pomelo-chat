@@ -1,3 +1,4 @@
+import { SmileOutlined, PictureOutlined, FolderOutlined, PhoneOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { Button, Spin, Tooltip } from 'antd';
 import React, { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -17,6 +18,8 @@ import { getFileSuffixByName } from '@/utils/File';
 import { uploadFile } from '@/utils/file-upload';
 import { useReplySuggestions } from '@/hooks/useReplySuggestions';
 import { userStorage } from '@/utils/storage';
+
+const toolIcons: Record<string, React.ReactNode> = { 'icon-biaoqing': <SmileOutlined />, 'icon-tupian_huaban': <PictureOutlined />, 'icon-wenjian1': <FolderOutlined />, 'icon-dianhua': <PhoneOutlined />, 'icon-video': <VideoCameraOutlined /> };
 
 const ChatTool = (props: IChatToolProps) => {
 	const { curChatInfo, sendMessage, recentMessages = [], userProfile, externalInsertText } = props;
@@ -283,14 +286,14 @@ const ChatTool = (props: IChatToolProps) => {
 						>
 							<button
 								type="button"
-								className={`iconfont ${item.icon}`}
+								className={styles.toolIcon}
 								aria-label={item.text}
 								onClick={() => {
 									if (item.icon !== 'icon-biaoqing') {
 										handleIconClick(item.icon);
 									}
 								}}
-							></button>
+							>{toolIcons[item.icon]}</button>
 						</Tooltip>
 					))}
 				</ul>
@@ -299,10 +302,10 @@ const ChatTool = (props: IChatToolProps) => {
 						<Tooltip key={item.text} placement="bottomLeft" title={item.text} arrow={false}>
 							<button
 								type="button"
-								className={`iconfont ${item.icon}`}
+								className={styles.toolIcon}
 								aria-label={item.text}
 								onClick={() => handleIconClick(item.icon)}
-							></button>
+							>{toolIcons[item.icon]}</button>
 						</Tooltip>
 					))}
 				</ul>

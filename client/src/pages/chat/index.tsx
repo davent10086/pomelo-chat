@@ -31,6 +31,7 @@ const isGroupChat = (item: IMessageListItem) => !item.receiver_username;
 // M4: forwardRef 濠电姷鏁搁崑娑⑺囬幍顔剧煓闁硅揪闄勯崐鐢告煟閹达絾顥夌紒鈧畝鍕厸鐎广儱娲﹂弳鈺冪磼閳ь剚绻呯弧绛?缂傚倸鍊风欢锟犲磻婢舵劦鏁嬬憸鏃堝箖濡ゅ懏鐓ラ悗锝庡厴閺?IChatRef
 const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const { initSelectedChat } = props;
+	const [summarySlot, setSummarySlot] = useState<HTMLDivElement | null>(null);
 	// H11: userStorage.getItem() 闂佽姘﹂～澶愭偤閺囩姳鐒婃い蹇撴瀹曟煡鏌熸潏鍓х暠闁绘劕锕弻锝夊箛椤掍讲鏋欓梺鎼炲€楁繛鈧柟?
 	const user = userStorage.getItem();
 	const showMessage = useShowMessage();
@@ -199,6 +200,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									会话列表
 								</button>
 								<span className={styles.receiverName}>{curChatInfo.name}</span>
+								<div className={styles.headerSummary} ref={setSummarySlot} />
 								{!isAssistantListItem(curChatInfo) && (
 									<button type="button" className={styles.searchToggle} aria-label="搜索聊天记录" title="搜索聊天记录" onClick={normal.toggleSearch}>
 										<SearchOutlined />
@@ -248,6 +250,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											</div>
 										)}
 										<ChatContainer
+											summarySlot={summarySlot}
 											key={`${curChatInfo.room}:${normal.locating ? 'history' : 'live'}`}
 											onRetry={normal.retry}
 											onCancelRetry={normal.cancel}

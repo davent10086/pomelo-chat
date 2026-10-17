@@ -11,9 +11,9 @@
 	padding: 48px 20px;
 	isolation: isolate;
 	background:
-		radial-gradient(ellipse at 12% 20%, #dcefe4 0%, transparent 48%),
-		radial-gradient(ellipse at 90% 85%, #e2eee9 0%, transparent 45%),
-		linear-gradient(145deg, #f3f7f5, #fafbfa 55%, #f0f5f3);
+		radial-gradient(ellipse at 12% 20%, #E8F3FF 0%, transparent 48%),
+		radial-gradient(ellipse at 90% 85%, #F4F7FB 0%, transparent 45%),
+		linear-gradient(145deg, #FFFFFF, #FFFFFF 55%, #F4F7FB);
 	&::before, &::after {
 		content: ''; position: absolute; pointer-events: none; z-index: -1;
 		width: min(32vw, 380px); aspect-ratio: 1; border-radius: 28%;
@@ -31,25 +31,25 @@
 	border: 1px solid #ffffff;
 	border-radius: 18px;
 	background: #ffffffeb;
-	box-shadow: 0 16px 60px #274a3810, 0 2px 8px #274a3806;
+	box-shadow: 0 16px 60px #203c6010, 0 2px 8px #203c6006;
 	backdrop-filter: blur(12px);
-	color: #35443c;
-	.text { text-align: center; margin-bottom: 28px; color: #283d31; text-shadow: none;
+	color: #202C3C;
+	.text { text-align: center; margin-bottom: 28px; color: #202C3C; text-shadow: none;
 		h2 { font-size: 26px; font-weight: 600; line-height: 1.4; }
 	}
 	form { width: 100%; display: flex; flex-direction: column;
 		:global(.ant-form-item) { width: 100%; margin-bottom: 20px; }
-		:global(.ant-input) { height: 42px; padding: 8px 12px; border: 1px solid #e2e8e4; border-radius: 7px; background: #fafcfb; font-size: 14px; color: #35443c; }
-		:global(.ant-input):hover { border-color: #99cbaa; }
-		:global(.ant-input):focus { border-color: #07c160; box-shadow: 0 0 0 2px #07c16012; }
-		.login_tools { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #718077;
-			.remenberTool :global(.ant-checkbox-wrapper) { color: #718077; font-size: 13px; }
-			.forgetpasTool { cursor: pointer; &:hover { color: #07a950; } }
+		:global(.ant-input) { height: 42px; padding: 8px 12px; border: 1px solid #E2E9F1; border-radius: 7px; background: #FFFFFF; font-size: 14px; color: #202C3C; }
+		:global(.ant-input):hover { border-color: #3390EC; }
+		:global(.ant-input):focus { border-color: #3390EC; box-shadow: 0 0 0 2px #3390ec12; }
+		.login_tools { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #8090A3;
+			.remenberTool :global(.ant-checkbox-wrapper) { color: #8090A3; font-size: 13px; }
+			.forgetpasTool { cursor: pointer; &:hover { color: #2378CE; } }
 		}
-		.login_button, .register_button { width: 100%; height: 42px; border-radius: 7px; background: #07b85a; box-shadow: none; letter-spacing: 2px; text-indent: 2px; font-size: 15px;
-			&:hover { background: #06a651 !important; }
+		.login_button, .register_button { width: 100%; height: 42px; border-radius: 7px; background: #3390EC; box-shadow: none; letter-spacing: 2px; text-indent: 2px; font-size: 15px;
+			&:hover { background: #2378CE !important; }
 		}
 	}
-	.link { text-align: center; margin-top: 4px; font-size: 13px; a { color: #459366; &:hover { color: #07a950; } } }
+	.link { text-align: center; margin-top: 4px; font-size: 13px; a { color: #3390EC; &:hover { color: #2378CE; } } }
 	@media (max-width: 600px) { padding: 28px 22px 24px; border-radius: 14px; }
 }

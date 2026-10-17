@@ -1,7 +1,7 @@
 @import '@/assets/styles/variables.less';
 
 .receiverName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.searchToggle { background: transparent; color: #666; font-size: 18px; width: 32px; height: 32px; cursor: pointer; border-radius: 5px; &:hover { background: #eaeaea; } }
+.searchToggle { background: transparent; color: #666; font-size: 18px; width: 32px; height: 32px; cursor: pointer; border-radius: 5px; &:hover { background: #E8F3FF; } }
 .chat_unread span { background: #ed5b58; color: white; border-radius: 10px; min-width: 16px; height: 16px; font-size: 10px; text-align: center; line-height: 16px; padding: 0 4px; margin-top: 6px; }
 
 .chatList {
@@ -498,9 +498,9 @@
 	}
 
 	.traceStatus_planned {
-		border-color: fade(#576b95, 30%);
-		background: fade(#576b95, 8%);
-		color: #576b95;
+		border-color: fade(#3390EC, 30%);
+		background: fade(#3390EC, 8%);
+		color: #3390EC;
 	}
 }
 
@@ -625,29 +625,45 @@
 
 @media (min-width: 701px) {
 .chatList {
- .leftContainer { flex: 0 0 250px; min-width: 250px; background: #f5f6f7; border-right: 1px solid #e8e8e8;
+ .leftContainer { flex: 0 0 250px; min-width: 250px; background: #FFFFFF; border-right: 1px solid #E2E9F1;
   .search { height: 56px; flex-shrink: 0; }
-  .list .chat_item { min-height: 72px; height: 72px; padding: 0 14px; border-bottom: 1px solid #eceff1; position: relative;
+  .list .chat_item { min-height: 72px; height: 72px; padding: 0 14px; border-bottom: 1px solid #E9EEF5; position: relative;
    .chat_avatar { flex: 0 0 40px; img { width: 40px; height: 40px; border-radius: 5px; } }
    .chat_info { flex: 1; min-width: 0; padding: 0 6px 0 10px;
     .chat_name { font-size: 14px; padding-right: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .chat_message { margin-top: 3px; color: #929299; }
+    .chat_message { margin-top: 3px; color: #8090A3; }
    }
    .chat_info_time { position: absolute; right: 10px; top: 10px; padding: 0; align-items: flex-end;
-    .chat_time { font-size: 10px; color: #96969c; max-width: 42px; }
+    .chat_time { font-size: 12px; color: #8090A3; max-width: 42px; }
    }
   }
   .list .assistant_item { background: transparent; .chat_name::after { display: none; } }
-  .list .selectedChat { background: #e3eee7; box-shadow: inset 3px 0 #07b85a; }
-  .list .chat_item:hover { background: #edf0f2; }
+  .list .selectedChat { background: #E8F3FF; box-shadow: inset 3px 0 #3390EC; }
+  .list .chat_item:hover { background: #E8F3FF; }
  }
- .rightContainer { background: #f0f2f4;
+ .rightContainer { background: #F4F7FB;
   .chat_window {
-   .chat_receiver { height: 56px; flex-basis: 56px; font-size: 16px; font-weight: 600; background: #fff; border-bottom: 1px solid #e2e6e9; }
+   .chat_receiver { height: 56px; flex-basis: 56px; font-size: 16px; font-weight: 600; background: #FFFFFF; border-bottom: 1px solid #E2E9F1; }
    .chat_body { border-top: 0; }
    .chat_content { border-bottom: 0; padding-top: 16px; }
-   .chat_input { flex-basis: 160px; background: #fff; padding: 0; }
+   .chat_input { flex-basis: 136px; background: #FFFFFF; padding: 0; }
   }
  }
 }
+}
+
+.headerSummary { flex-shrink: 0; margin-right: 10px; :global(.ant-btn) { height: 32px; border-radius: 8px; font-size: 13px; box-shadow: none; } }
+@media (max-width: 700px) { .headerSummary { margin-right: 4px; :global(.ant-btn) { padding-inline: 8px; } } }
+
+// Softer conversation rows and an inset composer, without changing the column layout.
+.chatList .leftContainer .list {
+ .chat_item { width: calc(100% - 16px); margin: 3px 8px; border-bottom: 0; border-radius: 12px; }
+ .selectedChat { box-shadow: none; background: #E8F3FF; }
+ .chat_item:hover { background: #F0F6FD; }
+ .selectedChat:hover { background: #E8F3FF; }
+}
+@media (min-width: 701px) {
+ .chatList .rightContainer .chat_window .chat_input { background: #F4F7FB; padding: 0 16px 12px; flex-basis: 148px; }
+ .chatList .leftContainer .list .chat_item { padding: 0 10px; }
+ .chatList .leftContainer .list .chat_item .chat_avatar img { border-radius: 11px; }
 }

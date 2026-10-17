@@ -16,7 +16,16 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 			theme={{
 				token: {
 					fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
-					colorPrimary: '#07C160'
+					colorPrimary: '#3390EC',
+					colorInfo: '#3390EC',
+					colorSuccess: '#389E64',
+					colorText: '#202C3C',
+					colorTextSecondary: '#8090A3',
+					colorBgContainer: '#FFFFFF',
+					colorBgElevated: '#FFFFFF',
+					colorBgLayout: '#F4F7FB',
+					colorBorder: '#E2E9F1',
+					colorBorderSecondary: '#E9EEF5'
 				}
 			}}
 			locale={zhCN}

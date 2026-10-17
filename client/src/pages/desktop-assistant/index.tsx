@@ -92,11 +92,12 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 			<span title={associated ? chat?.name : undefined}>{associated ? chat ? `当前：${chat.name}` : '请在主窗口选择聊天' : '独立对话'}</span>
 		</div>
 		<div className="assistant-shortcuts">
+			{(!associated || !chat) && <span className="assistant-shortcut-hint">{!associated ? "关联聊天后使用" : "请先选择聊天"}</span>}
 			<button disabled={!associated || !chat || busy} onClick={() => void send('请总结当前聊天的重点。')}>总结聊天</button>
 			<button disabled={!associated || !chat || busy} onClick={() => void send('根据当前聊天，给我几个合适的回复建议，仅提供建议。')}>回复建议</button>
 		</div>
 		<div className={`assistant-messages ${!messages.length ? 'is-empty' : ''}`} ref={list} aria-live="polite" aria-relevant="additions">
-			{!messages.length && <div className="assistant-welcome"><img src="/ai-assistant.svg" alt="" /><h2>有什么可以帮你？</h2><p>聊个想法，或关联当前聊天<br />一起整理重点和回复思路。</p></div>}
+			{!messages.length && <div className="assistant-welcome"><img src="/ai-assistant.svg" alt="" /><h2>有什么可以帮你？</h2><p>聊个想法，或关联当前聊天<br />一起整理重点和回复思路。</p><div className="assistant-starters">{["帮我润色一句话", "帮我梳理一个想法"].map(prompt => <button type="button" key={prompt} onClick={() => { setInput(prompt + "："); requestAnimationFrame(() => list.current?.parentElement?.querySelector<HTMLTextAreaElement>("textarea")?.focus()); }}>{prompt}<span aria-hidden="true">↗</span></button>)}</div></div>}
 			{messages.map(message => <article key={message.id} className={`assistant-message ${message.role}`}>
 				<div className="message-source">{message.role === 'assistant' ? 'AI 助手' : '你'} · {message.source}</div>
 				<div className="message-text">{message.text || <span className="thinking" aria-label="正在思考"><i /><i /><i /></span>}</div>
@@ -110,7 +111,7 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 				onChange={event => setInput(event.target.value)} onKeyDown={event => {
 					if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); }
 				}} />
-			<div><span role="status">{notice || (busy ? '正在生成…' : 'Enter 发送 · Shift + Enter 换行')}</span>
+			<div><span role="status">{notice || (busy ? '正在生成…' : 'Enter 发送 · Shift 换行')}</span>
 				{busy ? <button key="stop" type="button" onClick={event => { event.preventDefault(); active.current?.abort(); }}>停止</button>
 					: <button key="send" type="submit" disabled={!input.trim()}>发送</button>}
 			</div>
@@ -227,7 +228,7 @@ export default function DesktopAssistant() {
 		</div>}
 		<div className="assistant-panel" ref={panel} aria-hidden={!expanded} style={{ visibility: expanded ? 'visible' : 'hidden' }}>
 			<header onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-				<div><img src="/ai-assistant.svg" alt="" draggable={false} /><span>Pomelo AI<small>你的聊天助手</small></span></div>
+				<div><img src="/ai-assistant.svg" alt="" draggable={false} /><span>Pomelo AI</span></div>
 				<button aria-label="折叠 AI 助手" title="折叠" onClick={toggle}>›</button>
 			</header>
 			{windowError && <div role="alert" className="assistant-window-error">{windowError}</div>}
