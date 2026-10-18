@@ -14,6 +14,8 @@ process.env.REDIS_KEY_PREFIX = `system-test:${Date.now()}:${process.pid}:`;
 process.env.JWT_SECRET = 'isolated-system-regression-secret';
 process.env.REQUEST_LOGS = 'false';
 process.env.DEEPSEEK_API_KEY = '';
+process.env.AI_API_KEY = '';
+process.env.DASHSCOPE_API_KEY = '';
 // This suite stresses protocol/transaction behavior; admission defaults are tested separately.
 for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
 	process.env[name] = '10000';

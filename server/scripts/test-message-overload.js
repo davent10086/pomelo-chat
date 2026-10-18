@@ -11,6 +11,8 @@ process.env.JWT_SECRET = 'isolated-overload-regression';
 process.env.METRICS_TOKEN = 'isolated-overload-metrics';
 process.env.REQUEST_LOGS = 'false';
 process.env.DEEPSEEK_API_KEY = '';
+process.env.AI_API_KEY = '';
+process.env.DASHSCOPE_API_KEY = '';
 process.env.API_RATE_LIMIT_MAX = '240';
 require('ts-node/register/transpile-only');
 const WS = require('ws');

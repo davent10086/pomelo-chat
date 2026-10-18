@@ -7,7 +7,7 @@ if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST)
 export default defineConfig({
   testDir: "./qa/playwright",
   outputDir: "./test-results/browser",
-  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", "message-overload.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
+  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", "message-overload.e2e.spec.ts", "assistant-message-send.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
   workers: 1,
   timeout: 30000,
   use: {
@@ -34,6 +34,8 @@ export default defineConfig({
         ...(process.env.UPLOAD_ROOT ? { UPLOAD_ROOT: process.env.UPLOAD_ROOT } : {}),
         JWT_SECRET: "browser-regression-secret",
         METRICS_TOKEN: "browser-metrics-test",
+        AI_API_KEY: "",
+        DASHSCOPE_API_KEY: "",
         DEEPSEEK_API_KEY: "",
         REQUEST_LOGS: "false",
         // Functional fixtures share one IP; production keeps its default limit.

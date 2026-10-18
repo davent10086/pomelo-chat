@@ -13,6 +13,7 @@ export default () => {
 	router.post('/agent/tools/call', authenticateToken, assistant.callAgentTool);
 	router.post('/agent/task-candidates', authenticateToken, assistant.taskCandidates);
 	router.post('/actions/confirm', authenticateToken, assistant.confirmAction);
+	router.post('/actions/message-draft', authenticateToken, assistant.prepareMessage);
 	router.post('/actions/cancel', authenticateToken, assistant.cancelAction);
 	router.get('/actions/:id', authenticateToken, assistant.getActionStatus);
 	router.get('/tasks', authenticateToken, assistant.listTasks);

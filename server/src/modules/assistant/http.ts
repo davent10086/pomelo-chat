@@ -4,6 +4,9 @@ import type { Actor } from '../../shared/actor';
 export const createHttpHandlers = (
 	application: typeof import('./actions') & typeof import('./agent-application')
 ) => ({
+	prepareMessage: async (req: Request, res: Response): Promise<void> => {
+		respond(res, await application.prepareMessage(req.user as Actor, req.body || {}));
+	},
 	confirmAction: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.confirmAction(req.user as Actor, req.body || {}));
 	},

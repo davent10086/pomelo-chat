@@ -94,7 +94,11 @@ export function useAssistantSession(
 			error: '取消结果尚不确定，请查询操作状态'
 		});
 
-	const sendAssistantMessage = async (message: ISendMessage, curChatInfo: IMessageListItem) => {
+	const sendAssistantMessage = async (
+		message: ISendMessage,
+		curChatInfo: IMessageListItem,
+		onAccepted?: () => void
+	) => {
 		if (agentStreaming || activeAgentStream.current) throw new Error('回答正在生成');
 
 		const userMsg: IMessageItem = {
@@ -118,6 +122,7 @@ export function useAssistantSession(
 		streamAbort.current?.abort();
 		streamAbort.current = new AbortController();
 		activeAgentStream.current = streamId;
+		onAccepted?.();
 		let hasTextDelta = false;
 		const aiMsg: IMessageItem = {
 			clientMsgId: streamId,
@@ -166,7 +171,8 @@ export function useAssistantSession(
 		if (activeAgentStream.current === streamId) {
 			setAgentResult(reply);
 			setAgentStreaming(false);
-			if (reply.actions?.some(action => action.requiresConfirmation)) setPanelOpen(true);
+			if (reply.draftMessage || reply.actions?.some(action => action.requiresConfirmation))
+				setPanelOpen(true);
 		}
 		setMessages(prev =>
 			prev.map(item => (item.clientMsgId === streamId ? { ...item, content: replyText } : item))

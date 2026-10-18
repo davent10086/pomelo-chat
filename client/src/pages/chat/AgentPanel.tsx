@@ -2,6 +2,7 @@ import { Button, Empty, Switch, Tabs } from 'antd';
 
 import styles from './index.module.less';
 import { ActionControls, actionStatusLabels } from './ActionControls';
+import MessageDraft from './MessageDraft';
 import type {
 	AgentAction,
 	AgentEvent,
@@ -174,17 +175,12 @@ const AgentPanel = ({
 									</div>
 								)}
 
-								{hasDraft && (
-									<div className={styles.agentSection}>
-										<div className={styles.agentTitle}>消息草稿</div>
-										<button
-											type="button"
-											className={styles.agentDraft}
-											onClick={() => onInsertText(result!.draftMessage)}
-										>
-											{result!.draftMessage}
-										</button>
-									</div>
+								{hasDraft && !streaming && (
+									<MessageDraft
+										key={result!.draftMessage}
+										draft={result!.draftMessage!}
+										conversations={conversations}
+									/>
 								)}
 
 								{(streaming ||

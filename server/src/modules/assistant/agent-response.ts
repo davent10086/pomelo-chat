@@ -44,7 +44,7 @@ export const parseAgentInvocation = (value: unknown): AgentInvocation => {
 					_getType:
 						typeof getType === 'function'
 							? () => {
-									const type = getType();
+									const type = getType.call(message);
 									return typeof type === 'string' ? type : '';
 								}
 							: undefined,
@@ -78,7 +78,12 @@ export const AgentResponseSchema = z.object({
 		.array(z.string())
 		.default([])
 		.describe('可点击填入输入框的回复建议，最多 5 条'),
-	draftMessage: z.string().optional().describe('可选消息草稿，不自动发送'),
+	draftMessage: z
+		.string()
+		.optional()
+		.describe(
+			'用户要求代写或发送消息时填写给收件人的正文，不含确认说明和 Markdown 包装；用户指定精确内容时原样保留。此字段只生成草稿，不自动发送'
+		),
 	memorySuggestion: memorySaveSchema
 		.optional()
 		.describe('仅当用户明确要求记住时，提出待确认的记忆内容，不写入')

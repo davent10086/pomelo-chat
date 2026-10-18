@@ -73,7 +73,7 @@ export async function startChatBackend(root) {
       cwd: serverRoot,
       env: { ...env, NODE_ENV: 'test', PORT: String(port), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix, UPLOAD_ROOT: uploadRoot,
         ...(redisTarget ? { REDIS_URL: redisTarget } : {}), JWT_SECRET: randomUUID(), TS_NODE_FILES: 'true', REQUEST_LOGS: 'false',
-        DEEPSEEK_API_KEY: '', MCP_SERVERS_JSON: '[]', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
+        AI_API_KEY: '', DASHSCOPE_API_KEY: '', DEEPSEEK_API_KEY: '', MCP_SERVERS_JSON: '[]', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
       stdio: ['ignore', 'pipe', 'pipe']
     });
     child.stdout.on('data', data => { if (data.toString().includes('Server listening')) readyResolve(); });

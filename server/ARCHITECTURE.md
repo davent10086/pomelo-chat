@@ -62,6 +62,13 @@ Delivery remains at least once; clients merge by message ID. Socket session chec
 active, and slow sockets reconnect and recover persisted history. The main Agent still uses
 parallel deterministic preprocessing, with writes requiring explicit user confirmation.
 
+Independent AI conversations expose draft text without guessing a recipient. The user selects
+an existing private/group conversation and reviews the message. POST /assistant/actions/message-draft
+resolves that exact room inside the actor's memberships and persists an immutable send_message
+proposal with server-derived recipient metadata. Confirmation uses the existing action state
+machine and revalidates membership at execution. Editing the recipient or text invalidates the
+client's old review card; uncertain execution stays locked until its status is queried.
+
 ## Entry points and checks
 
 The old `service`, `utils` and `model/db` facades have been removed. Production code, scripts

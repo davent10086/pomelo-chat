@@ -57,8 +57,8 @@ const assertBusinessSuccess = (label, result) => {
 	console.log(`[agent-test] API: ${apiBase}`);
 	console.log(`[agent-test] User: ${username}`);
 
-	if (!process.env.DEEPSEEK_API_KEY) {
-		throw new Error('DEEPSEEK_API_KEY is missing. Put it in server/.env first.');
+	if (!(process.env.AI_API_KEY || process.env.DASHSCOPE_API_KEY || process.env.DEEPSEEK_API_KEY)) {
+		throw new Error('AI_API_KEY is missing. Configure it in server/.env first.');
 	}
 
 	const register = await post('/auth/register', {

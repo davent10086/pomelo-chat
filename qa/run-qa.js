@@ -29,6 +29,11 @@ const env = {
   QA_WS_BASE: 'ws://127.0.0.1:3100/api/chat/v1'
 };
 // Bulk protocol fixtures; production admission defaults have a dedicated real-service test.
+if (process.env.QA_RUN_LIVE_AI !== 'true') {
+  env.AI_API_KEY = '';
+  env.DASHSCOPE_API_KEY = '';
+  env.DEEPSEEK_API_KEY = '';
+}
 for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
   env[name] = '10000';
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {

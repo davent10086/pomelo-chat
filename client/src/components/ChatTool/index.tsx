@@ -144,6 +144,13 @@ const ChatTool = (props: IChatToolProps) => {
 	const handleSendTextMessage = async () => {
 		if (!inputValue.trim() || loading) return;
 		const sentText = inputValue;
+		let accepted = false;
+		const onAccepted = () => {
+			if (accepted) return;
+			accepted = true;
+			clearSent(sentText);
+			cancelSuggestions();
+		};
 		try {
 			const newmessage: ISendMessage = {
 				sender_id: user.id,
@@ -152,8 +159,8 @@ const ChatTool = (props: IChatToolProps) => {
 				content: inputValue,
 				avatar: user.avatar
 			};
-			await sendMessage(newmessage);
-			clearSent(sentText);
+			await sendMessage(newmessage, onAccepted);
+			if (!accepted) onAccepted();
 		} catch {
 			showMessage('error', '消息发送失败，请重试');
 		}

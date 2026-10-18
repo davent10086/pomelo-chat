@@ -1,11 +1,13 @@
 import { ChatOpenAI } from '@langchain/openai';
 
-export const API_BASE = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(
-	/\/v1\/?$/,
-	''
-);
-export const API_KEY = process.env.DEEPSEEK_API_KEY || '';
-export const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+export const API_BASE = (
+	process.env.AI_BASE_URL ||
+	process.env.DEEPSEEK_BASE_URL ||
+	'https://dashscope.aliyuncs.com/compatible-mode/v1'
+).replace(/\/v1\/?$/, '');
+export const API_KEY =
+	process.env.AI_API_KEY || process.env.DASHSCOPE_API_KEY || process.env.DEEPSEEK_API_KEY || '';
+export const MODEL = process.env.AI_MODEL || process.env.DEEPSEEK_MODEL || 'qwen-plus';
 export const UPSTREAM_TIMEOUT_MS = 30000;
 
 export const createAssistantModel = (options: { temperature: number; maxRetries?: number }) =>

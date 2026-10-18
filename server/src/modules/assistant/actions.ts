@@ -21,6 +21,8 @@ import { randomUUID } from 'crypto';
 import { better_chat } from '../../infrastructure/redis';
 import { CommonStatus } from '../../shared/status';
 import { sendConfirmedTextMessage } from '../messaging/public';
+import { MAX_MESSAGE_LENGTH } from '../messaging/contracts';
+import { resolveMessageRecipient } from '../social/public';
 import { externalMcpManager } from './adapters/external-mcp';
 import { executePomeloTool } from './tools/pomelo-tools';
 import { memorySaveSchema, memoryForgetSchema } from './tools/memory-contracts';
@@ -28,6 +30,34 @@ import { memorySaveSchema, memoryForgetSchema } from './tools/memory-contracts';
 const ACTION_TTL_SECONDS = 10 * 60;
 const actionPrefix = 'assistant:pending-action:';
 const resultPrefix = 'assistant:action-result:';
+
+export const prepareMessage = async (
+	actor: Actor,
+	input: { room?: unknown; chatType?: unknown; content?: unknown }
+): Promise<Outcome> => {
+	const { room, chatType, content } = input;
+	if (
+		typeof room !== 'string' ||
+		!room ||
+		room.length > 128 ||
+		(chatType !== 'private' && chatType !== 'group') ||
+		typeof content !== 'string' ||
+		!content.trim() ||
+		content.length > MAX_MESSAGE_LENGTH
+	)
+		return failure(CommonStatus.PARAM_ERR);
+	try {
+		const target = await resolveMessageRecipient(Number(actor.id), room, chatType);
+		if (!target) return failure(CommonStatus.NOT_FOUND);
+		const action = await createPendingAction(Number(actor.id), 'send_message', {
+			...target,
+			content: content.trim()
+		});
+		return success({ action });
+	} catch {
+		return failure(CommonStatus.SERVER_ERR);
+	}
+};
 
 export type PendingActionType =
 	'create_tasks' | 'send_message' | 'external_mcp' | 'save_memory' | 'forget_memory';

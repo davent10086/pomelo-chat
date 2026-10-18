@@ -667,3 +667,22 @@
  .chatList .leftContainer .list .chat_item { padding: 0 10px; }
  .chatList .leftContainer .list .chat_item .chat_avatar img { border-radius: 11px; }
 }
+.messageDraftForm {
+	label {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	textarea, select {
+		box-sizing: border-box;
+		width: 100%;
+		max-width: 100%;
+		padding: 6px 8px;
+		border: 1px solid @primary-border_bg-color;
+		border-radius: 6px;
+		font: inherit;
+		color: @font-color;
+		background: white;
+	}
+	textarea { resize: vertical; }
+}

@@ -5,6 +5,17 @@ const Module = require('node:module');
 require('ts-node/register/transpile-only');
 
 process.env.DEEPSEEK_API_KEY = 'test-key';
+process.env.AI_API_KEY = 'test-key';
+process.env.AI_BASE_URL = 'https://model-test.invalid/compatible-mode/v1';
+process.env.AI_MODEL = 'qwen-plus';
+const { AIMessage, ToolMessage } = require('@langchain/core/messages');
+const { parseAgentInvocation } = require('../src/modules/assistant/agent-response');
+const actualMessages = parseAgentInvocation({ messages: [
+	new AIMessage('真实消息类型'),
+	new ToolMessage({ content: '工具结果', tool_call_id: 'test-call', name: 'test-tool' })
+] }).messages;
+assert.deepEqual(actualMessages.map(message => message._getType()), ['ai', 'tool']);
+assert.deepEqual(actualMessages.map(message => message.content), ['真实消息类型', '工具结果']);
 const modelConfigs = [];
 let externalToolLoads = 0;
 let actionProposals = 0;
@@ -29,7 +40,7 @@ Module._load = function (request, parent, isMain) {
 				toolCalls: (async function* () {
 					yield { name: 'get_recent_messages', callId: 'call-1', status: Promise.resolve('finished'), output: Promise.resolve({ messages: [] }) };
 				})(),
-				output: Promise.resolve({ messages: [{ _getType: () => 'ai', content: '最终答案' }] })
+				output: Promise.resolve({ messages: [new AIMessage('最终答案')] })
 			})
 		}); }
 	};
@@ -96,6 +107,9 @@ agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnab
 		assert.equal(memoryReads, 0);
 		assert.equal(metadataExtractions, 1, 'read-only streaming makes no extra metadata request');
 		assert.equal(modelOptions[0].temperature, 0.3);
+        assert.equal(modelOptions[0].model, 'qwen-plus');
+        assert.equal(modelOptions[0].apiKey, 'test-key');
+        assert.equal(modelOptions[0].configuration.baseURL, 'https://model-test.invalid/compatible-mode/v1');
         assert.equal(modelOptions[0].maxRetries, 1);
         const { createAssistantModel } = require('../src/modules/assistant/model');
         createAssistantModel({ temperature: 0 });

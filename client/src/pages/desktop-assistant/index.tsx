@@ -4,11 +4,14 @@ import type { IMessageItem } from '@/components/MessageShow/type';
 import type { DesktopAuth, DesktopChat, DesktopSnapshot } from '@/desktop/bridge';
 import { AssistantMotion, type MotionPhase } from '@/desktop/motion';
 import { sessionStorageKey } from '@/utils/storage';
+import type { IMessageListItem } from '@/components/ChatTool/type';
+import { RequestScope } from '@/utils/request-scope';
+import MessageDraft from '@/pages/chat/MessageDraft';
 import './style.less';
 
 interface DisplayMessage {
 	id: string; role: 'user' | 'assistant'; text: string; source: string;
-	status?: 'generating' | 'completed' | 'stopped' | 'error'; suggestions?: string[];
+	status?: 'generating' | 'completed' | 'stopped' | 'error'; suggestions?: string[]; draft?: string;
 }
 
 function DesktopSession({ auth, chat, expanded, onComplete }: {
@@ -20,6 +23,8 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 	const [messages, setMessages] = useState<DisplayMessage[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [notice, setNotice] = useState('');
+	const [recipients, setRecipients] = useState<IMessageListItem[]>([]);
+	const [request] = useState(() => new RequestScope());
 	const list = useRef<HTMLDivElement>(null);
 	const active = useRef<AbortController>();
 	const live = useRef(true);
@@ -31,8 +36,17 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 	useLayoutEffect(() => { chain.current++; history.current = []; }, [scope]);
 	useEffect(() => {
 		live.current = true;
-		return () => { live.current = false; active.current?.abort(); };
-	}, []);
+		request.resume();
+		return () => { live.current = false; active.current?.abort(); request.dispose(); };
+	}, [request]);
+	const loadRecipients = async () => {
+		try {
+			const response = await request.get<IMessageListItem[]>('/message/chat_list');
+			if (live.current) setRecipients(response.data.data.filter(item => !!item.room && !item.room.startsWith('ai_')));
+		} catch {
+			if (live.current) setNotice('无法加载收件人，请点击刷新收件人重试');
+		}
+	};
 	useEffect(() => {
 		if (expanded && list.current) list.current.scrollTop = list.current.scrollHeight;
 	}, [messages, expanded]);
@@ -70,7 +84,8 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 			});
 			if (!live.current || controller.signal.aborted) return;
 			setMessages(previous => previous.map(message => message.id === replyId
-				? { ...message, text: result.text, status: 'completed', suggestions: result.replySuggestions } : message));
+				? { ...message, text: result.text, status: 'completed', suggestions: result.replySuggestions, draft: result.draftMessage } : message));
+			if (result.draftMessage) void loadRecipients();
 			if (requestChain === chain.current) history.current = [...history.current, item(text, auth.user.id), item(result.text, 0)].slice(-20);
 			setInput(previous => previous.trim() === text ? '' : previous);
 			completion.current();
@@ -103,6 +118,10 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 				<div className="message-text">{message.text || <span className="thinking" aria-label="正在思考"><i /><i /><i /></span>}</div>
 				{message.status === 'stopped' && message.text !== '已停止生成' && <small>已停止生成</small>}
 				{message.status === 'completed' && <button className="copy-button" onClick={() => void copy(message.text)}>复制回答</button>}
+				{message.status === 'completed' && message.draft && <div className="desktop-message-draft">
+					<MessageDraft draft={message.draft} conversations={recipients} />
+					<button className="copy-button" onClick={() => void loadRecipients()}>刷新收件人</button>
+				</div>}
 				{message.suggestions?.map((suggestion, index) => <button className="reply-suggestion" key={index} onClick={() => void copy(suggestion)}>{suggestion}<span>复制</span></button>)}
 			</article>)}
 		</div>
@@ -111,9 +130,9 @@ function DesktopSession({ auth, chat, expanded, onComplete }: {
 				onChange={event => setInput(event.target.value)} onKeyDown={event => {
 					if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); }
 				}} />
-			<div><span role="status">{notice || (busy ? '正在生成…' : 'Enter 发送 · Shift 换行')}</span>
+			<div><span role="status">{notice || (busy ? '正在生成…' : 'Enter 提问 · Shift 换行')}</span>
 				{busy ? <button key="stop" type="button" onClick={event => { event.preventDefault(); active.current?.abort(); }}>停止</button>
-					: <button key="send" type="submit" disabled={!input.trim()}>发送</button>}
+					: <button key="send" type="submit" aria-label="发送提问" disabled={!input.trim()}>提问</button>}
 			</div>
 		</form>
 	</div>;

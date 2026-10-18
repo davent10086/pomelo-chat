@@ -33,7 +33,7 @@ flowchart LR
 | 桌面端 | Electron 主窗口与可折叠助手侧栏 |
 | 后端 | Node.js、Express、express-ws，HTTP / WebSocket / SSE |
 | 数据与状态 | MySQL 8+、mysql2、Redis / ioredis |
-| AI | LangChain `createAgent`、兼容 OpenAI 协议的模型 API、MCP |
+| AI | LangChain `createAgent`、千问兼容接口、MCP |
 | 音视频 | LiveKit SFU，后端校验成员权限并签发房间 token |
 
 后端划分为 `identity`、`social`、`messaging`、`files`、`rtc`、`assistant`、`realtime` 七个模块。跨模块通过 `public.ts` / `contracts.ts` 调用，`composition.ts` 组装依赖，`runtime.ts` 管理后台任务及资源关闭。详见 [后端架构](server/ARCHITECTURE.md)。
@@ -44,7 +44,9 @@ flowchart LR
 - 单聊与群聊实时消息、聊天记录搜索、历史定位、未读数和私聊已读回执。
 - 附件分片上传、合并及鉴权下载；LiveKit 语音和视频通话。
 - AI 流式问答、聊天总结、回复建议、个人待办和用户隔离的记忆。
-- 主聊天页支持确认式发消息、保存待办和记忆操作；桌面助手侧栏支持对话、总结、回复建议和复制。
+- 主聊天页支持确认式发消息、保存待办和记忆操作；桌面助手侧栏支持对话、总结、回复建议、复制和草稿确认发送。
+
+在 AI 独立会话中请求代写消息后，Copilot 会展开草稿发送卡。明确选择私聊或群聊对象、修改正文，点击“核对发送信息”查看服务端校验后的收件人与正文，再点击“确认发送”。同名联系人用账号区分；切换收件人或修改正文后需重新核对，不会按模型猜测自动发送。
 
 ### 消息可靠性与过载保护
 
@@ -77,7 +79,7 @@ corepack enable
 pnpm install --frozen-lockfile
 ```
 
-填写数据库、Redis、JWT 密钥；使用 AI 时再填写模型配置。前后端默认端口分别为 `5173` 和 `3000`。
+填写数据库、Redis、JWT 密钥；AI 默认使用千问 `qwen-plus`，在后端设置 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL`。前后端默认端口分别为 `5173` 和 `3000`。
 
 ```powershell
 # 在两个终端分别执行
@@ -144,7 +146,7 @@ node server/scripts/run-isolated-tests.js browser
 ## 当前边界
 
 - 登录采用 Redis token 白名单，新登录会使旧 token 失效，尚不支持多设备并行会话。
-- 尚无忘记密码找回流程、群聊已读成员列表；桌面侧栏尚无写操作确认入口。
+- 尚无忘记密码找回流程、群聊已读成员列表；桌面侧栏当前仅提供消息草稿的写操作确认。
 - 文件默认存储于服务端本地目录；多实例部署需要共享文件存储。
 - Outbox 保证已持久化消息可重试投递，Redis Pub/Sub 本身不提供离线重放；客户端通过数据库历史补齐。
 

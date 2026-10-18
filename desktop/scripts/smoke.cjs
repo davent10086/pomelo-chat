@@ -129,7 +129,8 @@ async function run() {
     await pause(delay);
     if (mode === '403' || mode === '401') return route.fulfill({ status: Number(mode), contentType: 'application/json', body: '{}' });
     if (mode === 'disconnect') return route.abort('failed');
-    const result = { content: `回答：${body.input}`, replySuggestions: ['建议一：收到，我来跟进。'], actions: [] };
+    const result = { content: `回答：${body.input}`, replySuggestions: ['建议一：收到，我来跟进。'], actions: [],
+      ...(mode === 'draft' ? { draftMessage: '明天下午三点开会' } : {}) };
     await route.fulfill({ contentType: 'text/event-stream', body: `event: delta\ndata: ${JSON.stringify({ delta: '正在整理', reset: false })}\n\nevent: result\ndata: ${JSON.stringify(result)}\n\n` }).catch(() => {});
   });
   responseDelay = 600;
@@ -160,18 +161,18 @@ async function run() {
 
   responseMode = '403';
   await assistant.getByLabel('向 AI 助手提问').fill('失败后保留输入');
-  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await assistant.getByRole('button', { name: '发送提问', exact: true }).click();
   await expect(assistant.getByText('没有权限访问该会话。')).toBeVisible();
   await expect(assistant.getByLabel('向 AI 助手提问')).toHaveValue('失败后保留输入');
   responseMode = 'success'; responseDelay = 1000;
-  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await assistant.getByRole('button', { name: '发送提问', exact: true }).click();
   await expect.poll(() => requests.length).toBe(4);
   await assistant.getByRole('button', { name: '停止', exact: true }).click();
   await expect(assistant.locator('.assistant-message').last()).toContainText('已停止生成');
   await expect(assistant.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
   responseMode = 'disconnect'; responseDelay = 0;
   await assistant.getByLabel('向 AI 助手提问').fill('模拟断线');
-  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await assistant.getByRole('button', { name: '发送提问', exact: true }).click();
   await expect.poll(() => requests.length).toBe(5);
   await expect(assistant.getByRole('button', { name: '停止', exact: true })).toHaveCount(0);
   await expect(assistant.locator('.assistant-message').last()).toContainText('Failed to fetch');
@@ -193,6 +194,34 @@ async function run() {
   await assistant.getByRole('button', { name: '折叠 AI 助手' }).evaluate(button => { button.click(); button.click(); });
   await expect(assistant.locator('.assistant-root')).toHaveAttribute('data-phase', 'expanded');
 
+  // The independent desktop renderer must expose actual recipient review controls, too.
+  let confirmedMessages = 0;
+  await assistant.route('**/message/chat_list', route => route.fulfill({ json: { code: 200, data: mockChats } }));
+  await assistant.route('**/actions/message-draft', route => {
+    assert.deepEqual(route.request().postDataJSON(), { room: 'private_1_2', chatType: 'private', content: '明天下午三点开会' });
+    return route.fulfill({ json: { code: 200, data: { action: {
+      type: 'send_message', requiresConfirmation: true, confirmationId: 'desktop-send-review',
+      payload: { room: 'private_1_2', chatType: 'private', name: '林晓', username: 'colleague', receiverId: 2, content: '明天下午三点开会' }
+    } } } });
+  });
+  await assistant.route('**/actions/confirm', route => {
+    assert.equal(route.request().postDataJSON().confirmationId, 'desktop-send-review');
+    confirmedMessages++;
+    return route.fulfill({ json: { code: 200, data: { type: 'send_message', confirmationId: 'desktop-send-review', status: 'completed' } } });
+  });
+  responseMode = 'draft'; responseDelay = 0;
+  await assistant.getByLabel('向 AI 助手提问').fill('帮我代写一条开会通知');
+  await assistant.getByRole('button', { name: '发送提问', exact: true }).click();
+  const sendCard = assistant.getByRole('region', { name: '草稿发送', exact: true });
+  await expect(sendCard).toBeVisible();
+  await expect(sendCard.getByRole('button', { name: '核对发送信息' })).toBeDisabled();
+  await sendCard.getByLabel('选择消息收件人').selectOption('private_1_2');
+  await sendCard.getByRole('button', { name: '核对发送信息' }).click();
+  await expect(sendCard.getByLabel('发送确认信息')).toContainText('colleague');
+  assert.equal(confirmedMessages, 0);
+  await sendCard.getByRole('button', { name: '确认发送', exact: true }).click();
+  await expect(sendCard.getByText('已完成', { exact: true })).toBeVisible();
+  assert.equal(confirmedMessages, 1);
   await assistant.screenshot({ path: path.join(artifacts, 'assistant-panel.png') });
   await login(main, 2);
   await expect(assistant.locator('.assistant-root')).toHaveAttribute('data-phase', 'collapsed');
@@ -200,7 +229,7 @@ async function run() {
   await expect(assistant.locator('.assistant-message')).toHaveCount(0);
   responseMode = '401'; responseDelay = 0;
   await assistant.getByLabel('向 AI 助手提问').fill('验证登录失效');
-  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await assistant.getByRole('button', { name: '发送提问', exact: true }).click();
   await expect(assistant.locator('.assistant-root')).toHaveCount(0);
   await expect.poll(async () => {
     try { return await main.evaluate(() => sessionStorage.getItem('pomelo-chat.authToken')); }

@@ -661,6 +661,7 @@ test("conversation drafts survive switching and refresh; filters and assistant p
   await input.fill("发出这一段");
   await input.press("Enter");
   await expect.poll(() => started).toBe(true);
+  await expect(input).toHaveValue('');
   await input.fill("回答生成期间写的新草稿");
   releaseReply();
   await expect(

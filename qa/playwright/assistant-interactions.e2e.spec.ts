@@ -3,6 +3,37 @@ import { setup, login } from "./helpers/chat";
 
 test.setTimeout(30000);
 
+test('accepted AI questions clear immediately and late completion preserves identical new drafts', async ({ page }) => {
+  const { api, a } = await setup();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('**/assistant/agent/stream', async route => {
+    calls++;
+    await blocked;
+    await route.fulfill({ contentType: 'text/event-stream',
+      body: `data: ${JSON.stringify({ content: '已完成的 AI 回答', actions: [] })}\n\ndata: [DONE]\n\n`
+    });
+  });
+  try {
+    await login(page, a);
+    await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
+    const input = page.getByLabel('消息输入框');
+    await input.fill('你玩不玩原神');
+    await input.press('Enter');
+    await expect.poll(() => calls).toBe(1);
+    await expect(input).toHaveValue('');
+    // Retyping the same text is a new draft; rejected submissions must keep it.
+    await input.fill('你玩不玩原神');
+    await input.press('Enter');
+    await expect(input).toHaveValue('你玩不玩原神');
+    expect(calls).toBe(1);
+    release();
+    await expect(page.locator('[data-message-index]').getByText('已完成的 AI 回答', { exact: true })).toBeVisible();
+    await expect(input).toHaveValue('你玩不玩原神');
+  } finally { release(); await api.dispose(); }
+});
+
 test("reply suggestions ignore cancelled requests and keyboard selection inserts the selected item", async ({ page }) => {
   const { api, a, room } = await setup();
   let release!: () => void;

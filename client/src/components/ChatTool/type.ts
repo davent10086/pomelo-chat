@@ -49,7 +49,7 @@ export interface IChatToolProps {
 	// 当前选中的对话信息
 	curChatInfo: IMessageListItem;
 	// 发送消息的回调函数
-	sendMessage: (message: ISendMessage) => void;
+	sendMessage: (message: ISendMessage, onAccepted?: () => void) => void | Promise<void>;
 	// 最近的对话消息（用于上下文理解与补全），数组按时间顺序（旧->新）
 	recentMessages?: IMessageItem[];
 	// 当前用户画像/配置信息（可选），用于定制化补全风格

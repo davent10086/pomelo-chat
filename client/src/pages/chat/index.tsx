@@ -128,10 +128,12 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	};
 
 	// 闂傚倷绀侀幉锟犳偡閿曞倸鍨傞柛褎顨呴悞鍨亜閹达絾纭堕柛鏂跨Ф缁辨帗寰勭仦钘夊箣濡?
-	const sendMessage = async (message: ISendMessage) => {
-		if (assistantSelected && curChatInfo) await sendAssistantMessage(message, curChatInfo);
+	const sendMessage = async (message: ISendMessage, onAccepted?: () => void) => {
+		if (assistantSelected && curChatInfo)
+			await sendAssistantMessage(message, curChatInfo, onAccepted);
 		else {
 			await normal.send(message);
+			onAccepted?.();
 			void refreshChatList();
 		}
 	};

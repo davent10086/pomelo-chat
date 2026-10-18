@@ -160,3 +160,21 @@ export const searchJoinedGroupDirectory = <T = unknown>(
 		bindings
 	);
 };
+/** Resolve an explicit recipient only inside the actor's current memberships. */
+export const findMessageRecipient = <T = unknown>(
+	userId: number,
+	room: string,
+	type: 'private' | 'group'
+): Promise<T> =>
+	type === 'private'
+		? Query<T>(
+				`SELECT f.user_id AS receiverId, COALESCE(NULLIF(f.remark, ''), NULLIF(u.name, ''), f.username) AS name,
+				 f.username AS username FROM friend f JOIN friend_group fg ON fg.id = f.group_id
+				 JOIN user u ON u.id = f.user_id WHERE fg.user_id = ? AND f.room = ? LIMIT 1`,
+				[userId, room]
+			)
+		: Query<T>(
+				`SELECT g.id AS receiverId, g.name, NULL AS username FROM group_chat g
+				 JOIN group_members m ON m.group_id = g.id WHERE m.user_id = ? AND g.room = ? LIMIT 1`,
+				[userId, room]
+			);
