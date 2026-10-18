@@ -27,3 +27,14 @@ tmp/
 
 test-results/
 playwright-report/
+
+# Local assessment reports (keep source documentation and benchmark scripts)
+*_REPORT.md
+**/report.md
+**/report.json
+docs/*assessment*.md
+docs/*calibration*.md
+docs/*architecture-gap*.md
+docs/outbox-performance.md
+docs/message-overload-protection.md
+~$*

@@ -1,4 +1,5 @@
 import { better_chat } from './infrastructure/redis';
+import { startMessagePressure, stopMessagePressure } from './modules/messaging/public';
 import { startSessionSubscription, stopSessionSubscription } from './modules/realtime/public';
 import { startNotificationDelivery, stopNotificationDelivery } from './modules/realtime/public';
 import { stopNotificationConnections } from './modules/realtime/public';
@@ -22,6 +23,7 @@ export const startBackgroundServices = async () => {
 			if (better_chat.status === 'wait' || better_chat.status === 'end')
 				await better_chat.connect();
 			await startSessionSubscription();
+			await startMessagePressure();
 			await startNotificationDelivery();
 			startSessionChecks();
 			startCallTimeouts();
@@ -39,6 +41,7 @@ export const startBackgroundServices = async () => {
 	}
 };
 const dispose = async () => {
+	await stopMessagePressure();
 	const workers = await Promise.allSettled([stopCallTimeouts(), stopMessageDelivery()]);
 	const sockets = await Promise.allSettled([stopNotificationConnections(), stopSessionChecks()]);
 	stopNotificationDelivery();

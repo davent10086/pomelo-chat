@@ -106,13 +106,18 @@ export async function startChatBackend(root) {
     const WebSocket = require('ws');
     await new Promise((resolve, reject) => {
       const ws = new WebSocket(`${base.replace('http:', 'ws:')}/api/chat/v1/message/connect_chat?room=${encodeURIComponent(selected.room)}&id=${auth.info.id}&type=private`, ['pomelo-token', auth.token]);
-      const timeout = setTimeout(() => { ws.close(); reject(new Error('Fixture message seeding timed out')); }, 30000);
+      // Seed below admission budgets; fixture traffic is outside measured phases.
+      const fixtureGap = Math.ceil(1100 / Math.min(
+        Number(env.MESSAGE_USER_RATE || 5), Number(env.MESSAGE_PRIVATE_RATE || 10), Number(env.MESSAGE_GLOBAL_RATE || 250)));
+      const timeout = setTimeout(() => { ws.close(); reject(new Error('Fixture message seeding timed out')); }, 30000 + fixtureGap * 120);
+      let nextSend;
+      ws.once('close', () => clearTimeout(nextSend));
       let sent = 0;
       const send = () => { sent++; ws.send(JSON.stringify({ sender_id: auth.info.id, receiver_id: selected.receiver_id, content: `benchmark-message-${String(sent).padStart(3, '0')}`, type: 'text', clientMsgId: `benchmark-${id}-${sent}` })); };
       ws.on('message', raw => {
         const frame = JSON.parse(raw.toString());
         if (frame.name === 'history' && sent === 0) send();
-        else if (frame.name === 'ack') { if (sent === 60) { clearTimeout(timeout); ws.close(); resolve(); } else send(); }
+        else if (frame.name === 'ack') { if (sent === 60) { clearTimeout(timeout); ws.close(); resolve(); } else nextSend = setTimeout(send, fixtureGap); }
         else if (frame.name === 'error') { clearTimeout(timeout); ws.close(); reject(new Error('Fixture message rejected')); }
       });
       ws.on('error', error => { clearTimeout(timeout); reject(error); });

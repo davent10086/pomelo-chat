@@ -10,6 +10,8 @@ const savedMemories = new Map();
 let nextTaskId = 1;
 let nextMemoryId = 1;
 let failCompletionOnce = false;
+let overloadMessage = false;
+const { MessageOverloadError } = require('../src/shared/overload');
 
 queryModule.Query = async (sql, values = []) => {
 	const q = sql.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -80,7 +82,10 @@ queryModule.Query = async (sql, values = []) => {
 };
 
 const messageService = require('../src/modules/messaging/writes');
-messageService.sendConfirmedTextMessage = async (_userId, _room, _type, _content, id) => { sentMessages.add(id); };
+messageService.sendConfirmedTextMessage = async (_userId, _room, _type, _content, id) => {
+	if (overloadMessage) throw new MessageOverloadError('outbox_pressure', 1500);
+	sentMessages.add(id);
+};
 const { createPendingAction } = require('../src/modules/assistant/actions');
 const { assistantHttp } = require('../src/composition');
 const { cancelAction, confirmAction, getActionStatus, callAgentTool } = assistantHttp;
@@ -89,7 +94,11 @@ const { externalMcpManager } = require('../src/modules/assistant/adapters/extern
 const { canAccessRoom } = require('../src/modules/assistant/tools/pomelo-tools');
 const invoke = async (handler, userId, body, params = {}) => {
 	let response;
-	await handler({ user: { id: userId }, body, params }, { status: () => ({ json: value => { response = value; } }) });
+	const headers = {};
+	await handler({ user: { id: userId }, body, params }, {
+		setHeader: (name, value) => { headers[name] = value; },
+		status: status => ({ json: value => { response = { ...value, httpStatus: status, headers }; } })
+	});
 	return response;
 };
 
@@ -138,6 +147,15 @@ const invoke = async (handler, userId, body, params = {}) => {
 	assert.equal(tasks.size, baselineTasks + 1);
 
 	const messageAction = await createPendingAction(ownerId, 'send_message', { room: 'room-1', chatType: 'private', content: 'hello' });
+	overloadMessage = true;
+	const busy = await invoke(confirmAction, ownerId, { confirmationId: messageAction.confirmationId });
+	assert.equal(busy.httpStatus, 429);
+	assert.equal(busy.code, 8001);
+	assert.equal(busy.headers['Retry-After'], '2');
+	assert.equal(sentMessages.size, 0);
+	assert.equal(rows.get(messageAction.confirmationId).status, 'executing');
+	assert.ok(rows.get(messageAction.confirmationId).leaseUntil <= new Date());
+	overloadMessage = false;
 	failCompletionOnce = true;
 	assert.equal((await invoke(confirmAction, ownerId, { confirmationId: messageAction.confirmationId })).code, 1001);
 	delete require.cache[require.resolve('../src/modules/assistant/actions')];

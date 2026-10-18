@@ -107,7 +107,10 @@ export const insertMessageOutbox = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('INSERT INTO message_outbox (message_id, conversation_id) VALUES (?, ?)', bindings);
+	return executor<T>(
+		'INSERT INTO message_outbox (message_id, conversation_id) VALUES (?, ?)',
+		bindings
+	);
 };
 
 export const lockReadCursorConversation = <T = unknown>(
@@ -216,3 +219,11 @@ export const incrementExistingMessageStatistics = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> =>
 	executor<T>('UPDATE message_statistics SET total = total + 1 WHERE room = ?', bindings);
+
+export const loadOutboxPressure = <T = unknown>(): Promise<T> =>
+	Query<T>(
+		`SELECT o.conversation_id AS conversationId, COUNT(*) AS pending,
+	 GREATEST(0, TIMESTAMPDIFF(MICROSECOND, MIN(m.created_at), NOW(3)) / 1000000) AS oldestSeconds
+	 FROM message_outbox o FORCE INDEX (idx_outbox_pending)
+	 JOIN message m ON m.id = o.message_id WHERE o.delivered_at IS NULL GROUP BY o.conversation_id`
+	);

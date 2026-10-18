@@ -36,6 +36,12 @@ with `system`, `backend`, `migrations`, or `browser`. The runner reads local MyS
 from `server/.env`. `pnpm test:real-chat` uses that runner to verify two real browser clients,
 including private read receipts, sender refresh and offline-message read recovery.
 
+Message overload checks run with `node server/scripts/run-isolated-tests.js overload`.
+They exercise real Redis/MySQL admission, bounded queues, receipts and HTTP 429.
+`test:all` also includes `test:message-overload` against its configured test targets.
+The browser case is `message-overload.e2e.spec.ts`; browser artifacts use
+`test-results/browser/` so browser runs preserve benchmark reports alongside them.
+
 Real LLM, browser media, TURN/NAT, WebSocket load, and performance tests are intentionally not part of
 `test:all`: they require their respective isolated services and cost/device/network controls.
 

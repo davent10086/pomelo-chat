@@ -13,6 +13,7 @@ export interface UpdateTaskInput {
 	completed?: unknown;
 }
 import * as repository from './repository';
+import { MessageOverloadError } from '../../shared/overload';
 import type { Actor } from '../../shared/actor';
 import { success, failure, type Outcome } from '../../shared/outcome';
 import { randomUUID } from 'crypto';
@@ -432,6 +433,8 @@ export const confirmAction = async (
 		} catch (releaseErr: unknown) {
 			console.error('[assistant-action] release failed:', errorMessage(releaseErr));
 		}
+		if (err instanceof MessageOverloadError)
+			return { code: 8001, data: { retryAfterMs: err.retryAfterMs } };
 		return failure(CommonStatus.SERVER_ERR);
 	}
 };

@@ -28,6 +28,9 @@ const env = {
   QA_API_BASE: 'http://127.0.0.1:3100/api/chat/v1',
   QA_WS_BASE: 'ws://127.0.0.1:3100/api/chat/v1'
 };
+// Bulk protocol fixtures; production admission defaults have a dedicated real-service test.
+for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
+  env[name] = '10000';
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { cwd: process.cwd(), env, stdio: options.stdio || 'inherit' });
   child.on('error', reject);

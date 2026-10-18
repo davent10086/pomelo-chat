@@ -186,6 +186,8 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 							peerReadSeq?: number;
 							message?: string;
 							code?: string;
+							retryAfterMs?: number;
+							retryable?: boolean;
 					  }
 				>(event.data, []);
 				if (Array.isArray(message)) {
@@ -273,7 +275,10 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 						if (message.client_msg_id)
 							void queue.current?.reject(
 								message.client_msg_id,
-								message.message || '消息发送失败，请核对后重试'
+								message.message || '消息发送失败，请核对后重试',
+								message.code === 'MESSAGE_OVERLOADED' && message.retryable
+									? message.retryAfterMs
+									: undefined
 							);
 						onError('消息发送失败，请稍后重试');
 						return;
@@ -281,6 +286,10 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 				}
 				const incoming = message as IMessageItem;
 				if (!incoming.content || incoming.room !== connectParams.room) return;
+				// Receipt means parsed by this client, not rendered or read by its user.
+				const receipt = (message as IMessageItem & { receipt?: string }).receipt;
+				if (typeof receipt === 'string' && /^[a-f0-9]{32}$/.test(receipt))
+					ws.send(JSON.stringify({ name: 'delivery_ack', receipt }));
 				const previousSequence = lastSequence.current;
 				if (previousSequence > 0 && Number(incoming.room_seq) > previousSequence + 1)
 					void catchUp(previousSequence);

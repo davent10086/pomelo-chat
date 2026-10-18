@@ -6,7 +6,8 @@ if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST)
   );
 export default defineConfig({
   testDir: "./qa/playwright",
-  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
+  outputDir: "./test-results/browser",
+  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", "message-overload.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
   workers: 1,
   timeout: 30000,
   use: {
@@ -32,10 +33,20 @@ export default defineConfig({
         REDIS_KEY_PREFIX: process.env.TEST_REDIS_KEY_PREFIX || "browser-regression:",
         ...(process.env.UPLOAD_ROOT ? { UPLOAD_ROOT: process.env.UPLOAD_ROOT } : {}),
         JWT_SECRET: "browser-regression-secret",
+        METRICS_TOKEN: "browser-metrics-test",
         DEEPSEEK_API_KEY: "",
         REQUEST_LOGS: "false",
         // Functional fixtures share one IP; production keeps its default limit.
         API_RATE_LIMIT_MAX: "10000",
+        // Bulk fixture generation; default admission is covered by test:message-overload.
+        MESSAGE_USER_RATE: "10000",
+        MESSAGE_USER_BURST: "10000",
+        MESSAGE_PRIVATE_RATE: "10000",
+        MESSAGE_PRIVATE_BURST: "10000",
+        MESSAGE_GROUP_RATE: "10000",
+        MESSAGE_GROUP_BURST: "10000",
+        MESSAGE_GLOBAL_RATE: "10000",
+        MESSAGE_GLOBAL_BURST: "10000",
       },
     },
     {

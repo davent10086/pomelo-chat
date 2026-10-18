@@ -19,15 +19,17 @@ const respHttp = (res: Response, respCode: number, data?: unknown): void => {
 	const httpStatus =
 		respCode === SUCCESS_CODE || respCode === 6001 || respCode === 6002
 			? 200
-			: respCode === 1002
-				? 401
-				: respCode === 1006
-					? 403
-					: respCode === 1007
-						? 404
-						: respCode === 1001
-							? 500
-							: 400;
+			: respCode === 8001
+				? 429
+				: respCode === 1002
+					? 401
+					: respCode === 1006
+						? 403
+						: respCode === 1007
+							? 404
+							: respCode === 1001
+								? 500
+								: 400;
 	res.status(httpStatus).json(resp);
 };
 

@@ -10,6 +10,7 @@ export interface PendingMessage {
 	owner?: string;
 	leaseUntil?: number;
 	stopped?: string;
+	retryAt?: number;
 }
 let database: Promise<IDBDatabase> | undefined;
 const open = () => {
@@ -107,23 +108,41 @@ export const claimPendingMessage = (key: string, owner: string, manual = false) 
 			if (
 				!row ||
 				(row.leaseUntil && row.leaseUntil > Date.now()) ||
-				(!manual && (row.stopped || Date.now() - row.createdAt > 86400000))
+				(!manual &&
+					(row.stopped || (row.retryAt || 0) > Date.now() || Date.now() - row.createdAt > 86400000))
 			) {
 				done(undefined);
 				return;
 			}
-			const claimed = { ...row, owner, leaseUntil: Date.now() + 45000, stopped: undefined };
+			const claimed = {
+				...row,
+				owner,
+				leaseUntil: Date.now() + 45000,
+				stopped: undefined,
+				retryAt: undefined
+			};
 			store.put(claimed);
 			done(claimed);
 		};
 	});
-export const releasePendingMessage = (key: string, owner: string, stopped?: string) =>
+export const releasePendingMessage = (
+	key: string,
+	owner: string,
+	stopped?: string,
+	retryAt?: number
+) =>
 	transaction<void>((store, done) => {
 		const request = store.get(key);
 		request.onsuccess = () => {
 			const row = request.result as PendingMessage | undefined;
 			if (row && (row.owner === owner || stopped))
-				store.put({ ...row, owner: undefined, leaseUntil: 0, stopped });
+				store.put({
+					...row,
+					owner: undefined,
+					leaseUntil: 0,
+					stopped,
+					retryAt: retryAt ?? row.retryAt
+				});
 			done(undefined);
 		};
 	});

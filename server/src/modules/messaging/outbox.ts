@@ -1,6 +1,7 @@
 import * as repository from './repository';
 import { randomUUID } from 'crypto';
 import { withTransaction } from '../../infrastructure/database-query';
+import { countMessageMetric } from '../../infrastructure/message-metrics';
 
 const LEASE_SECONDS = 60;
 const CONCURRENCY = 8;
@@ -9,6 +10,7 @@ const CONCURRENCY = 8;
 export class MessageOutboxWorker {
 	private active = false;
 	private inFlight?: Promise<void>;
+	private requested = false;
 	private timer?: ReturnType<typeof setInterval>;
 
 	constructor(private readonly deliver: (id: number) => Promise<void>) {}
@@ -22,11 +24,22 @@ export class MessageOutboxWorker {
 
 	flush(): Promise<void> {
 		if (!this.active) return Promise.resolve();
+		this.requested = true;
 		if (this.inFlight) return this.inFlight;
-		this.inFlight = this.drain().finally(() => {
+		this.inFlight = this.drainRequested().finally(() => {
 			this.inFlight = undefined;
+			// A write can arrive after a lane's empty snapshot but before this drain ends.
+			// Preserve that wake-up rather than making it wait for the periodic poll.
+			if (this.active && this.requested) return this.flush();
 		});
 		return this.inFlight;
+	}
+
+	private async drainRequested(): Promise<void> {
+		do {
+			this.requested = false;
+			await this.drain();
+		} while (this.active && this.requested);
 	}
 
 	private async drain(): Promise<void> {
@@ -75,10 +88,12 @@ export class MessageOutboxWorker {
 			clearInterval(heartbeat);
 			await renewal;
 			await repository.completeOutboxClaim([id, token]);
+			countMessageMetric('pomelo_outbox_dispatch_completed_total');
 		} catch (error) {
 			clearInterval(heartbeat);
 			await renewal;
 			console.error('[message:outbox] delivery failed id=%s', id, error);
+			countMessageMetric('pomelo_outbox_dispatch_errors_total');
 			await repository.retryOutboxClaim([id, token]);
 		} finally {
 			clearInterval(heartbeat);

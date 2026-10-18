@@ -3,9 +3,11 @@ import { withTransaction } from '../../infrastructure/database-query';
 import { formatBytes } from '../../shared/format';
 import { persistMessage } from './persistence';
 import { flushMessageOutbox } from './outbox';
+import { admitMessage } from './pressure';
 import { authorizeChatRoom } from '../social/public';
 import {
 	MAX_MESSAGE_LENGTH,
+	enqueueRoomWrite,
 	type HistoryMessageRow,
 	type ChatType,
 	type InsertMessage,
@@ -23,6 +25,14 @@ export const writeAndSend = async (
 	const existingConversation = await repository.findWriteConversation<
 		Array<{ id: number; statistics_room: string | null }>
 	>([room]);
+	// Preserve resolution of already committed retries even while rejecting new writes.
+	const prior = msg.client_msg_id
+		? await repository.findMessageByClientId<HistoryMessageRow[]>([
+				msg.sender_id,
+				msg.client_msg_id
+			])
+		: [];
+	if (!prior.length) await admitMessage(msg.sender_id, room, type, existingConversation[0]?.id);
 	if (!existingConversation.length)
 		await repository.ensureWriteConversation([room, type, msg.receiver_id]);
 	if (!existingConversation[0]?.statistics_room) await repository.ensureMessageStatistics([room]);
@@ -108,29 +118,31 @@ export const sendConfirmedTextMessage = async (
 			throw new Error('Idempotency key conflict');
 		return;
 	}
-	const authorized = await authorizeChatRoom(userId, room, type);
-	if (!authorized) throw new Error('Room access denied');
-	await writeAndSend(
-		type,
-		room,
-		{
-			sender_id: userId,
-			receiver_id: authorized.receiverId,
-			content: content.trim(),
-			room,
+	await enqueueRoomWrite(room, async () => {
+		const authorized = await authorizeChatRoom(userId, room, type);
+		if (!authorized) throw new Error('Room access denied');
+		return writeAndSend(
 			type,
-			media_type: 'text',
-			file_size: 0,
-			status: 0,
-			client_msg_id: confirmationId
-		},
-		{
-			sender_id: userId,
-			receiver_id: authorized.receiverId,
-			content: content.trim(),
 			room,
-			type: 'text',
-			file_size: 0
-		}
-	);
+			{
+				sender_id: userId,
+				receiver_id: authorized.receiverId,
+				content: content.trim(),
+				room,
+				type,
+				media_type: 'text',
+				file_size: 0,
+				status: 0,
+				client_msg_id: confirmationId
+			},
+			{
+				sender_id: userId,
+				receiver_id: authorized.receiverId,
+				content: content.trim(),
+				room,
+				type: 'text',
+				file_size: 0
+			}
+		);
+	});
 };

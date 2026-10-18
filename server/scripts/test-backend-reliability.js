@@ -4,6 +4,12 @@ const { randomUUID } = require('node:crypto');
 if (!process.env.DATABASE_URL_TEST) throw new Error('DATABASE_URL_TEST is required');
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'backend-reliability-test';
+if (!process.env.REDIS_URL_TEST) throw new Error('REDIS_URL_TEST is required');
+process.env.REDIS_URL = process.env.REDIS_URL_TEST;
+process.env.REDIS_KEY_PREFIX = `test:backend:${randomUUID()}:`;
+// Fixture bursts validate transactions here; default admission has its own service-backed suite.
+for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
+	process.env[name] = '10000';
 require('ts-node/register/transpile-only');
 const { initDatabase, default: db } = require('../src/infrastructure/database');
 const { Query, withTransaction } = require('../src/infrastructure/database-query');
@@ -495,7 +501,16 @@ async function finish(code) {
 	console.error = originalError;
 	await Promise.all(workers.map(worker => worker.stop()));
 	process.off('unhandledRejection', onUnhandled);
-	better_chat.disconnect();
+	const cleanup = better_chat.duplicate({ keyPrefix: '' });
+	try {
+		await cleanup.connect();
+		let cursor = '0';
+		do {
+			const [next, keys] = await cleanup.scan(cursor, 'MATCH', `${process.env.REDIS_KEY_PREFIX}*`, 'COUNT', 100);
+			cursor = next;
+			if (keys.length) await cleanup.del(...keys);
+		} while (cursor !== '0');
+	} finally { cleanup.disconnect(); better_chat.disconnect(); }
 	// The convenience runner drops its own DB; standalone runs only remove this run's records.
 	try {
 		if (userIds.length) await Query('DELETE FROM message WHERE sender_id IN (?)', [userIds]);

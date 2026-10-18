@@ -1,4 +1,5 @@
-const roomWriteTails = new Map<string, Promise<void>>();
+import { MessageOverloadError, positiveSetting } from '../../shared/overload';
+import { countMessageMetric, setMessageGauge } from '../../infrastructure/message-metrics';
 export type ChatType = 'private' | 'group';
 export type MediaType = 'text' | 'image' | 'video' | 'file';
 export type UserId = number | string;
@@ -18,19 +19,41 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
  * Preserves message order within a room and prevents concurrent transactions
  * from racing on the conversation sequence row.
  */
-export const enqueueRoomWrite = <T>(room: string, task: () => Promise<T>): Promise<T> => {
-	const previous = roomWriteTails.get(room) || Promise.resolve();
-	const result = previous.catch(() => undefined).then(task);
-	const tail = result.then(
-		() => undefined,
-		() => undefined
-	);
-	roomWriteTails.set(room, tail);
-	void tail.finally(() => {
-		if (roomWriteTails.get(room) === tail) roomWriteTails.delete(room);
-	});
-	return result;
+export const createRoomWriteQueue = (
+	limits = () => ({
+		room: positiveSetting('MESSAGE_ROOM_QUEUE_MAX', 32),
+		global: positiveSetting('MESSAGE_WRITE_QUEUE_MAX', 256)
+	})
+) => {
+	const rooms = new Map<string, { tail: Promise<void>; count: number }>();
+	let pending = 0;
+	return <T>(room: string, task: () => Promise<T>): Promise<T> => {
+		const state = rooms.get(room) || { tail: Promise.resolve(), count: 0 };
+		const max = limits();
+		if (state.count >= max.room || pending >= max.global) {
+			countMessageMetric('pomelo_message_rejected_queue_full_total');
+			throw new MessageOverloadError('queue_full');
+		}
+		state.count++;
+		pending++;
+		setMessageGauge('pomelo_message_write_queue_pending', pending);
+		const result = state.tail.then(task);
+		state.tail = result
+			.then(
+				() => undefined,
+				() => undefined
+			)
+			.then(() => {
+				state.count--;
+				pending--;
+				if (!state.count) rooms.delete(room);
+				setMessageGauge('pomelo_message_write_queue_pending', pending);
+			});
+		rooms.set(room, state);
+		return result;
+	};
 };
+export const enqueueRoomWrite = createRoomWriteQueue();
 
 export interface GroupMembershipRow {
 	id: number;
@@ -109,6 +132,7 @@ export interface FanoutPayload {
 	instanceId: string;
 	room: string;
 	message: OutboundMessage | ReadReceiptFrame;
+	persistedAt?: number;
 }
 
 export interface ReadReceiptFrame {

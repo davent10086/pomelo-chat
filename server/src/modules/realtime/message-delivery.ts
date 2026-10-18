@@ -5,6 +5,11 @@ import { validateSessionSocket } from './session-sockets';
 import { authorizeChatRoom } from '../social/public';
 import { NotificationUser } from './notification';
 import { sendSocketFrame } from './socket-send';
+import {
+	trackDelivery,
+	startDeliveryObservation,
+	stopDeliveryObservation
+} from './delivery-observation';
 import { forEachConcurrent } from '../../shared/parallel';
 import { startMessageOutbox, stopMessageOutbox, enableMessageOutbox } from '../messaging/public';
 import { formatHistoryMessages } from '../messaging/public';
@@ -31,7 +36,8 @@ export const sendFrame = (ws: WebSocket, frame: unknown): void => {
 
 export const sendLocalRoom = async (
 	room: string,
-	message: OutboundMessage | ReadReceiptFrame
+	message: OutboundMessage | ReadReceiptFrame,
+	persistedAt?: number
 ): Promise<void> => {
 	await forEachConcurrent(Object.entries(ChatRooms[room] || {}), 16, async ([key, ws]) => {
 		try {
@@ -42,7 +48,11 @@ export const sendLocalRoom = async (
 				!(await authorizeChatRoom(key.split(':')[0], room, 'private'))
 			)
 				return;
-			sendFrame(ws, message);
+			const receipt =
+				!('name' in message) && message.id && String(message.sender_id) !== key.split(':')[0]
+					? trackDelivery(ws, persistedAt)
+					: undefined;
+			sendFrame(ws, receipt ? { ...message, receipt } : message);
 		} catch (err: unknown) {
 			const messageText = err instanceof Error ? err.message : String(err);
 			console.error('[message] send failed room=%s key=%s: %s', room, key, messageText);
@@ -52,11 +62,12 @@ export const sendLocalRoom = async (
 
 const publishRoomMessage = async (
 	room: string,
-	message: OutboundMessage | ReadReceiptFrame
+	message: OutboundMessage | ReadReceiptFrame,
+	persistedAt?: number
 ): Promise<void> => {
 	await better_chat.publish(
 		MESSAGE_FANOUT_CHANNEL,
-		JSON.stringify({ instanceId: INSTANCE_ID, room, message })
+		JSON.stringify({ instanceId: INSTANCE_ID, room, message, persistedAt })
 	);
 };
 
@@ -86,7 +97,7 @@ export const subscribeRoomFanout = async (): Promise<void> => {
 			const payload = JSON.parse(raw) as FanoutPayload;
 			if (!payload || payload.instanceId === INSTANCE_ID || !payload.room || !payload.message)
 				return;
-			void sendLocalRoom(payload.room, payload.message).catch(err =>
+			void sendLocalRoom(payload.room, payload.message, payload.persistedAt).catch(err =>
 				console.error('[message] delivery:', err)
 			);
 		} catch (err: unknown) {
@@ -99,6 +110,7 @@ export const subscribeRoomFanout = async (): Promise<void> => {
 
 export const startMessageDelivery = async () => {
 	await subscribeRoomFanout();
+	startDeliveryObservation();
 	startMessageOutbox(async id => {
 		const rows = await readModel.loadMessageForDelivery<
 			HistoryMessageRow[] & Array<{ type: ChatType }>
@@ -106,8 +118,9 @@ export const startMessageDelivery = async () => {
 		if (!rows.length) return;
 		const row = rows[0];
 		const outbound = formatHistoryMessages(rows)[0];
-		await publishRoomMessage(row.room, outbound);
-		await sendLocalRoom(row.room, outbound);
+		const persistedAt = new Date(row.created_at).getTime();
+		await publishRoomMessage(row.room, outbound, persistedAt);
+		await sendLocalRoom(row.room, outbound, persistedAt);
 		if (row.type === 'group') {
 			const members = await readModel.listGroupDeliveryRecipients<Array<{ username: string }>>([
 				row.receiver_id,
@@ -123,6 +136,7 @@ export const startMessageDelivery = async () => {
 };
 export const stopMessageDelivery = async () => {
 	await stopMessageOutbox();
+	stopDeliveryObservation();
 	better_chat.off('end', onRedisEnd);
 	subscriber?.disconnect();
 	subscriber = undefined;

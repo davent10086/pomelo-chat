@@ -14,6 +14,9 @@ process.env.REDIS_KEY_PREFIX = `system-test:${Date.now()}:${process.pid}:`;
 process.env.JWT_SECRET = 'isolated-system-regression-secret';
 process.env.REQUEST_LOGS = 'false';
 process.env.DEEPSEEK_API_KEY = '';
+// This suite stresses protocol/transaction behavior; admission defaults are tested separately.
+for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
+	process.env[name] = '10000';
 require('ts-node/register/transpile-only');
 
 // Track actual periodic work and network attempts during module loading.
@@ -91,13 +94,13 @@ const send = async (
 	await initDatabase();
 	const initialEndListeners = better_chat.listenerCount('end');
 	await Promise.all([startBackgroundServices(), startBackgroundServices()]);
-	assert.equal(activeTimers.size, 3, 'exactly one session, call, and outbox timer');
+	assert.equal(activeTimers.size, 5, 'exactly one session, call, outbox, pressure and receipt timer');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners + 3);
 	await Promise.all([stopBackgroundServices(), stopBackgroundServices()]);
 	assert.equal(activeTimers.size, 0, 'shutdown removes every periodic worker');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners, 'shutdown removes subscription listeners');
 	await startBackgroundServices();
-	assert.equal(activeTimers.size, 3, 'runtime can restart without duplicate workers');
+	assert.equal(activeTimers.size, 5, 'runtime can restart without duplicate workers');
 	server.listen(0, '127.0.0.1');
 	await once(server, 'listening');
 	base = `http://127.0.0.1:${server.address().port}`;

@@ -15,6 +15,7 @@ import assistantRouter from './routes/assistant';
 import { authenticateUploadAccess } from '../composition';
 import { createRateLimiter } from '../infrastructure/rate-limit';
 import { uploadRoot } from '../infrastructure/file-storage';
+import { messageMetricsHandler } from '../infrastructure/message-metrics';
 
 const app = express();
 let routesRegistered = false;
@@ -112,6 +113,7 @@ export const registerAppRoutes = (): void => {
 	routesRegistered = true;
 
 	app.use(securityHeaders);
+	app.get('/internal/metrics', messageMetricsHandler);
 	app.use('/uploads', authenticateUploadAccess, staticDownload, express.static(uploadRoot));
 
 	/**

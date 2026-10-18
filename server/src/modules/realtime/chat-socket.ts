@@ -6,6 +6,8 @@ import { authorizeChatRoom } from '../social/public';
 import { fetchHistoryMessages } from '../messaging/public';
 import { writeAndSend } from '../messaging/public';
 import { ChatRooms, sendFrame } from './message-delivery';
+import { acknowledgeDelivery } from './delivery-observation';
+import { MessageOverloadError } from '../../shared/overload';
 import {
 	isRecord,
 	isMediaType,
@@ -16,7 +18,9 @@ import {
 	type IncomingMessage,
 	type UserId
 } from '../messaging/contracts';
-const parseIncomingMessage = (data: RawData | string): IncomingMessage | null => {
+const parseIncomingMessage = (
+	data: RawData | string
+): IncomingMessage | { name: 'delivery_ack'; receipt: string } | null => {
 	try {
 		const raw =
 			typeof data === 'string'
@@ -27,6 +31,13 @@ const parseIncomingMessage = (data: RawData | string): IncomingMessage | null =>
 						? data.toString('utf8')
 						: Buffer.from(new Uint8Array(data)).toString('utf8');
 		const value: unknown = JSON.parse(raw);
+		if (
+			isRecord(value) &&
+			value.name === 'delivery_ack' &&
+			typeof value.receipt === 'string' &&
+			/^[a-f0-9]{32}$/.test(value.receipt)
+		)
+			return { name: 'delivery_ack', receipt: value.receipt };
 		if (!isRecord(value) || typeof value.content !== 'string') return null;
 		return {
 			content: value.content,
@@ -100,9 +111,13 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		// send immediately after receiving that frame, so registering it afterwards
 		// creates a race that silently drops the first message.
 		ws.on('message', async (data: RawData) => {
-			const message = parseIncomingMessage(data);
+			const parsed = parseIncomingMessage(data);
+			if (parsed && 'name' in parsed) {
+				acknowledgeDelivery(ws, parsed.receipt);
+				return;
+			}
+			const message = parsed;
 			try {
-				if (!(await validateSessionSocket(ws))) return;
 				// Room access is revalidated when this message reaches the room queue below.
 				if (!message || !message.content.trim() || message.content.length > MAX_MESSAGE_LENGTH) {
 					sendFrame(ws, {
@@ -153,6 +168,17 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 					room_seq: outbound.room_seq
 				});
 			} catch (err: unknown) {
+				if (err instanceof MessageOverloadError) {
+					sendFrame(ws, {
+						name: 'error',
+						code: err.code,
+						client_msg_id: message?.clientMsgId,
+						message: err.message,
+						retryAfterMs: err.retryAfterMs,
+						retryable: true
+					});
+					return;
+				}
 				const errorText = err instanceof Error ? err.message : String(err);
 				console.error('[message] ws message error:', errorText);
 				if (ws.readyState === 1)

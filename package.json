@@ -23,7 +23,7 @@
     "test:qa": "node qa/run-qa.js",
     "test:coverage": "node --test --experimental-test-coverage tests/unit/*.test.js tests/database/*.test.js",
     "test": "pnpm run test:unit",
-    "test:all": "pnpm --filter pomelo-chat-server test:architecture && pnpm run test:unit && pnpm run test:database && pnpm run test:api && pnpm run test:integration && pnpm run test:security && pnpm --filter pomelo-chat-server test:backend && pnpm run build",
+    "test:all": "pnpm --filter pomelo-chat-server test:architecture && pnpm run test:unit && pnpm run test:database && pnpm run test:api && pnpm run test:integration && pnpm run test:security && pnpm --filter pomelo-chat-server test:backend && pnpm --filter pomelo-chat-server test:message-overload && pnpm run build",
     "build": "pnpm --filter pomelo-chat-server build && pnpm --filter pomelo-chat-client build",
     "lint": "pnpm --filter pomelo-chat-server lint && pnpm --filter pomelo-chat-client lint",
     "lint:fix": "pnpm --filter pomelo-chat-server lint:fix && pnpm --filter pomelo-chat-client lint:fix",

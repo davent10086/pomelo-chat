@@ -79,7 +79,22 @@ chat still extracts structured suggestions and confirmation proposals; non-strea
 suggestions retain their structured response. `agent-response.ts` owns response schemas, parsing,
 sanitization and presentation, while `agent.ts` owns execution and action proposal orchestration.
 Both streaming clients use the same SSE parser for lifecycle events, delta resets and final results.
-Other response envelopes, status codes, WebSocket frames and database migrations are unchanged.
+Message overload uses HTTP 429 with Retry-After and a retryable WebSocket error carrying
+the original client message ID and retry delay. Other business response contracts are preserved.
+
+Message admission atomically consumes user, room and global Redis token buckets before new
+transactional writes. Process-local queues bound waiting work; sampled Outbox pressure rejects
+new work when pending counts or age exceed configured thresholds. These sampled limits are
+soft gates, not durable capacity reservations. Redis admission failures reject new writes;
+committed idempotent retries can still resolve. Confirmed assistant messages use the same queue.
+Clients retain their message IDs and apply bounded backoff when admission is refused.
+
+The Outbox worker preserves flush requests received during an in-flight drain, avoiding a lost
+wakeup that would otherwise delay new messages until the next poll. Delivery receipts bind a
+single-use challenge to the receiving socket; they measure client parsing, separately from
+user read cursors. Receipt state has fixed bounds and expiry. The opt-in /internal/metrics
+endpoint requires METRICS_TOKEN as a bearer token; metrics contain no user or room labels.
+Operational defaults are documented in ../README.md and server/.env.example.
 
 Run `pnpm --filter pomelo-chat-server test:architecture`. The TypeScript AST check rejects
 module-internal cross imports, transport dependencies in business code, writes to another

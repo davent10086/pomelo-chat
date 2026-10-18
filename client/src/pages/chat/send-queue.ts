@@ -185,7 +185,8 @@ export class SendQueue {
 			!this.active() ||
 			this.cancelled.has(id) ||
 			this.acknowledged.has(id) ||
-			this.timers.has(id)
+			this.timers.has(id) ||
+			(!manual && (row.retryAt || 0) > Date.now())
 		)
 			return;
 		let claimed: PendingMessage | undefined;
@@ -229,10 +230,40 @@ export class SendQueue {
 			}, 15000)
 		);
 	}
-	async reject(id: string, reason: string) {
+	async reject(id: string, reason: string, retryAfterMs?: number) {
 		if (this.acknowledged.has(id)) return;
 		clearTimeout(this.timers.get(id));
 		this.timers.delete(id);
+		if (
+			retryAfterMs !== undefined &&
+			Number.isFinite(retryAfterMs) &&
+			retryAfterMs > 0 &&
+			retryAfterMs <= 60000 &&
+			(this.attempts.get(id) || 0) < 3 &&
+			this.active()
+		) {
+			const delay = Math.max(500, retryAfterMs) + Math.random() * 250;
+			const retryAt = Date.now() + delay;
+			const fallback = this.fallback.get(id);
+			if (fallback) fallback.retryAt = retryAt;
+			await releasePendingMessage(
+				pendingKey(this.options.userId, this.options.room, id),
+				this.owner,
+				undefined,
+				retryAt
+			).catch(() => undefined);
+			if (this.active() && !this.acknowledged.has(id) && !this.cancelled.has(id)) {
+				this.options.onState(id, 'failed', '发送繁忙，稍后自动重试；消息已保留');
+				this.timers.set(
+					id,
+					setTimeout(() => {
+						this.timers.delete(id);
+						if (this.active() && !this.cancelled.has(id)) void this.recover();
+					}, delay)
+				);
+			}
+			return;
+		}
 		this.attempts.set(id, 3);
 		await releasePendingMessage(
 			pendingKey(this.options.userId, this.options.room, id),
