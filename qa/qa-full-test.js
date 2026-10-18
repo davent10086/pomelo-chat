@@ -261,11 +261,21 @@ const percentile = (arr, p) => {
   record('missing group lookup avoids 500', [1002, 1007].includes(missingGroupInfo.body?.code) ? 'pass' : 'fail', { body: missingGroupInfo.body });
 
   if (group?.id) {
+    const invitation = {
+      groupId: group.id,
+      invitationList: [{ user_id: users.outsider_d.info.id, username: users.outsider_d.username }]
+    };
+    const nonFriendInvite = await post('/group/invite_friend', invitation, users.new_a.token);
+    record('group invite rejects non-friends', nonFriendInvite.body?.code === 1003 ? 'pass' : 'fail', { body: nonFriendInvite.body });
+    expectBusiness('add friend A-D before invitation', await post('/friend/add_friend', {
+      id: users.outsider_d.info.id, username: users.outsider_d.username, avatar: ''
+    }, users.new_a.token));
     const inviteD = await post('/group/invite_friend', {
       groupId: group.id,
       invitationList: [{ user_id: users.outsider_d.info.id, username: users.outsider_d.username }]
     }, users.new_a.token);
-    record('group invite writes invited member', inviteD.body?.code === 200 ? 'pass' : 'fail', { body: inviteD.body });
+    const invitedGroups = expectBusiness('invited user group list', await get('/group/group_list', users.outsider_d.token));
+    record('group invite writes invited member', inviteD.body?.code === 200 && invitedGroups.some(item => item.room === group.room) ? 'pass' : 'fail', { body: inviteD.body });
   }
 
   const connA = await wsConnect({ room: roomAB, userId: users.new_a.info.id, type: 'private', token: users.new_a.token });
@@ -361,11 +371,15 @@ const percentile = (arr, p) => {
     confirmationId: memoryDelete.result.confirmationId
   }, users.new_a.token));
 
-  const crossRoomTool = expectBusiness('cross room tool call', await post('/assistant/agent/tools/call', {
+  const crossRoomTool = await post('/assistant/agent/tools/call', {
     name: 'get_recent_messages',
     args: { room: roomAC, limit: 5 }
-  }, users.new_b.token));
-  record('tool room authorization prevents cross-user history read', Array.isArray(crossRoomTool.result.messages) && crossRoomTool.result.messages.length === 0 ? 'pass' : 'fail', { result: crossRoomTool.result });
+  }, users.new_b.token);
+  record('tool room authorization prevents cross-user history read',
+    crossRoomTool.httpStatus === 404 && crossRoomTool.body?.code === 1007 &&
+    crossRoomTool.body?.data?.isError === true &&
+    crossRoomTool.body?.data?.error?.code === 'TARGET_UNAVAILABLE' &&
+    !crossRoomTool.body?.data?.result ? 'pass' : 'fail', { body: crossRoomTool.body });
 
   if (RUN_LIVE_AI) {
   const qaAgent = await timed(() => post('/assistant/agent', { input: '你好，你是谁？', context: { currentChatType: 'assistant' } }, users.new_a.token, 60000));

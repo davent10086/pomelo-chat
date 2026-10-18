@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-const mysql = require('../server/node_modules/mysql');
+const mysql = require('../server/node_modules/mysql2');
 
 const runId = process.env.QA_RUN_ID;
 const databaseUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;

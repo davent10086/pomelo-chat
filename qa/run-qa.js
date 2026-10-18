@@ -29,7 +29,7 @@ const env = {
   QA_WS_BASE: 'ws://127.0.0.1:3100/api/chat/v1'
 };
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { cwd: process.cwd(), env, stdio: options.stdio || 'inherit', shell: process.platform === 'win32' });
+  const child = spawn(command, args, { cwd: process.cwd(), env, stdio: options.stdio || 'inherit' });
   child.on('error', reject);
   child.on('exit', code => code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)));
   options.onChild?.(child);
@@ -49,7 +49,7 @@ const waitForServer = async () => {
 (async () => {
   let server;
   try {
-    server = spawn('pnpm', ['--filter', 'pomelo-chat-server', 'exec', 'ts-node', '--files', 'src/index.ts'], { cwd: process.cwd(), env, stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    server = spawn(process.execPath, ['-r', require.resolve('../server/node_modules/ts-node/register'), 'src/index.ts'], { cwd: path.join(process.cwd(), 'server'), env: { ...env, TS_NODE_FILES: 'true' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const log = require('node:fs').createWriteStream(path.join(artifactDir, 'server.log'));
     server.stdout.pipe(log); server.stderr.pipe(log);
     await waitForServer();

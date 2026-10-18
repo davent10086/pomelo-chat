@@ -5,8 +5,8 @@ const mysql = require('mysql2');
 const fs = require('node:fs');
 const Redis = require('ioredis');
 const mode = process.argv[2] || 'system';
-if (!['system', 'browser', 'migrations', 'backend'].includes(mode))
-	throw new Error('Expected system, browser, migrations, or backend');
+if (!['system', 'browser', 'migrations', 'backend', 'qa'].includes(mode))
+	throw new Error('Expected system, browser, migrations, backend, or qa');
 const root = path.resolve(__dirname, '../..');
 const serverRoot = path.join(root, 'server');
 require('dotenv').config({ path: path.join(serverRoot, '.env'), quiet: true });
@@ -39,14 +39,14 @@ connection.query('CREATE DATABASE ??', [database], error => {
 	const args =
 		mode === 'browser'
 			? [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test', ...process.argv.slice(3)]
-			: [
+			: mode === 'qa' ? [path.join(root, 'qa/run-qa.js')] : [
 					path.join(
 						__dirname,
 						mode === 'migrations' ? 'test-db-migrations.js' : mode === 'backend' ? 'test-backend-reliability.js' : 'test-system-integrity.js'
 					)
 				];
 	const child = spawn(process.execPath, args, {
-		cwd: mode === 'browser' ? root : serverRoot,
+		cwd: mode === 'browser' || mode === 'qa' ? root : serverRoot,
 		env: {
 			...process.env,
 			NODE_ENV: 'test',
@@ -79,7 +79,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 		if (path.dirname(uploadRoot) !== testFilesRoot || !path.basename(uploadRoot).startsWith('chat-uploads-'))
 			throw new Error('Unsafe upload cleanup target');
 		fs.rmSync(uploadRoot, { recursive: true, force: true });
-		if (!/^pomelo_(system|browser|migrations|backend)_test_\d+$/.test(database))
+		if (!/^pomelo_(system|browser|migrations|backend|qa)_test_\d+$/.test(database))
 			throw new Error('Unsafe cleanup target');
 		connection.query('DROP DATABASE ??', [database], err => {
 			if (err) console.error('[isolated-tests] cleanup failed:', err.code);
