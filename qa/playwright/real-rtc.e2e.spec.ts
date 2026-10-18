@@ -53,7 +53,7 @@ for (const mode of ['audio', 'video'] as const) {
       await page.locator(`[id="chatList_${room}"]`).click();
       await peer.locator(`[id="chatList_${room}"]`).click();
       const invited = page.waitForResponse(response => response.url().endsWith('/rtc/invite'));
-      await page.locator(mode === 'audio' ? 'button.icon-dianhua' : 'button.icon-video').click();
+      await page.getByRole('button', { name: mode === 'audio' ? '语音聊天' : '视频聊天', exact: true }).click();
       expect((await invited).ok()).toBeTruthy();
       await expect(peer.getByAltText('接听')).toBeVisible();
       const accepted = peer.waitForResponse(response => response.url().endsWith('/rtc/accept'));
@@ -68,6 +68,15 @@ for (const mode of ['audio', 'video'] as const) {
       }
       const before = await received(peer, 'audio');
       await expect.poll(() => received(peer, 'audio')).toBeGreaterThan(before);
+      const mediaEvidence = [];
+      for (const [name, target] of [['caller', page], ['receiver', peer]] as const) {
+        for (const kind of mode === 'video' ? ['audio', 'video'] : ['audio']) {
+          const initialBytes = await received(target, kind);
+          await expect.poll(() => received(target, kind), { timeout: 15000 }).toBeGreaterThan(initialBytes);
+          mediaEvidence.push({ side: name, kind, initialBytes, finalBytes: await received(target, kind) });
+        }
+      }
+      await testInfo.attach('verified-media-flow', { body: JSON.stringify(mediaEvidence, null, 2), contentType: 'application/json' });
       await page.getByAltText('挂断').click();
       for (const target of [page, peer]) {
         await expect(target.getByRole('dialog')).toHaveCount(0);
@@ -120,7 +129,7 @@ for (const mode of ['audio', 'video'] as const) {
     try {
       await login(peer, b, room);
       await login(page, a, room);
-      await page.locator(mode === 'audio' ? 'button.icon-dianhua' : 'button.icon-video').click();
+      await page.getByRole('button', { name: mode === 'audio' ? '语音聊天' : '视频聊天', exact: true }).click();
       await expect.poll(() => invited).toBe(true);
       await page.getByAltText('挂断').click();
       await expect(page.getByRole('dialog')).toHaveCount(0);

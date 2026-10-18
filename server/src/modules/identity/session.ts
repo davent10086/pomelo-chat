@@ -1,6 +1,12 @@
+import { createSecretKey } from 'node:crypto';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { better_chat } from '../../infrastructure/redis';
 export const secretKey: string | undefined = process.env.JWT_SECRET;
+// Reuse the parsed HMAC key; JWT expiry and Redis revocation are still checked every time.
+export const verificationKey = secretKey ? createSecretKey(Buffer.from(secretKey)) : undefined;
+export const verificationOptions: jwt.VerifyOptions = {
+	algorithms: ['HS256', 'HS384', 'HS512'],
+};
 if (!secretKey) {
 	// eslint-disable-next-line no-console
 	console.error('[auth] 警告：未配置环境变量 JWT_SECRET，JWT 功能将不可用');
@@ -25,8 +31,8 @@ export const verifyToken = (token?: string): JwtPayload | null => {
 	const pure = extractToken(token);
 	if (!pure) return null;
 	try {
-		const decoded = jwt.verify(pure, secretKey as jwt.Secret);
-		return decoded as JwtPayload;
+		const decoded = jwt.verify(pure, verificationKey as jwt.Secret, verificationOptions);
+		return typeof decoded === 'object' && isAuthenticatedPayload(decoded) ? decoded : null;
 	} catch {
 		return null;
 	}

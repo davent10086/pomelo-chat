@@ -90,20 +90,25 @@ async function main() {
 	const owner = await makeUser(1),
 		target = await makeUser(2),
 		outsider = await makeUser(3);
-	const {getPublicUserProfile} = require('../src/modules/identity/public');
+	const { getPublicUserProfile } = require('../src/modules/identity/public');
 	const profile = await getPublicUserProfile(owner.id);
-	assert.deepEqual(Object.keys(profile).sort(), ['avatar','id','name','username']);
+	assert.deepEqual(Object.keys(profile).sort(), ['avatar', 'id', 'name', 'username']);
 	assert.equal(await getPublicUserProfile(2147483647), null);
 	const notifications = [];
 	const originalPublish = better_chat.publish;
-	better_chat.publish = async (_channel, raw) => {notifications.push(JSON.parse(raw)); return 1;};
+	better_chat.publish = async (_channel, raw) => {
+		notifications.push(JSON.parse(raw));
+		return 1;
+	};
 	try {
-		const {NotificationUser} = require('../src/modules/realtime/public');
-		await NotificationUser({receiver_id:owner.id,name:'friendList'});
-		await NotificationUser({receiver_id:2147483647,name:'friendList'});
-		assert.equal(notifications.length,1);
-		assert.equal(notifications[0].username,owner.username);
-	} finally {better_chat.publish = originalPublish;}
+		const { NotificationUser } = require('../src/modules/realtime/public');
+		await NotificationUser({ receiver_id: owner.id, name: 'friendList' });
+		await NotificationUser({ receiver_id: 2147483647, name: 'friendList' });
+		assert.equal(notifications.length, 1);
+		assert.equal(notifications[0].username, owner.username);
+	} finally {
+		better_chat.publish = originalPublish;
+	}
 	const friend = await Query(
 		'INSERT INTO friend (owner_id, user_id, username, group_id, room, remark) VALUES (?, ?, ?, ?, ?, ?)',
 		[owner.id, target.id, target.username, owner.groupId, randomUUID(), 'initial']
@@ -370,6 +375,85 @@ async function main() {
 	assert.equal(fenced.delivered_at, null, 'stale worker cannot complete a replaced claim');
 	assert.equal(fenced.claim_token, replacementToken);
 	assert.equal(logs.filter(line => line.includes('recovery failed')).length, 0, logs.join('\n'));
+
+	const { writeAndSend } = require('../src/modules/messaging/writes');
+	const loadRooms = await Promise.all(Array.from({ length: 10 }, (_, i) => makeGroup('load_' + i)));
+	const send = (group, key, content = key, guard) =>
+		writeAndSend(
+			'group',
+			group.room,
+			{
+				sender_id: owner.id,
+				receiver_id: group.id,
+				room: group.room,
+				content,
+				type: 'group',
+				media_type: 'text',
+				file_size: 0,
+				status: 0,
+				client_msg_id: key
+			},
+			{
+				sender_id: owner.id,
+				receiver_id: group.id,
+				room: group.room,
+				content,
+				type: 'text',
+				file_size: 0
+			},
+			guard
+		);
+	await Promise.all(
+		loadRooms.map(async (group, i) => {
+			for (let j = 0; j < 8; j++) await send(group, prefix + '_load_' + i + '_' + j);
+		})
+	);
+	const duplicateKey = prefix + '_duplicate';
+	const duplicates = await Promise.all(
+		Array.from({ length: 8 }, () => send(loadRooms[0], duplicateKey))
+	);
+	assert.equal(new Set(duplicates.map(row => row.id)).size, 1, 'duplicate sends save once');
+	const collisionKey = prefix + '_cross_room';
+	const conflicts = await Promise.allSettled([
+		send(loadRooms[1], collisionKey),
+		send(loadRooms[2], collisionKey)
+	]);
+	assert.equal(conflicts.filter(r => r.status === 'fulfilled').length, 1);
+	assert.match(conflicts.find(r => r.status === 'rejected').reason.message, /Idempotency/);
+	await assert.rejects(send(loadRooms[0], duplicateKey, 'different content'), /Idempotency/);
+	await assert.rejects(
+		send(loadRooms[0], prefix + '_revoked', 'blocked', async () => false),
+		/revoked/
+	);
+	assert.equal(
+		(
+			await Query('SELECT id FROM message WHERE sender_id = ? AND client_msg_id = ?', [
+				owner.id,
+				prefix + '_revoked'
+			])
+		).length,
+		0
+	);
+	for (const group of loadRooms) {
+		const statistics = await Query('SELECT total FROM message_statistics WHERE room = ?', [
+			group.room
+		]);
+		const counts = await Query('SELECT COUNT(*) AS total FROM message WHERE room = ?', [
+			group.room
+		]);
+		assert.equal(
+			Number(statistics[0].total),
+			Number(counts[0].total),
+			'duplicate, rejected and retried sends preserve message counts'
+		);
+		const messages = await Query('SELECT room_seq FROM message WHERE room = ? ORDER BY room_seq', [
+			group.room
+		]);
+		assert.deepEqual(
+			messages.map(m => Number(m.room_seq)),
+			messages.map((_, index) => index + 1)
+		);
+	}
 	console.log(
 		'[backend-reliability] responses, ownership, pagination, notification failure, competing workers, room order, slow-room isolation, retry, expired leases, renewal and fencing passed'
 	);

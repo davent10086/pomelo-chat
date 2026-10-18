@@ -44,7 +44,7 @@ test('address book keeps current selection, saves friend data and shows group de
     await expect(tree.getByText('新的通讯录备注', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '好友', exact: true }).click({ button: 'right' });
     await page.getByText('新建分组', { exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: '新建分组' });
+    const dialog = page.getByRole('dialog').filter({ has: page.getByPlaceholder('请输入分组名称') });
     await dialog.getByPlaceholder('请输入分组名称').fill('回归分组');
     await dialog.getByRole('button', { name: /确\s*定/ }).click();
     await expect(dialog).toHaveCount(0);

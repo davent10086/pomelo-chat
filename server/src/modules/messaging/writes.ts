@@ -19,45 +19,57 @@ export const writeAndSend = async (
 	sessionGuard?: () => Promise<boolean>
 ): Promise<OutboundMessage> => {
 	msg.status = 0;
-	const saved = await withTransaction(async query => {
-		await repository.ensureWriteConversation([room, type, msg.receiver_id], query);
-		await repository.lockWriteConversation([room], query);
-		if (sessionGuard && !(await sessionGuard()))
-			throw new Error('Session revoked while waiting for transaction');
-		if (msg.client_msg_id) {
-			const existing = await repository.lockMessageByClientId<HistoryMessageRow[]>(
-				[msg.sender_id, msg.client_msg_id],
-				query
-			);
-			if (existing.length) {
-				if (
-					existing[0].room !== room ||
-					existing[0].content !== msg.content ||
-					existing[0].media_type !== msg.media_type
-				)
-					throw new Error('Idempotency key conflict');
-				return { row: existing[0], inserted: false };
+	// Bootstrap outside the transaction: existing rooms must not take insert/upsert locks.
+	const existingConversation = await repository.findWriteConversation<
+		Array<{ id: number; statistics_room: string | null }>
+	>([room]);
+	if (!existingConversation.length)
+		await repository.ensureWriteConversation([room, type, msg.receiver_id]);
+	if (!existingConversation[0]?.statistics_room) await repository.ensureMessageStatistics([room]);
+	const saved = await withTransaction(
+		async query => {
+			const conversations = await repository.lockWriteConversation<
+				Array<{ id: number; last_seq: number }>
+			>([room], query);
+			if (!conversations.length) throw new Error('Conversation not found');
+			if (sessionGuard && !(await sessionGuard()))
+				throw new Error('Session revoked while waiting for transaction');
+			if (msg.client_msg_id) {
+				const existing = await repository.findMessageByClientId<HistoryMessageRow[]>(
+					[msg.sender_id, msg.client_msg_id],
+					query
+				);
+				if (existing.length) {
+					if (
+						existing[0].room !== room ||
+						existing[0].content !== msg.content ||
+						existing[0].media_type !== msg.media_type
+					)
+						throw new Error('Idempotency key conflict');
+					return { row: existing[0], inserted: false };
+				}
 			}
-		}
-		const insertId = await persistMessage(query, msg);
-		if (sessionGuard && !(await sessionGuard())) throw new Error('Session revoked before commit');
-		return {
-			row: {
-				id: insertId,
-				client_msg_id: msg.client_msg_id || null,
-				room_seq: msg.room_seq || insertId,
-				sender_id: msg.sender_id,
-				receiver_id: msg.receiver_id,
-				content: msg.content,
-				room: msg.room,
-				media_type: msg.media_type,
-				file_size: msg.file_size,
-				created_at: new Date(),
-				avatar: null
-			} as HistoryMessageRow,
-			inserted: true
-		};
-	});
+			const insertId = await persistMessage(query, msg, conversations[0]);
+			if (sessionGuard && !(await sessionGuard())) throw new Error('Session revoked before commit');
+			return {
+				row: {
+					id: insertId,
+					client_msg_id: msg.client_msg_id || null,
+					room_seq: msg.room_seq || insertId,
+					sender_id: msg.sender_id,
+					receiver_id: msg.receiver_id,
+					content: msg.content,
+					room: msg.room,
+					media_type: msg.media_type,
+					file_size: msg.file_size,
+					created_at: new Date(),
+					avatar: null
+				} as HistoryMessageRow,
+				inserted: true
+			};
+		},
+		{ maxAttempts: 3, retryDuplicateKey: 'uniq_message_client' }
+	);
 
 	const outbound: OutboundMessage = {
 		...message,

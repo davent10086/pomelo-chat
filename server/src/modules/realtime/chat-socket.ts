@@ -102,13 +102,8 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		ws.on('message', async (data: RawData) => {
 			const message = parseIncomingMessage(data);
 			try {
-				if (
-					!(await validateSessionSocket(ws)) ||
-					!(await authorizeChatRoom(decoded.id as UserId, room, type))
-				) {
-					ws.close(4003, 'forbidden');
-					return;
-				}
+				if (!(await validateSessionSocket(ws))) return;
+				// Room access is revalidated when this message reaches the room queue below.
 				if (!message || !message.content.trim() || message.content.length > MAX_MESSAGE_LENGTH) {
 					sendFrame(ws, {
 						name: 'error',

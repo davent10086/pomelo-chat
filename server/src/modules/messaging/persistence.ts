@@ -17,12 +17,19 @@ export interface PersistedMessage {
 }
 
 /** Shared by ordinary messages and group initialization, inside the caller's transaction. */
-export const persistMessage = async (query: SqlQuery, msg: PersistedMessage): Promise<number> => {
-	await repository.ensureConversation([msg.room, msg.type, msg.receiver_id], query);
-	const rows = await repository.lockConversationSequence<Array<{ id: number; last_seq: number }>>(
-		[msg.room],
-		query
-	);
+export const persistMessage = async (
+	query: SqlQuery,
+	msg: PersistedMessage,
+	lockedConversation?: { id: number; last_seq: number }
+): Promise<number> => {
+	if (!lockedConversation)
+		await repository.ensureConversation([msg.room, msg.type, msg.receiver_id], query);
+	const rows = lockedConversation
+		? [lockedConversation]
+		: await repository.lockConversationSequence<Array<{ id: number; last_seq: number }>>(
+				[msg.room],
+				query
+			);
 	if (!rows.length) throw new Error('Conversation not found');
 	msg.conversation_id = rows[0].id;
 	msg.room_seq = Number(rows[0].last_seq) + 1;
@@ -34,7 +41,12 @@ export const persistMessage = async (query: SqlQuery, msg: PersistedMessage): Pr
 		await repository.updateMessageFileSize([msg.file_size, result.insertId], query);
 	}
 	await repository.advanceConversation([msg.room_seq, result.insertId, msg.conversation_id], query);
-	await repository.incrementMessageStatistics([msg.room], query);
+	if (lockedConversation) {
+		const statistics = await repository.incrementExistingMessageStatistics<{
+			affectedRows: number;
+		}>([msg.room], query);
+		if (statistics.affectedRows !== 1) throw new Error('Message statistics missing');
+	} else await repository.incrementMessageStatistics([msg.room], query);
 	await repository.insertMessageOutbox([result.insertId], query);
 	return result.insertId;
 };

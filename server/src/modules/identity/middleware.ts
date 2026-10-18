@@ -1,7 +1,7 @@
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { better_chat } from '../../infrastructure/redis';
-import { secretKey, extractToken, isAuthenticatedPayload } from './session';
+import { verificationKey, verificationOptions, extractToken, isAuthenticatedPayload } from './session';
 import { CommonStatus } from '../../shared/status';
 import { RespError } from '../../infrastructure/http-response';
 export const authenticateToken: RequestHandler = (
@@ -14,7 +14,7 @@ export const authenticateToken: RequestHandler = (
 	if (!token) {
 		return RespError(res, CommonStatus.TOKEN_ERR);
 	}
-	jwt.verify(token, secretKey as jwt.Secret, async (err, decoded) => {
+	jwt.verify(token, verificationKey as jwt.Secret, verificationOptions, async (err, decoded) => {
 		if (err) {
 			return RespError(res, CommonStatus.TOKEN_ERR);
 		}
@@ -32,7 +32,7 @@ export const authenticateToken: RequestHandler = (
 			req.user = payload;
 		} catch (caught: unknown) {
 			const redisErr = caught instanceof Error ? caught : new Error(String(caught));
-			// Redis 不可用时降级放行（避免 Redis 故障导致全站不可用），并记录日志
+			// Redis 不可用时拒绝访问，避免已撤销的 token 被放行。
 			// eslint-disable-next-line no-console
 			console.error('[auth] Redis 校验失败，拒绝访问:', redisErr.message);
 			return RespError(res, CommonStatus.TOKEN_ERR);

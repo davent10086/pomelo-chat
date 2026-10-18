@@ -47,7 +47,7 @@ export const ensureConversation = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		'INSERT IGNORE INTO conversation (room, type, target_id) VALUES (?, ?, ?)',
+		'INSERT INTO conversation (room, type, target_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id',
 		bindings
 	);
 };
@@ -142,7 +142,7 @@ export const ensureWriteConversation = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		'INSERT IGNORE INTO conversation (room, type, target_id) VALUES (?, ?, ?)',
+		'INSERT INTO conversation (room, type, target_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id',
 		bindings
 	);
 };
@@ -151,16 +151,16 @@ export const lockWriteConversation = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('SELECT id FROM conversation WHERE room = ? FOR UPDATE', bindings);
+	return executor<T>('SELECT id, last_seq FROM conversation WHERE room = ? FOR UPDATE', bindings);
 };
 
-export const lockMessageByClientId = <T = unknown>(
+export const findMessageByClientId = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
 		`SELECT id, client_msg_id, room_seq, sender_id, receiver_id, content, room, media_type, file_size, created_at, NULL AS avatar
-				 FROM message WHERE sender_id = ? AND client_msg_id = ? LIMIT 1 FOR UPDATE`,
+				 FROM message WHERE sender_id = ? AND client_msg_id = ? LIMIT 1`,
 		bindings
 	);
 };
@@ -190,3 +190,26 @@ export const lockAvailableOutboxHead = <T = unknown>(
 		bindings
 	);
 };
+
+/** Read-only preflight; locking sequence reads still happen inside the write transaction. */
+export const findWriteConversation = <T = unknown>(
+	bindings: unknown,
+	executor: SqlQuery = Query
+): Promise<T> =>
+	executor<T>(
+		'SELECT c.id, s.room AS statistics_room FROM conversation c LEFT JOIN message_statistics s ON s.room = c.room WHERE c.room = ? LIMIT 1',
+		bindings
+	);
+export const ensureMessageStatistics = <T = unknown>(
+	bindings: unknown,
+	executor: SqlQuery = Query
+): Promise<T> =>
+	executor<T>(
+		'INSERT INTO message_statistics (room, total) VALUES (?, 0) ON DUPLICATE KEY UPDATE room = room',
+		bindings
+	);
+export const incrementExistingMessageStatistics = <T = unknown>(
+	bindings: unknown,
+	executor: SqlQuery = Query
+): Promise<T> =>
+	executor<T>('UPDATE message_statistics SET total = total + 1 WHERE room = ?', bindings);

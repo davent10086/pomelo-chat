@@ -50,6 +50,39 @@ const { withTransaction } = require('../src/infrastructure/database-query');
 			/injected failure/
 		);
 		assert.deepEqual(operations, ['begin', 'partial write', 'rollback', 'release']);
+		let attempts = 0;
+		await withTransaction(
+			async () => {
+				if (++attempts < 3)
+					throw Object.assign(new Error('deadlock'), { code: 'ER_LOCK_DEADLOCK' });
+			},
+			{ maxAttempts: 3 }
+		);
+		assert.equal(attempts, 3);
+		attempts = 0;
+		await assert.rejects(
+			withTransaction(
+				async () => {
+					attempts++;
+					throw Object.assign(new Error('deadlock'), { code: 'ER_LOCK_DEADLOCK' });
+				},
+				{ maxAttempts: 3 }
+			),
+			/deadlock/
+		);
+		assert.equal(attempts, 3, 'retries are bounded');
+		attempts = 0;
+		await assert.rejects(
+			withTransaction(
+				async () => {
+					attempts++;
+					throw Object.assign(new Error('connection lost'), { code: 'PROTOCOL_CONNECTION_LOST' });
+				},
+				{ maxAttempts: 3 }
+			),
+			/connection lost/
+		);
+		assert.equal(attempts, 1, 'ambiguous failures are never retried');
 	} finally {
 		db.getConnection = original;
 	}

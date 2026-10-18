@@ -19,6 +19,7 @@ export async function startChatBackend(root) {
   const database = `pomelo_benchmark_test_${id}`;
   const prefix = `benchmark:${id}:`;
   const redis = new Redis(env.REDIS_URL_TEST || env.REDIS_URL || { host: env.REDIS_HOST || '127.0.0.1', port: Number(env.REDIS_PORT || 6379), password: env.REDIS_PASSWORD || undefined, db: Number(env.REDIS_DB || 0) }, { lazyConnect: true, maxRetriesPerRequest: 1 });
+  const messageErrorTypes = {};
   let child;
   let created = false;
   let closed = false;
@@ -63,7 +64,7 @@ export async function startChatBackend(root) {
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
     const timer = setTimeout(() => readyReject(new Error('Isolated backend startup timed out')), 60000);
     const redisTarget = env.REDIS_URL_TEST || env.REDIS_URL;
-    child = spawn(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), 'src/index.ts'], {
+    child = spawn(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), ...(env.BENCH_DIAGNOSTIC_PRELOAD ? ['-r', env.BENCH_DIAGNOSTIC_PRELOAD] : []), 'src/index.ts'], {
       cwd: serverRoot,
       env: { ...env, NODE_ENV: 'test', PORT: String(port), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix,
         ...(redisTarget ? { REDIS_URL: redisTarget } : {}), JWT_SECRET: randomUUID(), TS_NODE_FILES: 'true', REQUEST_LOGS: 'false',
@@ -71,7 +72,7 @@ export async function startChatBackend(root) {
       stdio: ['ignore', 'pipe', 'pipe']
     });
     child.stdout.on('data', data => { if (data.toString().includes('Server listening')) readyResolve(); });
-    child.stderr.on('data', data => { if (/服务启动失败/.test(data.toString())) readyReject(new Error('Backend startup failed; check local MySQL/Redis configuration')); });
+    child.stderr.on('data', data => { const text = data.toString(); if (text.includes('[message] ws message error:')) { const kind = /deadlock/i.test(text) ? 'database_deadlock' : /lock wait timeout/i.test(text) ? 'database_lock_timeout' : /duplicate/i.test(text) ? 'database_duplicate' : /pool|connection/i.test(text) ? 'database_connection' : 'other_message_error'; messageErrorTypes[kind] = (messageErrorTypes[kind] || 0) + (text.match(/\[message\] ws message error:/g) || []).length; } if (/服务启动失败/.test(data.toString())) readyReject(new Error('Backend startup failed; check local MySQL/Redis configuration')); });
     child.once('error', readyReject);
     child.once('exit', code => readyReject(new Error(`Backend exited (${code})`)));
     try { await ready; } finally { clearTimeout(timer); }
@@ -111,6 +112,49 @@ export async function startChatBackend(root) {
       });
       ws.on('error', error => { clearTimeout(timeout); reject(error); });
     });
-    return { base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
+    // Extra fixtures are created only inside this invocation's temporary database.
+    async function createIndependentPeers(count, includeReceivers = false) {
+      const clients = [];
+      for (let i = 0; i < count; i++) {
+        const pair = [];
+        for (const side of ['sender', 'receiver']) {
+          const username = 'load_' + side + '_' + i;
+          await admin.query('INSERT INTO ??.user (username, password, phone, avatar, name) VALUES (?, ?, ?, ?, ?)', [database, username, hash, '138' + String(i * 2 + pair.length).padStart(8, '0'), '', username]);
+          await admin.query('INSERT INTO ??.friend_group (user_id, username, name) SELECT id, username, ? FROM ??.user WHERE username = ?', [database, '我的好友', database, username]);
+          const [records] = await admin.query('SELECT id, username FROM ??.user WHERE username = ?', [database, username]);
+          pair.push(records[0]);
+        }
+        const session = await api('auth/login', { username: pair[0].username, password });
+        await api('friend/add_friend', pair[1], session.token);
+        const conversations = await api('message/chat_list', undefined, session.token);
+        if (conversations.length !== 1) throw new Error('Expected one independent room');
+        const receiverAuth = includeReceivers ? await api('auth/login', { username: pair[1].username, password }) : undefined;
+        clients.push({ auth: session, receiverAuth, room: conversations[0] });
+      }
+      return clients;
+    }
+    async function probeDatabase() {
+      await admin.query('CREATE TABLE ??.benchmark_probe (id BIGINT AUTO_INCREMENT PRIMARY KEY, payload VARCHAR(64)) ENGINE=InnoDB', [database]);
+      const pool = mysql.createPool({ host: env.DB_HOST || '127.0.0.1', port: Number(env.DB_PORT || 3306), user: env.DB_USER || 'root', password: env.DB_PASSWORD || '', database, connectionLimit: 10 });
+      const results = [];
+      try {
+        for (const mode of ['select', 'autocommit-insert', 'transaction-insert']) {
+          let count=0, errors=0; const start=performance.now(), until=start+8000;
+          await Promise.all(Array.from({length:10},async()=>{const connection=await pool.getConnection();try{while(performance.now()<until){try{if(mode==='select') await connection.query('SELECT 1');else if(mode==='autocommit-insert')await connection.query('INSERT INTO benchmark_probe (payload) VALUES (?)',['probe']);else {await connection.beginTransaction();await connection.query('INSERT INTO benchmark_probe (payload) VALUES (?)',['probe']);await connection.commit();}count++;}catch(e){errors++;await connection.rollback();}}}finally{connection.release();}}));
+          results.push({mode,concurrency:10,count,errors,perSecond:count/((performance.now()-start)/1000)});
+        }
+      } finally { await pool.end(); }
+      return results;
+    }
+    async function databaseDiagnostics() {
+      const [status] = await admin.query('SHOW ENGINE INNODB STATUS');
+      const raw = status[0]?.Status || '';
+      const start = raw.indexOf('LATEST DETECTED DEADLOCK');
+      const end = raw.indexOf('TRANSACTIONS', start);
+      const deadlock = start >= 0 ? raw.slice(start, end > start ? end : start + 16000) : '';
+      const [indexes] = await admin.query('SHOW INDEX FROM ??.message', [database]);
+      return { deadlock: deadlock.includes(database) ? deadlock : 'No latest deadlock belonging to this test database', indexes: indexes.map(row => ({ name: row.Key_name, column: row.Column_name, unique: !row.Non_unique })) };
+    }
+    return { probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
   } catch (error) { await close(); throw error; }
 }
