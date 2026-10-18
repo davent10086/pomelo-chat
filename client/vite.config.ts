@@ -6,6 +6,9 @@ import { defineConfig } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
 	plugins: [react()],
+	// The upload worker loads this lazily; prebundle it before serving pages so
+	// first upload cannot trigger dependency optimization and a full-page reload.
+	optimizeDeps: { include: ['spark-md5'] },
 	server: {
 		open: process.env.POMELO_DESKTOP_DEV !== '1',
 		host: '0.0.0.0',

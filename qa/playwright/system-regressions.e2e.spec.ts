@@ -167,7 +167,7 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
       body: 'event: delta\ndata: {"delta":"旧总结","reset":false}\n\nevent: delta\ndata: {"delta":"统一接口总结","reset":true}\n\ndata: {"content":"统一接口总结","actions":[]}\n\ndata: [DONE]\n\n',
     });
   });
-  await page.getByRole("button", { name: "AI总结聊天记录", exact: true }).click();
+  await page.getByRole("button", { name: "总结聊天", exact: true }).click();
   const summaryDialog = page.getByRole("dialog", { name: "聊天记录总结" });
   await expect(summaryDialog).toContainText("统一接口总结");
   await expect(summaryDialog).not.toContainText("旧总结");

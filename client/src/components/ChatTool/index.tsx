@@ -180,7 +180,7 @@ const ChatTool = (props: IChatToolProps) => {
 							avatar: user.avatar,
 							fileSize: file.size
 						};
-						sendMessage(newmessage);
+						await sendMessage(newmessage);
 					} catch {
 						showMessage('error', '消息发送失败，请重试');
 					}
