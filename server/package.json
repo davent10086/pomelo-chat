@@ -50,6 +50,7 @@
     "livekit-server-sdk": "^2.19.0",
     "multer": "1.4.5-lts.1",
     "mysql2": "^3.24.5",
+    "ws": "^8.22.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
