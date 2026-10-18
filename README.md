@@ -2,7 +2,9 @@
 
 Pomelo Chat 是一个支持浏览器与 Electron 桌面的即时通讯项目，提供单聊、群聊、文件传输、音视频通话和 AI 助手。
 
-![聊天主窗口与 AI 助手](docs/images/desktop-ui.png)
+![桌面聊天主窗口与关联当前会话的 AI 总结侧栏](docs/images/desktop-ui.png)
+
+当前桌面界面，使用演示会话与模拟 AI 回复。
 
 ## 项目架构
 
