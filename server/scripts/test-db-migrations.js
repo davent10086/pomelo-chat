@@ -30,4 +30,32 @@ for (const output of [first, second]) {
   assert.doesNotMatch(output, /ER_CANT_DROP_FIELD_OR_KEY/);
 }
 
+// Exercise an existing pre-index outbox, including in-flight and delivered records.
+const legacy = execFileSync(process.execPath, ['-r', 'ts-node/register/transpile-only', '-e', `
+  const assert = require('node:assert/strict');
+  const {randomUUID} = require('node:crypto');
+  const {default: db, initDatabase} = require('./src/infrastructure/database');
+  const {Query} = require('./src/infrastructure/database-query');
+  const prefix = 'migration_' + randomUUID();
+  let userId, conversationId;
+  (async () => {
+    const user = await Query('INSERT INTO user (username,password,phone) VALUES (?,?,?)', [prefix,'test-only',prefix]); userId=user.insertId;
+    const conversation = await Query('INSERT INTO conversation (room,type,target_id,last_seq) VALUES (?,?,?,?)', [prefix,'private',userId,3]); conversationId=conversation.insertId;
+    for(let seq=1;seq<=3;seq++) {
+      const msg = await Query('INSERT INTO message (conversation_id,sender_id,receiver_id,content,room,type,media_type,room_seq) VALUES (?,?,?,?,?,?,?,?)', [conversationId,userId,userId,'legacy',prefix,'private','text',seq]);
+      await Query('INSERT INTO message_outbox (message_id,conversation_id,attempts,claim_token,lease_until,delivered_at) VALUES (?,?,2,?,DATE_ADD(NOW(), INTERVAL 60 SECOND),?)', [msg.insertId,conversationId,seq===1?'legacy-claim':null,seq===3?new Date():null]);
+    }
+    const before = await Query('SELECT message_id,attempts,claim_token,lease_until,delivered_at FROM message_outbox WHERE conversation_id=? ORDER BY message_id',[conversationId]);
+    await Query('DELETE FROM schema_migrations WHERE id=?',['outbox_pending_conversation_v1']);
+    await Query('ALTER TABLE message_outbox DROP INDEX idx_outbox_room_pending, DROP COLUMN conversation_id');
+    await initDatabase(); await initDatabase();
+    const after = await Query('SELECT message_id,attempts,claim_token,lease_until,delivered_at FROM message_outbox WHERE conversation_id=? ORDER BY message_id',[conversationId]);
+    assert.deepEqual(after,before,'migration must preserve claims, retry counts and delivery markers');
+    const wrong = await Query('SELECT o.message_id FROM message_outbox o JOIN message m ON m.id=o.message_id WHERE o.conversation_id<>m.conversation_id OR o.conversation_id IS NULL');
+    assert.equal(wrong.length,0);
+    console.log('[db-migrations] legacy outbox backfill preserves pending, leased and delivered records');
+  })().finally(async()=>{if(userId) await Query('DELETE FROM user WHERE id=?',[userId]);if(conversationId)await Query('DELETE FROM conversation WHERE id=?',[conversationId]);await new Promise(resolve=>db.end(resolve));}).catch(error=>{console.error(error);process.exitCode=1;});
+`], { cwd: serverRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
+assert.match(legacy,/legacy outbox backfill preserves/);
+
 console.log('[db-migrations] concurrent initialization is serialized and repeated migration is idempotent');

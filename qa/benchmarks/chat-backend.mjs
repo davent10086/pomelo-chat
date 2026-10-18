@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +18,9 @@ export async function startChatBackend(root) {
   const id = randomUUID().replaceAll('-', '');
   const database = `pomelo_benchmark_test_${id}`;
   const prefix = `benchmark:${id}:`;
+  const uploadParent = path.join(root, 'tmp', 'benchmark-uploads');
+  await mkdir(uploadParent, { recursive: true });
+  const uploadRoot = await mkdtemp(path.join(uploadParent, 'run-'));
   const redis = new Redis(env.REDIS_URL_TEST || env.REDIS_URL || { host: env.REDIS_HOST || '127.0.0.1', port: Number(env.REDIS_PORT || 6379), password: env.REDIS_PASSWORD || undefined, db: Number(env.REDIS_DB || 0) }, { lazyConnect: true, maxRetriesPerRequest: 1 });
   const messageErrorTypes = {};
   let child;
@@ -43,6 +46,8 @@ export async function startChatBackend(root) {
       // Cleanup is restricted to the exact database created by this invocation.
       if (created && /^pomelo_benchmark_test_[a-f0-9]{32}$/.test(database)) await admin.query('DROP DATABASE ??', [database]);
       await admin.end();
+      if (path.dirname(uploadRoot) !== uploadParent || !path.basename(uploadRoot).startsWith('run-')) throw new Error('Unsafe benchmark upload cleanup');
+      await rm(uploadRoot, { recursive: true, force: true });
     }
   }
   try {
@@ -66,7 +71,7 @@ export async function startChatBackend(root) {
     const redisTarget = env.REDIS_URL_TEST || env.REDIS_URL;
     child = spawn(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), ...(env.BENCH_DIAGNOSTIC_PRELOAD ? ['-r', env.BENCH_DIAGNOSTIC_PRELOAD] : []), 'src/index.ts'], {
       cwd: serverRoot,
-      env: { ...env, NODE_ENV: 'test', PORT: String(port), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix,
+      env: { ...env, NODE_ENV: 'test', PORT: String(port), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix, UPLOAD_ROOT: uploadRoot,
         ...(redisTarget ? { REDIS_URL: redisTarget } : {}), JWT_SECRET: randomUUID(), TS_NODE_FILES: 'true', REQUEST_LOGS: 'false',
         DEEPSEEK_API_KEY: '', MCP_SERVERS_JSON: '[]', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
       stdio: ['ignore', 'pipe', 'pipe']
@@ -155,6 +160,13 @@ export async function startChatBackend(root) {
       const [indexes] = await admin.query('SHOW INDEX FROM ??.message', [database]);
       return { deadlock: deadlock.includes(database) ? deadlock : 'No latest deadlock belonging to this test database', indexes: indexes.map(row => ({ name: row.Key_name, column: row.Column_name, unique: !row.Non_unique })) };
     }
-    return { probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
+    async function auditMessages() {
+      const [counts] = await admin.query('SELECT COUNT(*) AS messages FROM ??.message', [database]);
+      const [sequenceErrors] = await admin.query('SELECT room, COUNT(*) AS total, COUNT(DISTINCT room_seq) AS distinct_seq, MIN(room_seq) AS first_seq, MAX(room_seq) AS last_seq FROM ??.message GROUP BY room HAVING first_seq <> 1 OR last_seq <> total OR distinct_seq <> total', [database]);
+      const [statisticsErrors] = await admin.query('SELECT s.room, s.total, COUNT(m.id) AS actual FROM ??.message_statistics s LEFT JOIN ??.message m ON m.room=s.room GROUP BY s.room,s.total HAVING s.total <> COUNT(m.id)', [database,database]);
+      const [outbox] = await admin.query('SELECT COUNT(*) AS pending FROM ??.message_outbox WHERE delivered_at IS NULL', [database]);
+      return { ...counts[0], sequenceErrors, statisticsErrors, pendingOutbox: outbox[0].pending };
+    }
+    return { backendPid: child.pid, auditMessages, probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
   } catch (error) { await close(); throw error; }
 }

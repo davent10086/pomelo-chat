@@ -376,6 +376,31 @@ async function main() {
 	assert.equal(fenced.claim_token, replacementToken);
 	assert.equal(logs.filter(line => line.includes('recovery failed')).length, 0, logs.join('\n'));
 
+	// A leased room with a large backlog must not hide another room's eligible head.
+	const backlog = await makeGroup('indexed_backlog');
+	const backlogHead = await insertMessage(backlog, 'leased backlog head');
+	const conversationId = (await Query('SELECT conversation_id FROM message WHERE id = ?', [backlogHead]))[0].conversation_id;
+	const bulk = Array.from({ length: 3000 }, (_, i) => [
+		conversationId, owner.id, backlog.id, 'backlog fixture', backlog.room, 'group', 'text', i + 2
+	]);
+	await Query('INSERT INTO message (conversation_id,sender_id,receiver_id,content,room,type,media_type,room_seq) VALUES ?', [bulk]);
+	await Query(`INSERT INTO message_outbox (message_id,conversation_id,delivered_at)
+		SELECT id,conversation_id,IF(room_seq <= 2001,NOW(),NULL) FROM message WHERE conversation_id = ? AND id <> ?`, [conversationId,backlogHead]);
+	await Query('UPDATE message_outbox SET lease_until = DATE_ADD(NOW(), INTERVAL 60 SECOND) WHERE message_id = ?', [backlogHead]);
+	const eligibleRoom = await makeGroup('indexed_ready');
+	const eligibleId = await insertMessage(eligibleRoom, 'eligible new room');
+	const outboxRepository = require('../src/modules/messaging/repository');
+	const head = await withTransaction(query => outboxRepository.lockAvailableOutboxHead([1],query));
+	assert.deepEqual(head.map(row => row.message_id),[eligibleId], 'leased head blocks its 1000 followers but not a new room');
+	await Query('UPDATE message_outbox SET lease_until = NULL, next_attempt_at = DATE_ADD(NOW(), INTERVAL 60 SECOND) WHERE message_id = ?', [backlogHead]);
+	const retryHead = await withTransaction(query => outboxRepository.lockAvailableOutboxHead([1],query));
+	assert.deepEqual(retryHead.map(row => row.message_id),[eligibleId], 'backing-off head still blocks its followers');
+	const plan = await outboxRepository.lockAvailableOutboxHead([1], (sql,bindings) => Query('EXPLAIN ' + sql.replace(' FOR UPDATE SKIP LOCKED',''),bindings));
+	assert.equal(plan.find(row=>row.table==='o').key,'idx_outbox_pending');
+	assert.equal(plan.some(row=>row.table==='m' || row.table==='earlier'),false,'claim never scans historical message rows');
+	await Query('DELETE FROM message WHERE conversation_id = ?', [conversationId]);
+	await Query('DELETE FROM message WHERE id = ?', [eligibleId]);
+
 	const { writeAndSend } = require('../src/modules/messaging/writes');
 	const loadRooms = await Promise.all(Array.from({ length: 10 }, (_, i) => makeGroup('load_' + i)));
 	const send = (group, key, content = key, guard) =>

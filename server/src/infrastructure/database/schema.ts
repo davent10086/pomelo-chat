@@ -229,9 +229,11 @@ const messageAttachmentTableSQL = () => `CREATE TABLE IF NOT EXISTS message_atta
 		 FOREIGN KEY(file_id) REFERENCES file_metadata(id) ON DELETE CASCADE
 		) ENGINE=InnoDB`;
 const messageOutboxTableSQL = () => `CREATE TABLE IF NOT EXISTS message_outbox (
-		 message_id INT NOT NULL PRIMARY KEY, attempts INT NOT NULL DEFAULT 0,
+		 message_id INT NOT NULL PRIMARY KEY, conversation_id INT NOT NULL, attempts INT NOT NULL DEFAULT 0,
 		 next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at DATETIME NULL,
-		 INDEX idx_outbox_pending(delivered_at, next_attempt_at), FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE
+		 INDEX idx_outbox_pending(delivered_at, next_attempt_at),
+		 INDEX idx_outbox_room_pending(conversation_id, delivered_at, message_id),
+		 FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE
 		) ENGINE=InnoDB`;
 
 /** Ordered by foreign-key dependencies. */

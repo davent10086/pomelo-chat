@@ -47,6 +47,6 @@ export const persistMessage = async (
 		}>([msg.room], query);
 		if (statistics.affectedRows !== 1) throw new Error('Message statistics missing');
 	} else await repository.incrementMessageStatistics([msg.room], query);
-	await repository.insertMessageOutbox([result.insertId], query);
+	await repository.insertMessageOutbox([result.insertId, msg.conversation_id], query);
 	return result.insertId;
 };

@@ -226,6 +226,18 @@ export const initializeDatabase = async (
 		}
 	};
 
+	const migrateOutboxRoomIndex = async (): Promise<void> => {
+		const name = 'outbox_pending_conversation_v1';
+		if (await isMigrationApplied(name)) return;
+		await runMigrationSql(name, 'ALTER TABLE message_outbox ADD COLUMN conversation_id INT NULL');
+		await runSql(`UPDATE message_outbox o JOIN message m ON m.id = o.message_id
+		 SET o.conversation_id = m.conversation_id WHERE o.conversation_id IS NULL`);
+		await runSql('ALTER TABLE message_outbox MODIFY COLUMN conversation_id INT NOT NULL');
+		await runMigrationSql(name,
+			'ALTER TABLE message_outbox ADD INDEX idx_outbox_room_pending(conversation_id, delivered_at, message_id)');
+		await recordMigration(name);
+	};
+
 	try {
 		assertConfiguration();
 		connection = await new Promise<mysql.PoolConnection>((resolve, reject) =>
@@ -239,6 +251,7 @@ export const initializeDatabase = async (
 		await runCompatibilityMigrations();
 		await backfillCompatibilityData();
 		await repairSystemData();
+		await migrateOutboxRoomIndex();
 		// eslint-disable-next-line no-console
 		console.log('MySQL 数据表初始化/迁移完成');
 	} catch (caught: unknown) {

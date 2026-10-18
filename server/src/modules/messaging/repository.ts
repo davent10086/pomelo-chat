@@ -107,7 +107,7 @@ export const insertMessageOutbox = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('INSERT INTO message_outbox (message_id) VALUES (?)', bindings);
+	return executor<T>('INSERT INTO message_outbox (message_id, conversation_id) VALUES (?, ?)', bindings);
 };
 
 export const lockReadCursorConversation = <T = unknown>(
@@ -180,13 +180,16 @@ export const lockAvailableOutboxHead = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		`SELECT o.message_id FROM message_outbox o JOIN message m ON m.id = o.message_id
+		// Drive from the pending range, never from the unbounded message history.
+		// The predecessor check includes leased/backing-off heads to preserve room order.
+		`SELECT o.message_id FROM message_outbox o FORCE INDEX (idx_outbox_pending)
 						 WHERE o.delivered_at IS NULL AND o.next_attempt_at <= NOW()
 						 AND (o.lease_until IS NULL OR o.lease_until <= NOW())
 						 AND NOT EXISTS (
-						   SELECT 1 FROM message earlier JOIN message_outbox previous ON previous.message_id = earlier.id
-						   WHERE earlier.room = m.room AND earlier.id < m.id AND previous.delivered_at IS NULL
-						 ) ORDER BY o.message_id LIMIT ? FOR UPDATE SKIP LOCKED`,
+						   SELECT 1 FROM message_outbox previous FORCE INDEX (idx_outbox_room_pending)
+						   WHERE previous.conversation_id = o.conversation_id
+						   AND previous.delivered_at IS NULL AND previous.message_id < o.message_id
+						 ) ORDER BY o.next_attempt_at, o.message_id LIMIT ? FOR UPDATE SKIP LOCKED`,
 		bindings
 	);
 };
