@@ -36,7 +36,7 @@ export const registerNotificationSocket = (
 };
 export const removeNotificationSocket = (username: string, ws: WebSocket): boolean => {
 	const current = connections.get(username);
-	if (current?.ws !== ws) return false;
+	if (!current || current.ws !== ws) return false;
 	connections.delete(username);
 	void current.dispose();
 	return true;
