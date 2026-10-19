@@ -7,6 +7,15 @@ export type UserId = number | string;
 export const HISTORY_PAGE_SIZE = 30;
 export const MAX_HISTORY_PAGE_SIZE = 80;
 export const MAX_MESSAGE_LENGTH = 10000;
+export const normalizeFileName = (value: unknown): string | null => {
+	if (value === undefined || value === null) return null;
+	if (typeof value !== 'string') throw new Error('Invalid attachment name');
+	const name = value.normalize('NFC').trim();
+	const hasControl = Array.from(name).some(char => char.charCodeAt(0) < 32 || (char.charCodeAt(0) >= 127 && char.charCodeAt(0) <= 159));
+	if (!name || name.length > 255 || hasControl || /[/\\\u202a-\u202e\u2066-\u2069]/u.test(name) || name === '.' || name === '..')
+		throw new Error('Invalid attachment name');
+	return name;
+};
 
 export const isChatType = (value: string): value is ChatType =>
 	value === 'private' || value === 'group';
@@ -68,6 +77,7 @@ export interface GroupMemberRow {
 }
 
 export interface HistoryMessageRow {
+	file_name?: string | null;
 	id: number;
 	client_msg_id: string | null;
 	room_seq: number;
@@ -94,6 +104,7 @@ export interface ChatListItem {
 }
 
 export interface IncomingMessage {
+	fileName?: unknown;
 	content: string;
 	type?: unknown;
 	fileSize?: unknown;
@@ -101,6 +112,7 @@ export interface IncomingMessage {
 }
 
 export interface InsertMessage {
+	file_name?: string | null;
 	conversation_id?: number;
 	client_msg_id?: string | null;
 	room_seq?: number;
@@ -115,6 +127,7 @@ export interface InsertMessage {
 }
 
 export interface OutboundMessage {
+	file_name?: string | null;
 	id?: number;
 	client_msg_id?: string | null;
 	room_seq?: number;

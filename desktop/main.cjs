@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, screen, protocol, session, net, safeStorage } = require('electron');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { PANEL_SIZE, TAB_SIZE, GAP, dockBounds } = require('./geometry.cjs');
 const { validAuth, validChat, trustedFrame } = require('./protocol.cjs');
 const { APP_ORIGIN, sameOrigin, registerAppProtocol } = require('./app-protocol.cjs');
@@ -104,12 +105,30 @@ ipcMain.handle('desktop:window', (event, action) => {
 });
 
 ipcMain.handle('desktop:snapshot', event => { requireEither(event); return snapshot; });
-ipcMain.handle('desktop:download', (event, storagePath) => {
+ipcMain.handle('desktop:download', (event, storagePath, fileName) => {
   requireEither(event);
   if (!snapshot.auth || !settings.serverURL || typeof storagePath !== 'string' ||
       !/^\/uploads\/[1-9]\d*\/(image|video|file)\/[a-f0-9]{32,64}\.[a-z0-9]{1,10}$/.test(storagePath))
     throw new Error('Invalid download');
-  event.sender.downloadURL(`${settings.serverURL}${storagePath}`, {
+  if (fileName !== undefined && (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 255 ||
+      /[/\\\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(fileName) || fileName === '.' || fileName === '..'))
+    throw new Error('Invalid download name');
+  const downloadURL = new URL(`${settings.serverURL}${storagePath}`);
+  if (fileName) {
+    downloadURL.searchParams.set('download', randomUUID());
+    const url = downloadURL.href;
+    const downloads = event.sender.session;
+    const nameDownload = (_event, item, contents) => {
+      if (contents !== event.sender || item.getURL() !== url) return;
+      clearTimeout(expiry);
+      downloads.off('will-download', nameDownload);
+      item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), fileName.replace(/[<>:"|?*]/g, '_')) });
+    };
+    const expiry = setTimeout(() => downloads.off('will-download', nameDownload), 30000);
+    expiry.unref();
+    downloads.on('will-download', nameDownload);
+  }
+    event.sender.downloadURL(downloadURL.href, {
     headers: { Authorization: `Bearer ${snapshot.auth.token}` }
   });
 });

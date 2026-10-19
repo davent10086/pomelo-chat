@@ -7,7 +7,7 @@ import { IChatContainerProps } from './type';
 import AIChatSummary from '@/components/AIChatSummary';
 import MessageShow from '@/components/MessageShow';
 import { IMessageItem } from '@/components/MessageShow/type';
-import { useReplySuggestions } from '@/hooks/useReplySuggestions';
+
 import { mergeMessages } from '@/utils/message-merge';
 
 // M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
@@ -19,7 +19,6 @@ const BUFFER_SIZE = 10;
  * M2: 移除 window.dispatchEvent，改用回调
  * M5: messageCache 在消息变更时清理，避免内存泄漏
  * M6: 动态高度虚拟滚动
- * M7: refreshNextSteps 防抖
  * L2: isAtBottomRef 改为 state 镜像，确保重渲染
  */
 const ChatContainer = (props: IChatContainerProps) => {
@@ -32,8 +31,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 		focusMessageId,
 		onRetry,
 		onCancelRetry,
-		onAtBottomChange,
-		onInsertText
+		onAtBottomChange
 	} = props;
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const messagesWrapRef = useRef<HTMLDivElement>(null);
@@ -47,7 +45,6 @@ const ChatContainer = (props: IChatContainerProps) => {
 	const anchor = useRef<{ key: string; offset: number }>();
 	const isAtBottomRef = useRef<boolean>(true);
 
-	const [nextCollapsed, setNextCollapsed] = useState<boolean>(false);
 	const [layoutVersion, setLayoutVersion] = useState(0);
 
 	// M6: 测量高度缓存
@@ -60,16 +57,6 @@ const ChatContainer = (props: IChatContainerProps) => {
 	useEffect(() => {
 		onAtBottomChange?.(isAtBottom);
 	}, [isAtBottom, onAtBottomChange]);
-	const {
-		suggestions: nextSteps,
-		loading: nextLoading,
-		refresh: refreshNextSteps
-	} = useReplySuggestions(allMessages, {
-		scope: allMessages[0]?.room || '',
-		count: 3,
-		maxLength: 30,
-		debounceMs: 1500
-	});
 	useEffect(() => {
 		const wrapper = messagesWrapRef.current;
 		if (!wrapper) return;
@@ -367,44 +354,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 					<span>跟随新消息</span>
 				</label>
 			</div>
-			{nextSteps && nextSteps.length > 0 && (
-				<div className={styles.next_steps_container}>
-					<div className={styles.next_steps_header}>
-						<span className={styles.next_steps_title}>下一步建议</span>
-						<div className={styles.next_steps_actions}>
-							<button
-								type="button"
-								className={styles.next_btn}
-								onClick={() => void refreshNextSteps()}
-								disabled={nextLoading}
-							>
-								{nextLoading ? '加载中…' : '换一批'}
-							</button>
-							<button
-								type="button"
-								className={styles.next_btn}
-								onClick={() => setNextCollapsed(v => !v)}
-							>
-								{nextCollapsed ? '展开' : '收起'}
-							</button>
-						</div>
-					</div>
-					{!nextCollapsed && (
-						<div className={styles.next_steps_chips}>
-							{nextSteps.slice(0, 3).map((s, idx) => (
-								<button
-									key={idx}
-									className={styles.chip}
-									onClick={() => onInsertText?.(s)}
-									type="button"
-								>
-									{s}
-								</button>
-							))}
-						</div>
-					)}
-				</div>
-			)}
+
 		</div>
 	);
 };

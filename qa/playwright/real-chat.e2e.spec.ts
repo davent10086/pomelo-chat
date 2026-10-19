@@ -46,8 +46,8 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     await expect.poll(async () => {
       const response = await api.get('message/search', { headers: { Authorization: `Bearer ${b.token}` }, params: { room, type: 'private', mediaType: 'file' } });
       expect(response.ok()).toBeTruthy();
-      return (await response.json()).data.messages.filter((message: { content: string }) => message.content === filePath).length;
-    }).toBe(1);
+      return (await response.json()).data.messages.filter((message: { content: string }) => message.content === filePath).map((message: { file_name: string }) => message.file_name);
+    }).toEqual(['real-chat.txt']);
     const download = await api.get(`http://127.0.0.1:3199${filePath}`, { headers: { Authorization: `Bearer ${b.token}` } });
     expect(download.ok()).toBeTruthy();
     expect(createHash('sha256').update(await download.body()).digest('hex')).toBe(createHash('sha256').update(bytes).digest('hex'));

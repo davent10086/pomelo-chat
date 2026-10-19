@@ -6,7 +6,6 @@ import { handleRegister } from './api';
 import styles from './index.module.less';
 import { IRegisterForm } from './type';
 
-import { generateAvatarAPI } from '@/assets/images';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 
@@ -49,7 +48,7 @@ const Register = () => {
 				password,
 				confirmPassword: confirm,
 				phone,
-				avatar: `${generateAvatarAPI}${username}`
+				avatar: ''
 			};
 			const res = await handleRegister(params);
 			if (res.code === HttpStatus.SUCCESS) {

@@ -46,6 +46,8 @@ test('assistant draft binds an explicit recipient and confirms real private and 
 		expect(foreign.status()).toBe(404);
 		await draft.getByRole('button', { name: '确认发送', exact: true }).click();
 		await expect(draft.getByText('已完成', { exact: true })).toBeVisible();
+		await expect(draft.getByRole('button', { name: '确认发送', exact: true })).toHaveCount(0);
+		await expect(draft.getByRole('button', { name: '查询结果／重试', exact: true })).toHaveCount(0);
 		await expect(peer.locator('[data-message-index]').getByText(marker, { exact: true })).toHaveCount(1);
 		expect((await api.post('assistant/actions/confirm', { headers, data: { confirmationId: action.confirmationId } })).ok()).toBeTruthy();
 		expect(await search(room, 'private', marker)).toHaveLength(1);

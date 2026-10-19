@@ -147,7 +147,7 @@ test("assistant actions preserve task selection, query uncertain writes and retr
     await panel.getByRole("checkbox", { name: "事项乙" }).check();
     await panel.getByRole("button", { name: "确认保存所选" }).click();
     await expect.poll(() => started).toBe(true);
-    await panel.getByRole("button", { name: "查询结果／重试确认" }).click();
+    await expect(panel.getByRole("button", { name: "查询结果／重试确认" })).toBeDisabled();
     expect(confirmations).toEqual([{ confirmationId: "tasks-1", taskIndexes: [1] }]);
     releaseConfirm();
     await expect(panel.getByText("已完成", { exact: true })).toBeVisible();
@@ -193,11 +193,13 @@ test('suggestion chips and Copilot use one scoped cursor insertion path', async 
     await input.fill('触发建议');
     await input.press('Enter');
     const chip = page.getByRole('button', { name: '统一建议', exact: true });
+    await page.getByRole('button', { name: '下一步建议', exact: true }).click();
     await expect(chip).toBeVisible();
     await input.fill('AB');
     await input.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(1, 1));
     await chip.click();
     await expect(input).toHaveValue('A统一建议B');
+    await page.getByRole('button', { name: '下一步建议', exact: true }).click();
     await chip.click();
     await expect(input).toHaveValue('A统一建议统一建议B');
     await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();

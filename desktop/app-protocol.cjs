@@ -2,7 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const APP_ORIGIN = 'pomelo://app';
-const routes = new Set(['/', '/index.html', '/login', '/register', '/chat', '/address-book', '/desktop-assistant']);
+const routes = new Set(['/', '/index.html', '/login', '/register', '/chat', '/address-book', '/files', '/desktop-assistant']);
 function sameOrigin(value, expected) {
   try {
     const a = new URL(value), b = new URL(expected);

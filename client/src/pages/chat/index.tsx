@@ -268,7 +268,6 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											historyLoading={normal.loading}
 											onLoadMoreHistory={normal.loadOlder}
 											focusMessageId={normal.focusId}
-											onInsertText={insertAgentText}
 										/>
 									</div>
 									<div className={styles.chat_input}>

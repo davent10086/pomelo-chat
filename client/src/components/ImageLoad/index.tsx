@@ -1,5 +1,4 @@
 import { LoadErrorImage } from '@/assets/images';
-import { serverURL } from '@/config';
 import { getAuthorizedMediaURL } from '@/utils/media-url';
 
 interface ImageProps {
@@ -14,15 +13,12 @@ const ImageLoad = (props: ImageProps) => {
 	return (
 		<img
 			src={
-				src
-					? src.startsWith('http') || src.startsWith('https')
-						? `${src}`
-					: getAuthorizedMediaURL(src)
-					: `${LoadErrorImage.AVATAR}`
+				src ? src.startsWith('/uploads/') ? getAuthorizedMediaURL(src) : src : LoadErrorImage.AVATAR
 			}
 			onError={e => {
-				if (e.currentTarget.src !== `${LoadErrorImage.AVATAR}`) {
-					e.currentTarget.src = `${LoadErrorImage.AVATAR}`;
+				const fallback = new URL(LoadErrorImage.AVATAR, window.location.href).href;
+				if (e.currentTarget.src !== fallback) {
+					e.currentTarget.src = fallback;
 				}
 			}}
 			alt={alt ? alt : ''}

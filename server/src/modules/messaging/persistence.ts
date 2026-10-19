@@ -3,6 +3,7 @@ import type { SqlQuery } from '../../shared/actor';
 import { lockOwnedFile } from '../files/public';
 
 export interface PersistedMessage {
+	file_name?: string | null;
 	sender_id: number | string;
 	receiver_id: number | string;
 	content: string;

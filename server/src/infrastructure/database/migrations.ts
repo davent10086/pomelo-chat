@@ -97,6 +97,7 @@ export const initializeDatabase = async (
 
 	const runCompatibilityMigrations = async (): Promise<void> => {
 		const migrations: Array<[string, string]> = [
+			['message_original_file_name', 'ALTER TABLE message ADD COLUMN file_name VARCHAR(255) NULL'],
 			['outbox_claim_token', 'ALTER TABLE message_outbox ADD COLUMN claim_token VARCHAR(36) NULL'],
 			['outbox_lease_until', 'ALTER TABLE message_outbox ADD COLUMN lease_until DATETIME NULL'],
 			[

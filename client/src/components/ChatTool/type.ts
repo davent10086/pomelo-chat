@@ -24,6 +24,7 @@ export interface IGroupMember {
 export type MessageType = 'text' | 'image' | 'video' | 'file';
 // 发送消息的类型 —— 在 client\src\pages\chat\index.tsx 中也被引用
 export interface ISendMessage {
+	fileName?: string;
 	clientMsgId?: string;
 	sender_id: number;
 	receiver_id: number;

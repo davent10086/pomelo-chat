@@ -32,7 +32,14 @@ export const ActionControls = ({
 	onConfirm,
 	onCancel,
 	onQuery
-}: ActionControlsProps) => (
+}: ActionControlsProps) => {
+	if (status === 'completed' || status === 'cancelled' || status === 'expired')
+		return showStatus ? <div className={styles.actionControls} role="status">{actionStatusLabels[status]}</div> : null;
+	if (status === 'executing') return <div className={styles.actionControls}>
+		<span role="status">正在执行，请稍候…</span>
+		<Button size="small" onClick={onQuery} disabled={busy}>查询进度</Button>
+	</div>;
+	return (
 	<div className={styles.actionControls}>
 		{showStatus && <span>{actionStatusLabels[status]}</span>}
 		<Button
@@ -51,4 +58,5 @@ export const ActionControls = ({
 			取消
 		</Button>
 	</div>
-);
+	);
+};

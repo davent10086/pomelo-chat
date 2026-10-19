@@ -40,6 +40,7 @@ export const router: Array<IRouter> = [
 		path: '/',
 		component: withPrivateRoute(lazy(() => import('@/pages/home'))), // 需要登录才能访问的页面
 		children: [
+			{ path: 'files', component: withPrivateRoute(lazy(() => import('@/pages/home'))) },
 			{
 				path: 'chat',
 				component: withPrivateRoute(lazy(() => import('@/pages/home')))

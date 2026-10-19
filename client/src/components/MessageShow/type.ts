@@ -12,6 +12,8 @@ export interface IMessageShowProps {
 }
 // 右侧显示消息项的类型 —— 在client\src\pages\Chat\index.tsx中也被引用
 export interface IMessageItem {
+	file_name?: string | null;
+	fileName?: string;
 	id?: number;
 	client_msg_id?: string | null;
 	clientMsgId?: string;
@@ -31,6 +33,7 @@ export interface IMessageItem {
 }
 // 给消息展示组件传递的参数类型
 export interface IChatContentProps {
+	fileName?: string | null;
 	messageType: MessageType;
 	messageContent: string;
 	fileSize?: string | null;

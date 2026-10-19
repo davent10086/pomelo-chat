@@ -45,6 +45,7 @@ export class SendQueue {
 			content: String(row.message.content),
 			room: row.room,
 			file_size: null,
+			file_name: row.message.fileName,
 			created_at: new Date(row.createdAt),
 			status: 'failed',
 			failureReason:

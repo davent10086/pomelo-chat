@@ -5,6 +5,7 @@ import React, { ChangeEvent, forwardRef, useEffect, useImperativeHandle, useLayo
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
 import { useChatDraft } from './useChatDraft';
+import NextStepSuggestions from './NextStepSuggestions';
 import { ChatToolHandle, IChatToolProps, IMessageListItem, ISendMessage } from './type';
 
 import { EmojiList } from '@/assets/emoji';
@@ -196,7 +197,7 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 					if (!current()) break;
 					if (!res.success || !res.filePath) throw new Error('文件上传失败');
 					await sendMessage({ sender_id: user.id, receiver_id: curChatInfo.receiver_id,
-						type: getFileSuffixByName(file.name), content: res.filePath, avatar: user.avatar, fileSize: file.size });
+						type: getFileSuffixByName(file.name), content: res.filePath, avatar: user.avatar, fileSize: file.size, fileName: file.name });
 				} catch {
 					if (current()) showMessage('error', `${file.name}：上传或发送失败，请重试`);
 				}
@@ -312,6 +313,7 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 							>{toolIcons[item.icon]}</button>
 						</Tooltip>
 					))}
+					<NextStepSuggestions messages={recentMessages} scope={`${user.id}:${curChatInfo.room}`} onInsert={handleSuggestionClick} />
 				</ul>
 				<ul className={styles.rightIcons}>
 					{ChatIconList.slice(3, 6).map(item => (

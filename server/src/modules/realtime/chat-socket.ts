@@ -10,6 +10,7 @@ import { acknowledgeDelivery } from './delivery-observation';
 import { MessageOverloadError } from '../../shared/overload';
 import {
 	isRecord,
+	normalizeFileName,
 	isMediaType,
 	isChatType,
 	enqueueRoomWrite,
@@ -42,6 +43,7 @@ const parseIncomingMessage = (
 		return {
 			content: value.content,
 			type: value.type,
+			fileName: value.fileName,
 			fileSize: value.fileSize,
 			clientMsgId: value.clientMsgId
 		};
@@ -129,6 +131,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 				}
 				const mediaType = isMediaType(message.type) ? message.type : 'text';
 				const clientMsgId = normalizeClientMsgId(message.clientMsgId);
+				const fileName = mediaType === 'text' ? null : normalizeFileName(message.fileName);
 				const outbound = await enqueueRoomWrite(room, async () => {
 					if (
 						!(await validateSessionSocket(ws)) ||
@@ -145,6 +148,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 							room,
 							type,
 							media_type: mediaType,
+							file_name: fileName,
 							file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0,
 							status: 0,
 							client_msg_id: clientMsgId

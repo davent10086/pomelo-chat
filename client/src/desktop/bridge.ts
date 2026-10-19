@@ -8,7 +8,7 @@ export interface DesktopBridge {
 	getRuntime(): { serverURL: string; packaged: boolean };
 	setServer(value: string): Promise<void>;
 	rememberAuth(auth: DesktopAuth | null): Promise<void>;
-	downloadFile(storagePath: string): Promise<void>;
+	downloadFile(storagePath: string, fileName?: string): Promise<void>;
 	windowControl(action: 'minimize' | 'maximize' | 'close'): Promise<boolean>;
 	getSnapshot(): Promise<DesktopSnapshot>;
 	publishAuth(auth: DesktopAuth | null): Promise<void>;

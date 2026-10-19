@@ -51,7 +51,7 @@ const DeliveryChecks = ({ read }: { read: boolean }) => (
 );
 
 const ChatContent = (props: IChatContentProps): JSX.Element | null => {
-	const { messageType, messageContent, fileSize } = props;
+	const { messageType, messageContent, fileSize, fileName } = props;
 	const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
 	const [isVideoPlay, setIsVideoPlay] = useState(false);
 	const [isFileExist, setIsFileExist] = useState(true);
@@ -127,14 +127,14 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 					type="button"
 					className={styles.content_file}
 					onClick={() => {
-						if (window.pomeloDesktop) void window.pomeloDesktop.downloadFile(messageContent)
+						if (window.pomeloDesktop) void window.pomeloDesktop.downloadFile(messageContent, fileName || undefined)
 							.catch(() => antdMessage.error('下载失败，请重试'));
-						else downloadFile(getAuthorizedMediaURL(messageContent));
+						else void downloadFile(getAuthorizedMediaURL(messageContent), fileName || undefined).catch(() => antdMessage.error('下载失败，请重试'));
 					}}
-					aria-label={`下载文件 ${getFileName(messageContent)} `}
+					aria-label={`下载文件 ${fileName || getFileName(messageContent)}`}
 				>
 					<div className={styles.content_file_name}>
-						<span>{getFileName(messageContent)}</span>
+						<span title={fileName || getFileName(messageContent)}>{fileName || getFileName(messageContent)}</span>
 						{fileSize && <span>{fileSize}</span>}
 					</div>
 					<div className={styles.content_file_img}>
@@ -218,7 +218,7 @@ const MessageShow = (props: IMessageShowProps) => {
 				<div className={`${styles.self} ${styles.chat_item_content}`}>
 					<div className={styles.message_bubble_wrap}>
 						{moreActions}
-						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+						<ChatContent messageType={type} messageContent={content} fileSize={file_size} fileName={message.file_name || message.fileName} />
 						{statusMeta && (
 							<span
 								role="status"
@@ -252,7 +252,7 @@ const MessageShow = (props: IMessageShowProps) => {
 					</div>
 					<div className={styles.message_bubble_wrap}>
 						{moreActions}
-						<ChatContent messageType={type} messageContent={content} fileSize={file_size} />
+						<ChatContent messageType={type} messageContent={content} fileSize={file_size} fileName={message.file_name || message.fileName} />
 					</div>
 				</div>
 			)}

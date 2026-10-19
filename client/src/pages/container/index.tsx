@@ -1,7 +1,7 @@
 import { MessageOutlined, ContactsOutlined, FolderOutlined, LogoutOutlined } from '@ant-design/icons';
 import { Tooltip, Button, Popover } from 'antd';
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import styles from './index.module.less';
 import { IChatRef, IAddressBookRef } from './type';
@@ -19,6 +19,7 @@ import useShowMessage from '@/hooks/useShowMessage';
 import AddressBook from '@/pages/address-book';
 import { IFriendInfo } from '@/pages/address-book/type';
 import Chat from '@/pages/chat';
+import ChatFiles from '@/pages/files';
 import { HttpStatus } from '@/utils/constant';
 import { handleLogout } from '@/utils/logout';
 import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
@@ -30,9 +31,13 @@ const navigationIcons = { 'icon-message': <MessageOutlined />, 'icon-24px': <Con
 const Container = () => {
 	const showMessage = useShowMessage();
 	const navigate = useNavigate();
+	const location = useLocation();
 	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
 	const user = userStorage.getItem();
 	const [currentIcon, setCurrentIcon] = useState<string>('icon-message');
+	useEffect(() => {
+		setCurrentIcon(location.pathname === '/files' ? 'icon-wenjian' : location.pathname === '/address-book' ? 'icon-24px' : 'icon-message');
+	}, [location.pathname]);
 	const [openForgetModal, setForgetModal] = useState(false);
 	const [openInfoModal, setInfoModal] = useState(false);
 	const [openAudioModal, setAudioModal] = useState(false);
@@ -217,9 +222,9 @@ const Container = () => {
 										aria-current={currentIcon === item.icon ? "page" : undefined}
 										aria-label={item.text}
 										onClick={() => {
-											if (item.text === '聊天' || item.text === '通讯录') {
+											if (item.text === '聊天' || item.text === '通讯录' || item.text === '聊天文件') {
 												setCurrentIcon(item.icon);
-												navigate(item.text === '聊天' ? '/chat' : '/address-book');
+												navigate(item.text === '聊天' ? '/chat' : item.text === '聊天文件' ? '/files' : '/address-book');
 											}
 										}}
 										style={{
@@ -256,7 +261,7 @@ const Container = () => {
 				<div className={styles.rightContainer}>
 					{currentIcon === 'icon-message' ? (
 						<Chat initSelectedChat={initSelectedChat} ref={chatRef} />
-					) : (
+						) : currentIcon === 'icon-wenjian' ? <ChatFiles /> : (
 						<AddressBook handleChooseChat={handleChooseChat} ref={addressBookRef} />
 					)}
 				</div>

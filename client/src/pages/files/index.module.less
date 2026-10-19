@@ -1,0 +1,12 @@
+.filesPage {
+	height: 100%; min-height: 0; display: flex; flex-direction: column; padding: 24px; background: #f4f7fb; color: #202c3c;
+	header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+	h1 { font-size: 22px; font-weight: 600; }
+	p { margin: 6px 0 0; color: #60738a; font-size: 13px; }
+}
+.filters { display: flex; gap: 12px; padding: 20px 0; :global(.ant-select) { min-width: 110px; } :global(.ant-select):first-child { flex: 1; max-width: 360px; min-width: 0; } }
+.fileList { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.fileRow { display: flex; align-items: center; gap: 14px; padding: 16px; background: white; border: 1px solid #e2e9f1; border-radius: 12px; margin-bottom: 10px; img { flex: 0 0 36px; object-fit: contain; } }
+.fileInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; } span { color: #60738a; font-size: 12px; overflow-wrap: anywhere; } }
+.loading { padding: 24px; text-align: center; font-size: 13px; color: #60738a; }
+@media (max-width: 700px) { .filesPage { padding: 16px 10px; } .fileRow { gap: 8px; padding: 12px 8px; :global(.ant-btn) span:last-child { display: none; } } }

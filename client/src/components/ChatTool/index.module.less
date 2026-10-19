@@ -1,5 +1,30 @@
 @import '@/assets/styles/variables.less';
 
+.nextStepsPopover {
+	width: min(300px, calc(100vw - 64px));
+	font-size: 13px; color: @font-color;
+	p { color: #60738a; line-height: 1.6; margin: 8px 0; }
+}
+.nextStepsHeading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.nextStepChoice {
+	display: block; width: 100%; margin-top: 8px; padding: 10px 12px; text-align: left;
+	font: inherit; line-height: 1.6; color: @font-color; background: #f4f7fb; border-radius: 8px; cursor: pointer;
+	&:hover { background: #e8f3ff; }
+	&:focus-visible { outline: 2px solid @primary-antd-color; outline-offset: 2px; }
+}
+.chat_tool .chat_tool_item .leftIcons { flex: 1 1 auto; align-items: center; min-width: 0; }
+.chat_tool .chat_tool_item .rightIcons { flex: 0 0 auto; }
+.chat_tool .chat_tool_item .leftIcons .assistTool {
+	display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+	font: inherit; font-size: 12px; height: 32px; border-radius: 7px; margin: 0 6px 0 0; padding: 0 6px;
+	color: #226eb6; background: #e8f3ff;
+	&:focus-visible { outline: 2px solid @primary-antd-color; outline-offset: 2px; }
+}
+@media (max-width: 700px) {
+	.chat_tool .chat_tool_item { padding-inline: 8px; }
+	.chat_tool .chat_tool_item .leftIcons .assistTool span:last-child { display: none; }
+}
+
 	.chat_tool {
 		height: 100%;
 		display: flex;

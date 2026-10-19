@@ -18,6 +18,7 @@ export const formatHistoryMessages = (rows: HistoryMessageRow[]) =>
 		sender_id: item.sender_id,
 		receiver_id: item.receiver_id,
 		content: item.content,
+		file_name: item.file_name || null,
 		room: item.room,
 		avatar: item.avatar,
 		type: item.media_type,

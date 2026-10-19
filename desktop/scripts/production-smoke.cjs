@@ -122,10 +122,16 @@ async function run() {
   const downloadPath = path.join(profileRoot, 'downloaded.txt');
   await b.app.evaluate(({ BrowserWindow }, destination) => {
     const main = BrowserWindow.getAllWindows().find(window => !window.webContents.getURL().includes('/desktop-assistant'));
-    main.webContents.session.once('will-download', (_event, item) => item.setSavePath(destination));
+    globalThis.__pomeloDownloadName = new Promise(resolve => {
+      main.webContents.session.once('will-download', (_event, item) => {
+        item.setSavePath(destination);
+        setImmediate(() => resolve(item.getSaveDialogOptions().defaultPath));
+      });
+    });
   }, downloadPath);
   await b.page.getByRole('button', { name: /^下载文件/ }).click();
   await expect.poll(() => fs.existsSync(downloadPath) ? fs.readFileSync(downloadPath).toString() : '').toBe(bytes.toString());
+  assert.equal(path.basename(await b.app.evaluate(async () => await globalThis.__pomeloDownloadName)), 'desktop.txt');
   const token = await a.page.evaluate(() => JSON.parse(sessionStorage.getItem('pomelo-chat.authToken')));
   const assistant = a.app.windows().find(page => page.url().includes('/desktop-assistant'));
   await assistant.route('**/assistant/agent/stream', route => route.fulfill({ contentType: 'text/event-stream', body:

@@ -162,7 +162,7 @@ export const findMessageByClientId = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		`SELECT id, client_msg_id, room_seq, sender_id, receiver_id, content, room, media_type, file_size, created_at, NULL AS avatar
+		`SELECT id, client_msg_id, room_seq, sender_id, receiver_id, content, room, media_type, file_size, file_name, created_at, NULL AS avatar
 				 FROM message WHERE sender_id = ? AND client_msg_id = ? LIMIT 1`,
 		bindings
 	);

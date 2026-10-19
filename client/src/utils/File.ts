@@ -136,18 +136,17 @@ export const getMediaShowSize = (
 	}
 };
 // 文件下载
-export const downloadFile = (url: string) => {
-	try {
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = '';
-
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-	} catch {
-		return;
-	}
+export const downloadFile = async (url: string, fileName?: string) => {
+	const response = await fetch(url);
+	if (!response.ok) throw new Error('下载失败');
+	const objectURL = URL.createObjectURL(await response.blob());
+	const link = document.createElement('a');
+	link.href = objectURL;
+	link.download = fileName || getFileName(new URL(url).pathname) || '附件';
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	setTimeout(() => URL.revokeObjectURL(objectURL), 60000);
 };
 // 判断某个文件是否存在（浏览器会发起一个预检请求）
 export const urlExists = async (url: string) => {

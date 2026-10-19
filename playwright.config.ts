@@ -7,7 +7,7 @@ if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST)
 export default defineConfig({
   testDir: "./qa/playwright",
   outputDir: "./test-results/browser",
-  testMatch: ["system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", "file-drop.e2e.spec.ts", "message-overload.e2e.spec.ts", "assistant-message-send.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
+  testMatch: ["chat-polish.e2e.spec.ts", "system-regressions.e2e.spec.ts", "chat-recovery-search.e2e.spec.ts", "assistant-interactions.e2e.spec.ts", "address-book.e2e.spec.ts", "real-chat.e2e.spec.ts", "file-drop.e2e.spec.ts", "message-overload.e2e.spec.ts", "assistant-message-send.e2e.spec.ts", ...(process.env.TEST_RTC === '1' ? ['real-rtc.e2e.spec.ts'] : [])],
   workers: 1,
   timeout: 30000,
   use: {

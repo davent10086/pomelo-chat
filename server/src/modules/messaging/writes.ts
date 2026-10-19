@@ -7,6 +7,7 @@ import { admitMessage } from './pressure';
 import { authorizeChatRoom } from '../social/public';
 import {
 	MAX_MESSAGE_LENGTH,
+	normalizeFileName,
 	enqueueRoomWrite,
 	type HistoryMessageRow,
 	type ChatType,
@@ -21,6 +22,7 @@ export const writeAndSend = async (
 	sessionGuard?: () => Promise<boolean>
 ): Promise<OutboundMessage> => {
 	msg.status = 0;
+	msg.file_name = msg.media_type === 'text' ? null : normalizeFileName(msg.file_name);
 	// Bootstrap outside the transaction: existing rooms must not take insert/upsert locks.
 	const existingConversation = await repository.findWriteConversation<
 		Array<{ id: number; statistics_room: string | null }>
@@ -53,7 +55,8 @@ export const writeAndSend = async (
 					if (
 						existing[0].room !== room ||
 						existing[0].content !== msg.content ||
-						existing[0].media_type !== msg.media_type
+						existing[0].media_type !== msg.media_type ||
+						(existing[0].file_name || null) !== msg.file_name
 					)
 						throw new Error('Idempotency key conflict');
 					return { row: existing[0], inserted: false };
@@ -72,6 +75,7 @@ export const writeAndSend = async (
 					room: msg.room,
 					media_type: msg.media_type,
 					file_size: msg.file_size,
+					file_name: msg.file_name,
 					created_at: new Date(),
 					avatar: null
 				} as HistoryMessageRow,
@@ -84,6 +88,7 @@ export const writeAndSend = async (
 	const outbound: OutboundMessage = {
 		...message,
 		content: saved.row.content,
+		file_name: saved.row.file_name || null,
 		sender_id: saved.row.sender_id,
 		receiver_id: saved.row.receiver_id,
 		type: saved.row.media_type,

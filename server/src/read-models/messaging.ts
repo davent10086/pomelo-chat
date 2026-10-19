@@ -100,6 +100,7 @@ export const listHistoryBeforeId = <T = unknown>(
 				room,
 				media_type,
 				file_size,
+				file_name,
 				created_at
 			FROM message
 			WHERE room = ? AND type = ? ${hasCursor ? 'AND id < ?' : ''}
