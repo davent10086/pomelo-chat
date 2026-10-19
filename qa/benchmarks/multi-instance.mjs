@@ -143,6 +143,23 @@ try {
     return { readSeq: last.room_seq, lowerCursorIgnored: true };
   });
   await closePeer(a); await closePeer(b);
+  await check('room revocation blocks both backend instances without revoking login', async () => {
+    const [pair] = await backend.createIndependentPeers(1, true);
+    const room = pair.room.room;
+    const sender = await connect(0, pair.auth, room);
+    const recipients = await Promise.all([connect(0, pair.receiverAuth, room), connect(1, pair.receiverAuth, room)]);
+    const before = await send(sender, 'allowed before room revocation');
+    await wait(() => recipients.every(peer => peer.seen.has(before.id)), 'Normal delivery missing');
+    await backend.revokeRoomAccess(pair.receiverAuth.info.id, room);
+    const after = await send(sender, 'secret after room revocation');
+    await wait(() => recipients.every(peer => peer.ws.readyState === 3), 'Revoked room sockets were not closed');
+    assert(recipients.every(peer => !peer.seen.has(after.id)), 'Revoked recipient received content');
+    await api(1, 'message/chat_list', pair.receiverAuth); // login remains valid
+    const denied = await fetch(`${backend.instances[1].base}/api/chat/v1/message/history?room=${room}&type=private`, { headers: { Authorization: `Bearer ${pair.receiverAuth.token}` } });
+    assert.equal(denied.status, 401);
+    await closePeer(sender);
+    return { localBlocked: true, remoteBlocked: true, loginStillValid: true };
+  });
   await check('two browser clients use different actual backend instances', async () => {
     const fixture = browserFixture, room = fixture.room.room;
     const urls = [await startFrontend(0), await startFrontend(1)];

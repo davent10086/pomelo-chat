@@ -380,6 +380,32 @@ async function main() {
 	const fenced = (await Query('SELECT * FROM message_outbox WHERE message_id = ?', [fencedId]))[0];
 	assert.equal(fenced.delivered_at, null, 'stale worker cannot complete a replaced claim');
 	assert.equal(fenced.claim_token, replacementToken);
+	const outboxClaims = require('../src/modules/messaging/repository');
+	await Query('UPDATE message_outbox SET lease_until = DATE_SUB(NOW(), INTERVAL 1 SECOND) WHERE message_id = ?', [fencedId]);
+	assert.equal((await outboxClaims.renewOutboxLease([60, fencedId, replacementToken])).affectedRows, 0, 'an expired lease cannot be revived');
+	assert.equal((await outboxClaims.completeOutboxClaim([fencedId, replacementToken])).affectedRows, 0, 'an expired lease cannot complete');
+	await Query('UPDATE message_outbox SET lease_until = DATE_ADD(NOW(), INTERVAL 60 SECOND) WHERE message_id = ?', [fencedId]);
+
+	const takeoverRoom = await makeGroup('takeover');
+	const takeoverFirst = await insertMessage(takeoverRoom, 'takeover first');
+	const takeoverNext = await insertMessage(takeoverRoom, 'takeover second');
+	let resumeOld, oldEntered;
+	const oldGate = new Promise(resolve => { resumeOld = resolve; });
+	const oldStarted = new Promise(resolve => { oldEntered = resolve; });
+	const effectsAfterTakeover = [];
+	const oldOwner = makeWorker(async (id, context) => {
+		oldEntered(); await oldGate;
+		await context.assertLease();
+		effectsAfterTakeover.push(['old', id]);
+	});
+	const oldDrain = oldOwner.flush();
+	await oldStarted;
+	await Query('UPDATE message_outbox SET lease_until = DATE_SUB(NOW(), INTERVAL 1 SECOND) WHERE message_id = ?', [takeoverFirst]);
+	const newOwner = makeWorker(async id => { effectsAfterTakeover.push(['new', id]); });
+	await newOwner.flush();
+	resumeOld(); await oldDrain;
+	await oldOwner.stop(); await newOwner.stop();
+	assert.deepEqual(effectsAfterTakeover, [['new', takeoverFirst], ['new', takeoverNext]], 'stale owner cannot perform late effects after real SQL takeover');
 	assert.equal(logs.filter(line => line.includes('recovery failed')).length, 0, logs.join('\n'));
 
 	// A leased room with a large backlog must not hide another room's eligible head.

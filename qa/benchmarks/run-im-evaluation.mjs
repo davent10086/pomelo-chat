@@ -18,8 +18,8 @@ const report = { started: new Date().toISOString(), node: process.version, platf
 for (const name of ['server/src/modules/messaging/outbox.ts', 'server/src/modules/realtime/message-delivery.ts', 'qa/benchmarks/calibrate-admission.mjs', 'qa/benchmarks/chat-backend.mjs'])
   report.sourceSha256[name] = createHash('sha256').update(await readFile(name)).digest('hex');
 if (process.platform === 'win32') {
-  const command = "$benchmarkCPU=Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors; $benchmarkOS=Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,TotalVisibleMemorySize,FreePhysicalMemory; $benchmarkDisk=Get-Partition -DriveLetter F | Get-Disk | Select-Object FriendlyName,BusType,Size; [pscustomobject]@{cpu=$benchmarkCPU;os=$benchmarkOS;workspaceDisk=$benchmarkDisk} | ConvertTo-Json -Depth 5";
-  try { report.hardware.windows = JSON.parse((await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true })).stdout); }
+  const command = "$benchmarkCPU=Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors; $benchmarkOS=Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,TotalVisibleMemorySize,FreePhysicalMemory; $benchmarkDisk=Get-Partition -DriveLetter $env:POMELO_BENCHMARK_DRIVE | Get-Disk | Select-Object FriendlyName,BusType,Size; [pscustomobject]@{cpu=$benchmarkCPU;os=$benchmarkOS;workspaceDisk=$benchmarkDisk} | ConvertTo-Json -Depth 5";
+  try { report.hardware.windows = JSON.parse((await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true, env: { ...process.env, POMELO_BENCHMARK_DRIVE: path.parse(root).root.slice(0, 1) } })).stdout); }
   catch (error) { report.hardware.queryError = error.message; }
 }
 const save = () => writeFile(path.join(output, 'manifest.json'), JSON.stringify(report, null, 2));

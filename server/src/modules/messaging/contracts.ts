@@ -148,6 +148,13 @@ export interface FanoutPayload {
 	persistedAt?: number;
 }
 
+/** A handler must check again after awaited work, before starting a side effect. */
+export interface OutboxDeliveryContext {
+	signal: AbortSignal;
+	checkActive(): void;
+	assertLease(): Promise<void>;
+}
+
 export interface ReadReceiptFrame {
 	name: 'read_receipt';
 	room: string;

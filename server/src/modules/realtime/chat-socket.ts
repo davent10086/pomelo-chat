@@ -107,7 +107,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		}
 		ChatRooms[room] ||= {};
 		const socketKey = `${id}:${Math.random().toString(36).slice(2)}`;
-		ChatRooms[room][socketKey] = ws;
+		ChatRooms[room][socketKey] = { ws, userId: decoded.id as UserId, type };
 		registerSessionSocket(ws, String(decoded.username), token, verifyTokenWithSession);
 		// Register message handling before the initial history frame. A client may
 		// send immediately after receiving that frame, so registering it afterwards
@@ -203,7 +203,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		ws.removeListener('message', bufferFrame);
 		for (const frame of pendingFrames.splice(0)) ws.emit('message', frame);
 		ws.on('close', () => {
-			if (ChatRooms[room]?.[socketKey] === ws) {
+			if (ChatRooms[room]?.[socketKey]?.ws === ws) {
 				delete ChatRooms[room][socketKey];
 				if (!Object.keys(ChatRooms[room]).length) delete ChatRooms[room];
 			}
@@ -219,6 +219,10 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 			HISTORY_PAGE_SIZE
 		);
 		if (!(await validateSessionSocket(ws))) return;
+		if (!(await authorizeChatRoom(decoded.id as UserId, room, type))) {
+			ws.close(4003, 'room access revoked');
+			return;
+		}
 		sendFrame(ws, {
 			name: 'history',
 			peerReadSeq: history?.peerReadSeq || 0,

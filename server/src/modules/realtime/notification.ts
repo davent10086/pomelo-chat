@@ -3,14 +3,22 @@ import { validateSessionSocket } from './session-sockets';
 import { better_chat } from '../../infrastructure/redis';
 import { getNotificationSocket } from './connections';
 import { sendSocketFrame } from './socket-send';
+import { fanoutPublisher } from './fanout-publisher';
 
 const channel = `${process.env.REDIS_KEY_PREFIX || ''}pomelo:notifications`;
 const instance = `${process.pid}-${Math.random()}`;
 let subscriber: ReturnType<typeof better_chat.duplicate> | undefined;
 const onRedisEnd = () => subscriber?.disconnect();
-const sendLocal = async (username: string, data: NotificationData): Promise<void> => {
+const sendLocal = async (
+	username: string,
+	data: NotificationData,
+	checkActive?: () => void
+): Promise<void> => {
 	const ws = getNotificationSocket(username);
-	if (ws && (await validateSessionSocket(ws))) sendSocketFrame(ws, data);
+	if (ws && (await validateSessionSocket(ws))) {
+		checkActive?.();
+		sendSocketFrame(ws, data);
+	}
 };
 export const startNotificationDelivery = async () => {
 	if (subscriber) return;
@@ -53,7 +61,10 @@ interface NotificationData {
 }
 
 // 通知对方（传入receiver_username或者receiver_id）
-export const NotificationUser = async (data: NotificationData): Promise<void> => {
+export const NotificationUser = async (
+	data: NotificationData,
+	checkActive?: () => void
+): Promise<void> => {
 	// 接收者
 	let receiver_username = data.receiver_username;
 	if (!receiver_username) {
@@ -61,10 +72,15 @@ export const NotificationUser = async (data: NotificationData): Promise<void> =>
 			data.receiver_id === undefined ? undefined : await getUsernameById(data.receiver_id);
 	}
 	if (receiver_username) {
-		await better_chat.publish(
+		checkActive?.();
+		const publisher = checkActive ? fanoutPublisher : better_chat;
+		if (checkActive && publisher.status !== 'ready')
+			throw new Error('Message publisher unavailable');
+		await publisher.publish(
 			channel,
 			JSON.stringify({ instance, username: receiver_username, data })
 		);
-		await sendLocal(receiver_username, data);
+		checkActive?.();
+		await sendLocal(receiver_username, data, checkActive);
 	}
 };

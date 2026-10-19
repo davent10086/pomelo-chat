@@ -34,6 +34,7 @@ net.Socket.prototype.connect = function (...args) { importConnections++; return 
 const { initDatabase, default: db } = require('../src/infrastructure/database');
 const { Query } = require('../src/infrastructure/database-query');
 const { better_chat } = require('../src/infrastructure/redis');
+const { fanoutPublisher } = require('../src/modules/realtime/fanout-publisher');
 const { default: app, registerAppRoutes } = require('../src/controller/app');
 const { flushMessageOutbox } = require('../src/modules/messaging/outbox');
 const { rtcCalls } = require('../src/composition');
@@ -199,12 +200,8 @@ const send = async (
 	await eventually(() => ca.frames.find(f => f.name === 'history'));
 	const first = await send(ca, 'first');
 	assert.equal(first.name, 'ack');
-	const oldPublish = better_chat.publish.bind(better_chat);
-	better_chat.publish = async (channel, ...args) => {
-		if (channel.endsWith('pomelo:message:fanout'))
-			throw new Error('Injected Redis delivery outage');
-		return oldPublish(channel, ...args);
-	};
+	const oldEval = fanoutPublisher.eval.bind(fanoutPublisher);
+	fanoutPublisher.eval = async () => { throw new Error('Injected Redis delivery outage'); };
 	const ack = await send(ca, 'durable while Redis delivery fails', 'text', 'system_durable_key');
 	assert.equal(ack.name, 'ack');
 	await eventually(
@@ -215,7 +212,7 @@ const send = async (
 				])
 			).length
 	);
-	better_chat.publish = oldPublish;
+	fanoutPublisher.eval = oldEval;
 	await Query(
 		'UPDATE message_outbox SET next_attempt_at = CURRENT_TIMESTAMP WHERE message_id = ?',
 		[ack.id]
@@ -504,9 +501,51 @@ const send = async (
 	await eventually(
 		() => replacement.ws.readyState === WebSocket.CLOSED && nb.ws.readyState === WebSocket.CLOSED
 	);
+	// A valid login must not retain room access after its database membership is removed.
+	const roomOwner = await makeUser(20), removed = await makeUser(21);
+	assert.equal((await request('/friend/add_friend', { id: removed.id, username: removed.username }, roomOwner.token)).code, 200);
+	const privateRoom = (await Query('SELECT room FROM friend WHERE owner_id = ? AND user_id = ?', [roomOwner.id, removed.id]))[0].room;
+	const ownerSocket = await frameSocket(`${wsBase}/message/connect_chat?room=${privateRoom}&id=${roomOwner.id}&type=private`, roomOwner.token);
+	const removedSocket = await frameSocket(`${wsBase}/message/connect_chat?room=${privateRoom}&id=${removed.id}&type=private`, removed.token);
+	await eventually(() => removedSocket.frames.some(frame => frame.name === 'history'));
+	await send(ownerSocket, 'allowed before revocation');
+	await eventually(() => removedSocket.frames.some(frame => frame.content === 'allowed before revocation'));
+	await Query('DELETE FROM friend WHERE owner_id = ? AND room = ?', [removed.id, privateRoom]);
+	await send(ownerSocket, 'private secret after revocation');
+	await eventually(() => removedSocket.ws.readyState === WebSocket.CLOSED);
+	assert.equal(removedSocket.frames.some(frame => frame.content === 'private secret after revocation'), false);
+	assert.equal((await request(`/message/history?room=${privateRoom}&type=private`, undefined, removed.token)).status, 401);
+	assert.equal(await better_chat.get(`token:${removed.username}`), removed.token, 'room revocation leaves login valid');
+	await request('/group/create_group', { name: 'revocation group', members: [{ user_id: removed.id, username: removed.username }] }, roomOwner.token);
+	const revokedGroup = (await Query('SELECT * FROM group_chat WHERE creator_id = ?', [roomOwner.id]))[0];
+	const groupPeer = await frameSocket(`${wsBase}/message/connect_chat?room=${revokedGroup.room}&id=${removed.id}&type=group`, removed.token);
+	await eventually(() => groupPeer.frames.some(frame => frame.name === 'history'));
+	await Query('DELETE FROM group_members WHERE group_id = ? AND user_id = ?', [revokedGroup.id, removed.id]);
+	await better_chat.publish(process.env.REDIS_KEY_PREFIX + 'pomelo:message:fanout', JSON.stringify({
+		instanceId: 'foreign-regression-instance', room: revokedGroup.room,
+		message: { id: 999999, room_seq: 2, sender_id: roomOwner.id, receiver_id: revokedGroup.id, type: 'text', content: 'foreign group secret after revocation' }
+	}));
+	await eventually(() => groupPeer.ws.readyState === WebSocket.CLOSED);
+	assert.equal(groupPeer.frames.some(frame => frame.content === 'foreign group secret after revocation'), false);
+
+	// Exercise the Lua fence against real Redis, including legitimate equal-sequence retry.
+	const { publishFanout } = require('../src/modules/realtime/fanout-publisher');
+	const probeChannel = process.env.REDIS_KEY_PREFIX + 'ordered-probe';
+	const observed = [], probe = better_chat.duplicate();
+	probe.on('message', (_channel, raw) => observed.push(JSON.parse(raw).message.room_seq));
+	await probe.subscribe(probeChannel);
+	try {
+		const publish = seq => publishFanout(probeChannel, { instanceId: 'probe', room: 'fenced-probe', message: { id: seq, room_seq: seq, sender_id: roomOwner.id, receiver_id: removed.id, content: String(seq) } });
+		assert.equal(await publish(2), true);
+		assert.equal(await publish(1), false, 'stale worker cannot broadcast an older sequence');
+		assert.equal(await publish(2), true, 'ambiguous equal-sequence publish can retry');
+		assert.equal(await publish(3), true);
+		await eventually(() => observed.length === 3);
+		assert.deepEqual(observed, [2, 2, 3]);
+	} finally { await probe.quit(); }
 	await verifyServerShutdown(outsider);
 	console.log(
-		'[system-integrity] real MySQL/Redis: attachment forgery, metadata repair, outbox recovery, idempotency, >80 catchup, read monotonicity, call lifecycle, replacement and session revocation passed'
+		'[system-integrity] real MySQL/Redis: attachment forgery, metadata repair, outbox recovery, idempotency, >80 catchup, read monotonicity, call lifecycle, replacement, session/room revocation and ordered Redis publish passed'
 	);
 })().then(
 	() => finish(0),
@@ -521,6 +560,7 @@ async function finish(code) {
 		await stopBackgroundServices();
 		assert.equal(activeTimers.size, 0, 'shutdown also removes active presence heartbeats');
 		assert.equal(require('../src/modules/realtime/connections').notificationUsers().length, 0);
+		await eventually(() => sockets.every(ws => ws.readyState === WebSocket.CLOSED));
 		for (const ws of sockets) assert.equal(ws.readyState, WebSocket.CLOSED);
 	} catch (error) { console.error('[runtime cleanup]', error); code = 1; }
 	for (const ws of sockets) ws.terminate();

@@ -113,7 +113,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 			let syncing = false;
 			let recoveryCursor: number | undefined;
 			const catchUp = async (since: number) => {
-				if (since < 1 || epoch !== generation.current) return;
+				if (since < 0 || epoch !== generation.current) return;
 				recoveryCursor = Math.min(recoveryCursor ?? since, since);
 				if (syncing) return;
 				syncing = true;
@@ -226,7 +226,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 							lastSequence.current,
 							...batch.map(m => Number(m.room_seq || 0))
 						);
-						await catchUp(since);
+						if (since > 0) await catchUp(since);
 						if (epoch !== generation.current) return;
 						if (!since) setSynchronized(true);
 						void queue.current?.acknowledge(batch);
@@ -291,7 +291,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 				if (typeof receipt === 'string' && /^[a-f0-9]{32}$/.test(receipt))
 					ws.send(JSON.stringify({ name: 'delivery_ack', receipt }));
 				const previousSequence = lastSequence.current;
-				if (previousSequence > 0 && Number(incoming.room_seq) > previousSequence + 1)
+				if (Number(incoming.room_seq) > previousSequence + 1)
 					void catchUp(previousSequence);
 				lastSequence.current = Math.max(lastSequence.current, Number(incoming.room_seq || 0));
 				void queue.current?.acknowledge([incoming]);

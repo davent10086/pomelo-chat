@@ -158,7 +158,9 @@ node server/scripts/run-isolated-tests.js browser
 - 登录采用 Redis token 白名单，新登录会使旧 token 失效，尚不支持多设备并行会话。
 - 尚无忘记密码找回流程、群聊已读成员列表；桌面侧栏当前仅提供消息草稿的写操作确认。
 - 文件默认存储于服务端本地目录；多实例部署需要共享文件存储。
+- 附件默认目录固定为 `server/uploads`，与启动工作目录无关；`UPLOAD_ROOT` 支持绝对路径，相对路径以 `server` 为基准。升级前若附件曾存于其他目录，请显式配置原目录，避免旧附件不可见。
 - Outbox 保证已持久化消息可重试投递，Redis Pub/Sub 本身不提供离线重放；客户端通过数据库历史补齐。
+- Outbox 失租或超时会取消后续投递；默认单次投递期限 45 秒，可用 `MESSAGE_OUTBOX_DELIVERY_TIMEOUT_MS` 调整。广播按房间序号拦截旧消息，等序号重试仍允许，客户端继续按消息 ID 去重。Redis 为每个房间保留一个广播序号键，与会话数据使用同一隔离前缀。
 
 ## License
 

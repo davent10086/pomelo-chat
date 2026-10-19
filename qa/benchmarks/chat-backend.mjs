@@ -150,9 +150,11 @@ export async function startChatBackend(root, options = {}) {
       ws.on('error', error => { clearTimeout(timeout); reject(error); });
     });
     // Extra fixtures are created only inside this invocation's temporary database.
+    let nextPeerId = 0;
     async function createIndependentPeers(count, includeReceivers = false) {
       const clients = [];
-      for (let i = 0; i < count; i++) {
+      for (let pairIndex = 0; pairIndex < count; pairIndex++) {
+        const i = nextPeerId++;
         const pair = [];
         for (const side of ['sender', 'receiver']) {
           const username = 'load_' + side + '_' + i;
@@ -200,7 +202,13 @@ export async function startChatBackend(root, options = {}) {
       return { ...counts[0], sequenceErrors, statisticsErrors, pendingOutbox: outbox[0].pending };
     }
     const [version] = await admin.query('SELECT VERSION() AS version');
-    return { backendPid: child.pid, instances, stopInstance, restartInstance, controlInstance,
+    // Revocation regression helper; admin is connected only to this invocation's temporary DB.
+    async function revokeRoomAccess(userId, room, type = 'private') {
+      if (type === 'private') await admin.query('DELETE FROM ??.friend WHERE room=? AND group_id IN (SELECT id FROM ??.friend_group WHERE user_id=?)', [database, room, database, userId]);
+      else if (type === 'group') await admin.query('DELETE FROM ??.group_members WHERE user_id=? AND group_id IN (SELECT id FROM ??.group_chat WHERE room=?)', [database, userId, database, room]);
+      else throw new Error('Invalid test room type');
+    }
+    return { backendPid: child.pid, instances, stopInstance, restartInstance, controlInstance, revokeRoomAccess,
       versions: { mysql: version[0].version, redis: /redis_version:([^\r\n]+)/.exec(await redis.info('server'))?.[1] },
       auditMessages, probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
   } catch (error) { await close(); throw error; }

@@ -17,6 +17,7 @@ test('a write waking a nearly-finished empty outbox scan is delivered without th
   const transaction = queryModule.withTransaction;
   const lock = repository.lockAvailableOutboxHead, claim = repository.claimOutboxRows;
   const complete = repository.completeOutboxClaim;
+  const renew = repository.renewOutboxLease;
   let release, scanned, reads = 0;
   const captured = new Promise(resolve => { scanned = resolve; });
   const gate = new Promise(resolve => { release = resolve; });
@@ -28,6 +29,7 @@ test('a write waking a nearly-finished empty outbox scan is delivered without th
   };
   repository.claimOutboxRows = async () => ({ affectedRows: 1 });
   repository.completeOutboxClaim = async () => ({ affectedRows: 1 });
+  repository.renewOutboxLease = async () => ({ affectedRows: 1 });
   const worker = new MessageOutboxWorker(async id => { delivered.push(id); });
   try {
     worker.start();
@@ -43,6 +45,7 @@ test('a write waking a nearly-finished empty outbox scan is delivered without th
     queryModule.withTransaction = transaction;
     repository.lockAvailableOutboxHead = lock; repository.claimOutboxRows = claim;
     repository.completeOutboxClaim = complete;
+    repository.renewOutboxLease = renew;
   }
 });
 

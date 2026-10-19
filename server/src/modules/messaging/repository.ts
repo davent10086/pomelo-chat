@@ -15,7 +15,7 @@ export const renewOutboxLease = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		'UPDATE message_outbox SET lease_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE message_id = ? AND claim_token = ? AND delivered_at IS NULL',
+		'UPDATE message_outbox SET lease_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE message_id = ? AND claim_token = ? AND delivered_at IS NULL AND lease_until > NOW()',
 		bindings
 	);
 };
@@ -25,7 +25,7 @@ export const completeOutboxClaim = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		'UPDATE message_outbox SET delivered_at = NOW(), claim_token = NULL, lease_until = NULL WHERE message_id = ? AND claim_token = ?',
+		'UPDATE message_outbox SET delivered_at = NOW(), claim_token = NULL, lease_until = NULL WHERE message_id = ? AND claim_token = ? AND delivered_at IS NULL AND lease_until > NOW()',
 		bindings
 	);
 };
