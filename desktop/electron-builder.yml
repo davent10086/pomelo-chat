@@ -1,0 +1,24 @@
+appId: io.pomelo.chat
+productName: Pomelo Chat
+copyright: Copyright © 2026 Pomelo Chat contributors
+asar: true
+electronDist: node_modules/electron/dist
+directories:
+  output: ../release
+files:
+  - '*.cjs'
+  - renderer/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signExecutable: false
+  icon: renderer/yuzu-chat.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  deleteAppDataOnUninstall: false
+artifactName: Pomelo-Chat-${version}-${arch}-Setup.${ext}

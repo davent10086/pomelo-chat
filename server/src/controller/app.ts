@@ -23,7 +23,7 @@ let routesRegistered = false;
 // CORS 白名单域名（生产环境应通过环境变量配置）
 const ALLOWED_ORIGINS = (
 	process.env.CORS_ORIGINS ||
-	'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000'
+	'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,pomelo://app'
 )
 	.split(',')
 	.map(s => s.trim())
@@ -93,6 +93,8 @@ const apiRateLimit = createRateLimiter({
  * L3: 移除强制 octet-stream，让 express.static 根据扩展名自动设置 content-type
  */
 const staticDownload: RequestHandler = (req, res, next) => {
+	// Authenticated media may also be embedded by the packaged desktop origin.
+	res.header('Cross-Origin-Resource-Policy', 'cross-origin');
 	res.header('Referrer-Policy', 'no-referrer');
 	const origin = req.headers.origin;
 	if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -114,7 +116,7 @@ export const registerAppRoutes = (): void => {
 
 	app.use(securityHeaders);
 	app.get('/internal/metrics', messageMetricsHandler);
-	app.use('/uploads', authenticateUploadAccess, staticDownload, express.static(uploadRoot));
+	app.use('/uploads', staticDownload, authenticateUploadAccess, express.static(uploadRoot));
 
 	/**
 	 * 处理 HTTP 请求体中的参数
@@ -125,6 +127,11 @@ export const registerAppRoutes = (): void => {
 
 	app.use('', cors);
 	app.use('/api/chat/v1', cors, apiRateLimit);
+	// Desktop server discovery; this identifies the HTTP service, not dependency readiness.
+	app.get('/api/chat/v1/health', (_req, res) => {
+		res.setHeader('Cache-Control', 'no-store');
+		res.json({ service: 'pomelo-chat', status: 'ok' });
+	});
 	app.use('/api/chat/v1/auth', cors, authRouter());
 	app.use('/api/chat/v1/friend', cors, friendRouter());
 	app.use('/api/chat/v1/message', cors, messageRouter());

@@ -9,6 +9,8 @@ const url = 'http://127.0.0.1:5188';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const user = id => ({ id, username: `desktop-test-${id}`, name: '原型测试', avatar: '/ai-assistant.svg', phone: '', signature: '', created_at: '' });
 let app, vite;
+fs.mkdirSync(path.join(root, 'tmp/tests'), { recursive: true });
+const profile = fs.mkdtempSync(path.join(root, 'tmp/tests/desktop-smoke-'));
 
 async function login(main, id = 1) {
   await main.evaluate(({ id, user }) => {
@@ -31,7 +33,7 @@ async function run() {
     if (i === 149) throw new Error('Vite readiness timeout');
     await pause(200);
   }
-  const env = { ...process.env, POMELO_DESKTOP_URL: url };
+  const env = { ...process.env, POMELO_DESKTOP_URL: url, POMELO_DESKTOP_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({ executablePath: require('electron'), args: [path.resolve(__dirname, '..')], env, timeout: 30000 });
   await expect.poll(() => app.windows().length).toBe(2);
@@ -244,7 +246,7 @@ async function run() {
   await Promise.race([exited, pause(5000).then(() => { throw new Error('App did not exit with main window'); })]);
   app = undefined;
   console.log('[desktop-smoke] login, IPC, animation, context isolation, streaming, cancellation, 401 and exit passed');
-  await require('./launcher-smoke.cjs')();
+  await require('./launcher-smoke.cjs')(profile);
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (app) await app.close().catch(() => {});
@@ -252,4 +254,6 @@ run().catch(error => { console.error(error); process.exitCode = 1; }).finally(as
     const exited = new Promise(resolve => vite.once('exit', resolve));
     vite.kill(); await Promise.race([exited, pause(3000)]);
   }
+  if (path.dirname(profile) !== path.join(root, 'tmp/tests') || !path.basename(profile).startsWith('desktop-smoke-')) throw new Error('Unsafe smoke cleanup');
+  fs.rmSync(profile, { recursive: true, force: true });
 });

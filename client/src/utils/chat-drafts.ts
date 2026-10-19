@@ -6,12 +6,13 @@ export interface ChatDraft {
 }
 const prefix = 'pomelo-chat.draft.v1.';
 const fallback = new Map<string, ChatDraft>();
+const draftStorage = () => window.pomeloDesktop ? localStorage : sessionStorage;
 export const draftKey = (userId: number, room: string) =>
 	`${prefix}${userId}.${encodeURIComponent(room)}`;
 export function readDraft(key: string): ChatDraft {
 	if (fallback.has(key)) return fallback.get(key)!;
 	try {
-		const raw = sessionStorage.getItem(key);
+		const raw = draftStorage().getItem(key);
 		if (raw) {
 			const value = JSON.parse(raw);
 			if (typeof value.text === 'string') {
@@ -30,8 +31,8 @@ export function readDraft(key: string): ChatDraft {
 export function writeDraft(key: string, draft: ChatDraft) {
 	fallback.set(key, draft);
 	try {
-		if (draft.text) sessionStorage.setItem(key, JSON.stringify(draft));
-		else sessionStorage.removeItem(key);
+		if (draft.text) draftStorage().setItem(key, JSON.stringify(draft));
+		else draftStorage().removeItem(key);
 	} catch {
 		/* Storage can be unavailable or full. */
 	}
@@ -40,8 +41,8 @@ export function clearUserDrafts(userId: number) {
 	const userPrefix = `${prefix}${userId}.`;
 	for (const key of fallback.keys()) if (key.startsWith(userPrefix)) fallback.delete(key);
 	try {
-		for (const key of Object.keys(sessionStorage))
-			if (key.startsWith(userPrefix)) sessionStorage.removeItem(key);
+		for (const key of Object.keys(draftStorage()))
+			if (key.startsWith(userPrefix)) draftStorage().removeItem(key);
 	} catch {
 		/* Best-effort cleanup when browser storage is unavailable. */
 	}

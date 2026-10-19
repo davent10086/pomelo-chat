@@ -54,6 +54,40 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     const forbidden = await api.get(`http://127.0.0.1:3199${filePath}`, { headers: { Authorization: `Bearer ${outsider.token}` } });
     expect(forbidden.status()).toBe(404);
 
+    // File drags use the same real upload path, without navigating away or replacing a text draft.
+    await input.fill('拖文件不覆盖正文草稿');
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(['dragged-file-one'], 'drag-one.txt', { type: 'text/plain' }));
+      data.items.add(new File(['dragged-file-two'], 'drag-two.txt', { type: 'text/plain' }));
+      return data;
+    });
+    const area = page.getByRole('region', { name: '聊天区域', exact: true });
+    await area.dispatchEvent('dragenter', { dataTransfer: transfer });
+    await expect(page.getByText('松开即可上传并发送文件')).toBeVisible();
+    await area.dispatchEvent('drop', { dataTransfer: transfer });
+    await expect(page.getByText('松开即可上传并发送文件')).toHaveCount(0);
+    await expect(input).toHaveValue('拖文件不覆盖正文草稿');
+    await expect.poll(async () => {
+      const result = await api.get('message/search', { headers: { Authorization: `Bearer ${b.token}` }, params: { room, type: 'private', mediaType: 'file' } });
+      return (await result.json()).data.messages.length;
+    }).toBe(3);
+    const allFiles = (await (await api.get('message/search', { headers: { Authorization: `Bearer ${b.token}` }, params: { room, type: 'private', mediaType: 'file' } })).json()).data.messages;
+    for (const [text, index] of [['dragged-file-one', 0], ['dragged-file-two', 1]] as const) {
+      const path = allFiles.filter((item: { content: string }) => item.content !== filePath).sort((a: { id: number }, b: { id: number }) => a.id - b.id)[index].content;
+      expect(await (await api.get(`http://127.0.0.1:3199${path}`, { headers: { Authorization: `Bearer ${b.token}` } })).text()).toBe(text);
+    }
+    await transfer.dispose();
+
+    const tooMany = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      for (let i = 0; i < 11; i++) data.items.add(new File(['x'], `too-many-${i}.txt`, { type: 'text/plain' }));
+      return data;
+    });
+    await area.dispatchEvent('drop', { dataTransfer: tooMany });
+    await expect(page.getByText('一次最多发送 10 个文件')).toBeVisible();
+    await tooMany.dispose();
+
     // Close the receiver's real transport, send while disconnected, then recover via UI.
     await peer.goto('about:blank');
     await input.fill(`离线消息_${stamp}`);

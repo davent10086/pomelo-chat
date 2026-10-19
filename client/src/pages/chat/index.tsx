@@ -1,7 +1,9 @@
 import ConversationList from './ConversationList';
-import { SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, TeamOutlined } from '@ant-design/icons';
 import { useConversationList } from './useConversationList';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useFileDrop } from './useFileDrop';
+import type { ChatToolHandle } from '@/components/ChatTool/type';
 
 import { useAssistantSession } from './useAssistantSession';
 import MessageSearch from './MessageSearch';
@@ -46,6 +48,8 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const assistantSelected = isAssistantListItem(curChatInfo);
 	const normalRoom = curChatInfo && !assistantSelected ? curChatInfo.room : undefined;
 	const normalType = curChatInfo && isGroupChat(curChatInfo) ? 'group' : 'private';
+	const chatTool = useRef<ChatToolHandle>(null);
+	const fileDrop = useFileDrop(normalRoom, files => { void chatTool.current?.sendFiles(files); }, onChatError);
 	useEffect(() => {
 		const bridge = window.pomeloDesktop;
 		if (!bridge) return;
@@ -209,7 +213,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									</button>
 								)}
 								{isGroupChat(curChatInfo) && (
-									<span className={`icon iconfont icon-jinqunliaoliao ${styles.group_icon}`}></span>
+									<TeamOutlined className={styles.group_icon} />
 								)}
 								{isAssistantListItem(curChatInfo) && (
 									<button
@@ -227,7 +231,8 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									agentPanelOpen && isAssistantListItem(curChatInfo) ? styles.agentPanelOpen : ''
 								}`}
 							>
-								<div className={styles.chat_main}>
+								<div className={styles.chat_main} {...fileDrop.handlers} role="region" aria-label="聊天区域">
+									{fileDrop.active && <div className={styles.fileDropOverlay} role="status">松开即可上传并发送文件<span>最多 10 个文件，单个不超过 100MB</span></div>}
 									<div className={styles.chat_content}>
 										{normal.locating && (
 											<div>
@@ -268,6 +273,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									</div>
 									<div className={styles.chat_input}>
 										<ChatTool
+											ref={chatTool}
 											key={`${user.id}:${curChatInfo.room}`}
 											curChatInfo={curChatInfo}
 											sendMessage={sendMessage}

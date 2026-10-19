@@ -5,6 +5,23 @@ on:
   pull_request:
 
 jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:desktop
+      - run: pnpm test:desktop:smoke
+      - run: pnpm build:desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pomelo-chat-windows-x64
+          path: release/*Setup.exe
+          if-no-files-found: error
   verify:
     runs-on: ubuntu-latest
     services:
@@ -47,5 +64,6 @@ jobs:
       - run: pnpm test:all
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - run: node server/scripts/run-isolated-tests.js browser real-chat.e2e.spec.ts assistant-message-send.e2e.spec.ts file-drop.e2e.spec.ts
       - run: pnpm audit --prod --audit-level=high
       - run: node qa/run-qa.js

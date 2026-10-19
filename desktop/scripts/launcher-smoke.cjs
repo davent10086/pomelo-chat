@@ -5,11 +5,11 @@ const assert = require('node:assert/strict');
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-module.exports = async function launcherSmoke() {
+module.exports = async function launcherSmoke(profile) {
   if (process.platform !== 'win32') return;
   const runner = spawn(process.execPath, [path.join(__dirname, 'dev.cjs')], {
     cwd: path.resolve(__dirname, '../..'), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, POMELO_DESKTOP_PORT: '5189', POMELO_SERVER_URL: 'http://127.0.0.1:9' }
+    env: { ...process.env, POMELO_DESKTOP_PORT: '5189', POMELO_SERVER_URL: 'http://127.0.0.1:9', POMELO_DESKTOP_USER_DATA: profile }
   });
   let output = '';
   runner.stdout.on('data', chunk => { output += chunk; });

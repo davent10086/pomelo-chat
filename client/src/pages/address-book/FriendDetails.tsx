@@ -1,4 +1,5 @@
 import { Button, Form, Input, Select } from 'antd';
+import { EditOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import type { IFriendInfo, IFriendInfoForm, IFriendGroupListItem } from './type';
 import ImageLoad from '@/components/ImageLoad';
@@ -39,7 +40,8 @@ export function FriendDetails({
 				</div>
 				<div className={styles.info}>
 					<div className={styles.username}>{curFriendInfo.username}</div>
-					<div className={`icon iconfont icon-gexingqianming ${styles.signature}`}>
+					<div className={styles.signature}>
+						<EditOutlined />{' '}
 						{curFriendInfo.signature ? curFriendInfo.signature : '暂无个性签名'}
 					</div>
 				</div>

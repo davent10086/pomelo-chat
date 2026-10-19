@@ -5,8 +5,8 @@ const mysql = require('mysql2');
 const fs = require('node:fs');
 const Redis = require('ioredis');
 const mode = process.argv[2] || 'system';
-if (!['system', 'browser', 'migrations', 'backend', 'qa', 'overload'].includes(mode))
-	throw new Error('Expected system, browser, migrations, backend, qa, or overload');
+if (!['system', 'browser', 'desktop', 'migrations', 'backend', 'qa', 'overload'].includes(mode))
+	throw new Error('Expected system, browser, desktop, migrations, backend, qa, or overload');
 const root = path.resolve(__dirname, '../..');
 const serverRoot = path.join(root, 'server');
 require('dotenv').config({ path: path.join(serverRoot, '.env'), quiet: true });
@@ -39,6 +39,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 	const args =
 		mode === 'browser'
 			? [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test', ...process.argv.slice(3)]
+			: mode === 'desktop' ? [path.join(root, 'desktop/scripts/production-smoke.cjs')]
 			: mode === 'qa' ? [path.join(root, 'qa/run-qa.js')] : [
 					path.join(
 						__dirname,
@@ -54,7 +55,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 			REDIS_URL_TEST: process.env.REDIS_URL_TEST || 'redis://127.0.0.1:6379/15',
 			TEST_REDIS_KEY_PREFIX: redisPrefix,
 			TEST_RTC: process.env.TEST_RTC || (process.argv.slice(3).includes('real-rtc.e2e.spec.ts') ? '1' : '0'),
-			...(mode === 'browser' ? { UPLOAD_ROOT: uploadRoot } : {}),
+			...(['browser', 'desktop'].includes(mode) ? { UPLOAD_ROOT: uploadRoot } : {}),
 			TS_NODE_FILES: 'true'
 		},
 		stdio: 'inherit'
@@ -62,7 +63,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 	child.on('exit', async (code, signal) => {
 		if (signal || code === null) code = 1;
 		// Only browser services use this per-run prefix; never flush a Redis database.
-		if (mode === 'browser') {
+		if (['browser', 'desktop'].includes(mode)) {
 			const redis = new Redis(process.env.REDIS_URL_TEST || 'redis://127.0.0.1:6379/15', { retryStrategy: () => null });
 			try {
 				let cursor = '0';
@@ -79,7 +80,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 		if (path.dirname(uploadRoot) !== testFilesRoot || !path.basename(uploadRoot).startsWith('chat-uploads-'))
 			throw new Error('Unsafe upload cleanup target');
 		fs.rmSync(uploadRoot, { recursive: true, force: true });
-		if (!/^pomelo_(system|browser|migrations|backend|qa|overload)_test_\d+$/.test(database))
+		if (!/^pomelo_(system|browser|desktop|migrations|backend|qa|overload)_test_\d+$/.test(database))
 			throw new Error('Unsafe cleanup target');
 		connection.query('DROP DATABASE ??', [database], err => {
 			if (err) console.error('[isolated-tests] cleanup failed:', err.code);

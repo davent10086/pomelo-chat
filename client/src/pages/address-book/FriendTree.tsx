@@ -48,13 +48,7 @@ export function FriendTree({
 										}
 										arrow={false}
 									>
-										<span
-											className={`iconfont ${
-												friend.online_status === 'offline'
-													? StatusIconList[1].icon
-													: StatusIconList[0].icon
-											}`}
-										></span>
+										<span aria-hidden="true" style={{ color: friend.online_status === 'offline' ? '#9ca9b8' : '#389e64' }}>●</span>
 									</Tooltip>
 								</span>
 							</div>

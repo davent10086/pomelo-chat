@@ -1,4 +1,5 @@
 import { Button, Tabs, type TabsProps } from 'antd';
+import { NotificationOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import type { IGroupChatInfo } from '@/components/CreateGroupChatModal/type';
 import CreateGroupChatModal from '@/components/CreateGroupChatModal';
@@ -72,7 +73,8 @@ export function GroupDetails({
 					</div>
 					<div className={styles.info}>
 						<div className={styles.username}>{curGroupChatInfo.name}</div>
-						<div className={`icon iconfont icon-qungonggao ${styles.signature}`}>
+						<div className={styles.signature}>
+							<NotificationOutlined />{' '}
 							{curGroupChatInfo.announcement ? curGroupChatInfo.announcement : '暂无公告'}
 						</div>
 					</div>

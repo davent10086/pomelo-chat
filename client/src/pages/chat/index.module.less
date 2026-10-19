@@ -686,3 +686,11 @@
 	}
 	textarea { resize: vertical; }
 }
+.chat_main { position: relative; }
+.fileDropOverlay {
+	position: absolute; inset: 8px; z-index: 20; pointer-events: none;
+	display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+	border: 2px dashed #3390ec; border-radius: 14px; background: rgba(232, 243, 255, 0.96);
+	color: #226eb6; font-size: 18px;
+	span { font-size: 13px; }
+}

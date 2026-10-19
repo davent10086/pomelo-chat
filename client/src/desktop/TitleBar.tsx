@@ -10,6 +10,7 @@ export default function DesktopTitleBar() {
 	return <header className="desktop-titlebar" onDoubleClick={maximize}>
 		<span>Pomelo Chat</span>
 		<div onDoubleClick={event => event.stopPropagation()}>
+			<button aria-label="服务器设置" onClick={() => window.dispatchEvent(new Event('pomelo-server-settings'))}>⚙</button>
 			<button aria-label="最小化" onClick={() => void bridge.windowControl('minimize')}>−</button>
 			<button aria-label={maximized ? '还原窗口' : '最大化'} onClick={maximize}>{maximized ? '❐' : '□'}</button>
 			<button className="desktop-close" aria-label="关闭窗口" onClick={() => void bridge.windowControl('close')}>×</button>

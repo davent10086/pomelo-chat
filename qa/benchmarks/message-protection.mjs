@@ -25,7 +25,8 @@ async function api(route, auth, body) {
 }
 async function connect(auth, room, type = 'private') {
   return new Promise((resolve, reject) => {
-    const ws = new WS(`${backend.base.replace('http:', 'ws:')}/api/chat/v1/message/connect_chat?room=${room}&id=${auth.info.id}&type=${type}`, ['pomelo-token', auth.token]);
+    const base = backend.instances[peers.length % backend.instances.length].base;
+    const ws = new WS(`${base.replace('http:', 'ws:')}/api/chat/v1/message/connect_chat?room=${room}&id=${auth.info.id}&type=${type}`, ['pomelo-token', auth.token]);
     const peer = { ws, seen: new Set(), pending: new Map(), last: 0, duplicates: 0, orderErrors: 0 };
     peers.push(peer);
     const timer = setTimeout(() => reject(Error('history timeout')), 10000);
@@ -79,6 +80,8 @@ await mkdir(output, { recursive: true });
 let report = { defaults, scope: 'Single-machine closed-loop, 15 seconds per phase, explicit rejection separated from unexpected errors. Private latency includes recipient; group phase measures ACK, with recipient integrity checked after drain. Not a production capacity estimate.' };
 try {
   backend = await startChatBackend(process.cwd());
+  report.topology = { instances: backend.instances.map(({ pid, base }) => ({ pid, base })), versions: backend.versions,
+    distribution: 'Round-robin sockets; private sender and receiver on different instances when BENCH_INSTANCES=2' };
   const clients = await backend.createIndependentPeers(50, true), privatePeers = [];
   for (const c of clients.slice(0, 25)) privatePeers.push({ a: await connect(c.auth, c.room.room), b: await connect(c.receiverAuth, c.room.room) });
   await phase('private', 25, async (worker, id) => {

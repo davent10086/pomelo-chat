@@ -30,6 +30,19 @@ const profiles = [
 ];
 profiles.push({ name: 'steady', settings: { ...profiles.find(p => p.name === 'conservative').settings,
   MESSAGE_GLOBAL_RATE: 150, MESSAGE_GLOBAL_BURST: 100 } });
+// Tuning candidates keep queue/Outbox gates and per-user/private limits fixed.
+for (const rate of [100, 150, 200]) profiles.push({ name: `tune-${rate}`, settings: {
+  ...profiles.find(p => p.name === 'steady').settings,
+  MESSAGE_GLOBAL_RATE: rate, MESSAGE_GLOBAL_BURST: 100,
+  MESSAGE_GROUP_RATE: 40, MESSAGE_GROUP_BURST: 40
+} });
+for (const rate of [100, 150]) profiles.push({ name: `tune-${rate}-smooth`, settings: {
+  ...profiles.find(p => p.name === `tune-${rate}`).settings, MESSAGE_GLOBAL_BURST: 50
+} });
+profiles.push({ name: 'tune-100-local', settings: {
+  ...profiles.find(p => p.name === 'tune-100-smooth').settings,
+  MESSAGE_GROUP_RATE: 20, MESSAGE_GROUP_BURST: 20
+} });
 const selected = (process.env.CALIBRATION_PROFILES || process.env.CALIBRATION_PROFILE)?.split(',');
 if (selected?.some(name => !profiles.some(p => p.name === name))) throw Error('Unknown CALIBRATION_PROFILE');
 const selectedPhases = process.env.CALIBRATION_PHASES?.split(',');
@@ -46,7 +59,7 @@ await mkdir(output, { recursive: true });
 const save = () => writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
 const pct = (values, p) => values.length ? [...values].sort((a, b) => a - b)[Math.ceil(values.length * p) - 1] : null;
 const metric = (text, name) => Number(new RegExp(`^${name} ([0-9.e+-]+)$`, 'm').exec(text)?.[1] || 0);
-for (const profile of profiles.filter(p => !selected || selected.includes(p.name))) {
+for (const profile of profiles.filter(p => selected ? selected.includes(p.name) : !p.name.startsWith('tune-'))) {
   const trial = { name: profile.name, settings: profile.settings, phases: [] };
   report.trials.push(trial); await save();
   console.log(`START ${profile.name}`);
@@ -76,10 +89,12 @@ for (const profile of profiles.filter(p => !selected || selected.includes(p.name
     } catch (e) { row.samplingErrors.push(e.message); }
     finally { sampling = false; }
   }
-  async function connect(auth, room, type = 'private') {
+  async function connect(auth, room, type = 'private', instanceIndex) {
     return new Promise((resolve, reject) => {
-      const ws = new WS(`${backend.base.replace('http:', 'ws:')}/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${auth.info.id}&type=${type}`, ['pomelo-token', auth.token]);
-      const peer = { ws, key: String(peers.length), room, last: 0, expectedClose: false };
+      const endpointIndex = instanceIndex ?? peers.length % backend.instances.length;
+      const base = backend.instances[endpointIndex].base;
+      const ws = new WS(`${base.replace('http:', 'ws:')}/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${auth.info.id}&type=${type}`, ['pomelo-token', auth.token]);
+      const peer = { ws, instanceIndex: endpointIndex, key: String(peers.length), room, last: 0, expectedClose: false };
       peers.push(peer);
       const timer = setTimeout(() => { ws.terminate(); reject(Error('Connect timeout')); }, 15000);
       ws.on('error', error => { clearTimeout(timer); reject(error); });
@@ -177,9 +192,15 @@ for (const profile of profiles.filter(p => !selected || selected.includes(p.name
   }
   try {
     backend = await startChatBackend(process.cwd());
+    trial.topology = { instances: backend.instances.map(({ pid, base }) => ({ pid, base })), versions: backend.versions,
+      distribution: 'Private sender pinned to instance 0, receiver to instance 1 when available; groups round-robin; shared global Redis budget',
+      metricsScope: 'samples/rejectionCounters scrape instance 0 only; rejected field counts protocol responses from all clients' };
     const clients = await backend.createIndependentPeers(100, true), privatePeers = [];
     for (let i = 0; i < clients.length; i += 20)
-      privatePeers.push(...await Promise.all(clients.slice(i, i + 20).map(async c => ({ a: await connect(c.auth, c.room.room), b: await connect(c.receiverAuth, c.room.room) }))));
+      privatePeers.push(...await Promise.all(clients.slice(i, i + 20).map(async c => ({ a: await connect(c.auth, c.room.room, 'private', 0), b: await connect(c.receiverAuth, c.room.room, 'private', backend.instances.length > 1 ? 1 : 0) }))));
+    trial.topology.crossInstancePrivatePairs = privatePeers.filter(pair => pair.a.instanceIndex !== pair.b.instanceIndex).length;
+    if (backend.instances.length > 1 && trial.topology.crossInstancePrivatePairs !== clients.length)
+      throw Error('Every private pair must span two instances');
     const groups = [];
     for (const [index, members] of [clients.slice(0, 50), clients.slice(50)].entries()) {
       const owner = members[0].auth;
@@ -202,11 +223,14 @@ for (const profile of profiles.filter(p => !selected || selected.includes(p.name
     await phase('single-room-burst', 300, () => ({ sender: privatePeers[0].a, expected: 2, kind: 'private' }), true);
     await phase('global-burst', 400, privateRoute, true);
     trial.audit = await backend.auditMessages(); trial.completed = true;
+    trial.messageErrorTypes = { ...backend.messageErrorTypes };
     await writeFile(path.join(output, `${profile.name}-metrics.prom`), await scrape());
   } catch (error) { trial.completed = false; trial.fatal = error.message; console.error(`${profile.name}: ${error.stack}`); }
   finally {
     clearInterval(sampler); loop.disable(); current = undefined;
     for (const p of peers) { p.expectedClose = true; p.ws.terminate(); }
+    if (backend) for (const instance of backend.instances)
+      await writeFile(path.join(output, `${profile.name}-backend-${instance.index}.log`), instance.logs);
     if (backend) await backend.close();
     await save(); console.log(`END ${profile.name}`);
   }

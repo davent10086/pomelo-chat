@@ -14,6 +14,7 @@ const viteEnv = ((import.meta as unknown) as { env: ViteEnv }).env || ({} as Vit
 const ENV_API = viteEnv.VITE_API_BASE;
 const ENV_WS = viteEnv.VITE_WS_BASE;
 const ENV_SERVER = viteEnv.VITE_SERVER_URL;
+const desktopServer = window.pomeloDesktop?.getRuntime().serverURL;
 
 // 默认服务端口配置（从环境变量读取，便于非 3000 端口部署）
 const DEFAULT_PORT = Number(viteEnv.VITE_SERVER_PORT) || 3000;
@@ -29,10 +30,10 @@ const host = isBrowser ? window.location.hostname : '127.0.0.1';
 const wsProto = proto === 'https:' ? 'wss:' : 'ws:';
 
 // 服务端接口的 baseURL
-export const apiBaseURL = ENV_API || `${proto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
+export const apiBaseURL = desktopServer ? `${desktopServer}/api/chat/v1` : ENV_API || `${proto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
 
 // 建立 websocket 的 baseURL
-export const wsBaseURL = ENV_WS || `${wsProto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
+export const wsBaseURL = desktopServer ? `${desktopServer.replace(/^http/, 'ws')}/api/chat/v1` : ENV_WS || `${wsProto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
 
 // 服务器的地址 URL
-export const serverURL = ENV_SERVER || `${proto}//${host}:${DEFAULT_PORT}`;
+export const serverURL = desktopServer || ENV_SERVER || `${proto}//${host}:${DEFAULT_PORT}`;

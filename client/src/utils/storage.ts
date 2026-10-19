@@ -80,6 +80,12 @@ export const getAuthHeader = (): string => {
 
 /** 只清除当前项目所属的本地存储 */
 export const clearSessionStorage = () => {
+	const token = tokenStorage.getItem();
+	if (window.pomeloDesktop && token)
+		void window.pomeloDesktop.invalidateAuth(token).catch(() => undefined);
+	localStorage.removeItem('userInfo');
+	localStorage.removeItem('authToken');
+	localStorage.removeItem('isRemember');
 	const userId = userStorage.getItem().id;
 	clearUserDrafts(userId);
 	if (userId)

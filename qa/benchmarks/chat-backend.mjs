@@ -5,7 +5,9 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-export async function startChatBackend(root) {
+export async function startChatBackend(root, options = {}) {
+  const instanceCount = Number(options.instances || process.env.BENCH_INSTANCES || 1);
+  if (!Number.isInteger(instanceCount) || instanceCount < 1 || instanceCount > 4) throw new Error('BENCH_INSTANCES must be 1..4');
   const serverRoot = path.join(root, 'server');
   const require = createRequire(path.join(serverRoot, 'package.json'));
   const dotenv = require('dotenv');
@@ -24,14 +26,15 @@ export async function startChatBackend(root) {
   const redis = new Redis(env.REDIS_URL_TEST || env.REDIS_URL || { host: env.REDIS_HOST || '127.0.0.1', port: Number(env.REDIS_PORT || 6379), password: env.REDIS_PASSWORD || undefined, db: Number(env.REDIS_DB || 0) }, { lazyConnect: true, maxRetriesPerRequest: 1 });
   const messageErrorTypes = {};
   let child;
+  const instances = [];
+  const jwtSecret = randomUUID();
   let created = false;
   let closed = false;
   async function close() {
     if (closed) return;
     closed = true;
-    if (child && child.exitCode === null) {
-      await new Promise(resolve => { child.once('exit', resolve); child.kill(); });
-    }
+    for (const instance of instances) if (instance.child && instance.child.exitCode === null && instance.child.signalCode === null)
+      await new Promise(resolve => { instance.child.once('exit', resolve); instance.child.kill(); });
     try {
       if (redis.status === 'ready') {
         let cursor = '0';
@@ -65,22 +68,46 @@ export async function startChatBackend(root) {
     url.username = env.DB_USER || 'root';
     url.password = env.DB_PASSWORD || '';
     url.pathname = '/' + database;
+    async function launchInstance(index, instancePort) {
     let readyResolve, readyReject;
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
     const timer = setTimeout(() => readyReject(new Error('Isolated backend startup timed out')), 60000);
     const redisTarget = env.REDIS_URL_TEST || env.REDIS_URL;
-    child = spawn(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), ...(env.BENCH_DIAGNOSTIC_PRELOAD ? ['-r', env.BENCH_DIAGNOSTIC_PRELOAD] : []), 'src/index.ts'], {
+    const instance = instances[index] || { index, port: instancePort, base: `http://127.0.0.1:${instancePort}`, logs: '' };
+    const processChild = spawn(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), ...(env.BENCH_DIAGNOSTIC_PRELOAD ? ['-r', env.BENCH_DIAGNOSTIC_PRELOAD] : []), 'src/index.ts'], {
       cwd: serverRoot,
-      env: { ...env, NODE_ENV: 'test', PORT: String(port), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix, UPLOAD_ROOT: uploadRoot,
-        ...(redisTarget ? { REDIS_URL: redisTarget } : {}), JWT_SECRET: randomUUID(), TS_NODE_FILES: 'true', REQUEST_LOGS: 'false',
+      env: { ...env, NODE_ENV: 'test', PORT: String(instancePort), DATABASE_URL_TEST: url.href, REDIS_KEY_PREFIX: prefix, UPLOAD_ROOT: uploadRoot,
+        ...(redisTarget ? { REDIS_URL: redisTarget } : {}), JWT_SECRET: jwtSecret, TS_NODE_FILES: 'true', REQUEST_LOGS: 'false',
         AI_API_KEY: '', DASHSCOPE_API_KEY: '', DEEPSEEK_API_KEY: '', MCP_SERVERS_JSON: '[]', LIVEKIT_API_KEY: '', LIVEKIT_API_SECRET: '' },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe', ...(env.BENCH_DIAGNOSTIC_PRELOAD ? ['ipc'] : [])]
     });
-    child.stdout.on('data', data => { if (data.toString().includes('Server listening')) readyResolve(); });
-    child.stderr.on('data', data => { const text = data.toString(); if (text.includes('[message] ws message error:')) { const kind = /deadlock/i.test(text) ? 'database_deadlock' : /lock wait timeout/i.test(text) ? 'database_lock_timeout' : /duplicate/i.test(text) ? 'database_duplicate' : /pool|connection/i.test(text) ? 'database_connection' : 'other_message_error'; messageErrorTypes[kind] = (messageErrorTypes[kind] || 0) + (text.match(/\[message\] ws message error:/g) || []).length; } if (/服务启动失败/.test(data.toString())) readyReject(new Error('Backend startup failed; check local MySQL/Redis configuration')); });
-    child.once('error', readyReject);
-    child.once('exit', code => readyReject(new Error(`Backend exited (${code})`)));
+    instance.child = processChild; instance.pid = processChild.pid; instances[index] = instance;
+    processChild.stdout.on('data', data => { instance.logs += data.toString(); if (data.toString().includes('Server listening')) readyResolve(); });
+    processChild.stderr.on('data', data => { instance.logs += data.toString(); const text = data.toString(); if (text.includes('[message] ws message error:')) { const kind = /deadlock/i.test(text) ? 'database_deadlock' : /lock wait timeout/i.test(text) ? 'database_lock_timeout' : /duplicate/i.test(text) ? 'database_duplicate' : /pool|connection/i.test(text) ? 'database_connection' : 'other_message_error'; messageErrorTypes[kind] = (messageErrorTypes[kind] || 0) + (text.match(/\[message\] ws message error:/g) || []).length; } if (/服务启动失败/.test(data.toString())) readyReject(new Error('Backend startup failed; check local MySQL/Redis configuration')); });
+    processChild.once('error', readyReject);
+    processChild.once('exit', code => readyReject(new Error(`Backend exited (${code})`)));
     try { await ready; } finally { clearTimeout(timer); }
+    return instance;
+    }
+    child = (await launchInstance(0, port)).child;
+    for (let index = 1; index < instanceCount; index++) {
+      const socket = createServer(); await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
+      const nextPort = socket.address().port; await new Promise(resolve => socket.close(resolve));
+      await launchInstance(index, nextPort);
+    }
+    async function stopInstance(index) {
+      const target = instances[index].child;
+      if (target.exitCode === null && target.signalCode === null) await new Promise(resolve => { target.once('exit', resolve); target.kill(); });
+    }
+    async function restartInstance(index) { await stopInstance(index); return launchInstance(index, instances[index].port); }
+    async function controlInstance(index, command) {
+      const target = instances[index].child, requestId = randomUUID();
+      return new Promise((resolve, reject) => {
+        const listener = message => { if (message.requestId === requestId) { clearTimeout(timer); target.off('message', listener); message.error ? reject(new Error(message.error)) : resolve(message.result); } };
+        const timer = setTimeout(() => { target.off('message', listener); reject(new Error('Diagnostic command timed out')); }, 10000);
+        target.on('message', listener); target.send({ ...command, requestId });
+      });
+    }
     const base = `http://127.0.0.1:${port}`;
     const password = 'BenchmarkOnly123!';
     const api = async (route, body, token) => {
@@ -172,6 +199,9 @@ export async function startChatBackend(root) {
       const [outbox] = await admin.query('SELECT COUNT(*) AS pending FROM ??.message_outbox WHERE delivered_at IS NULL', [database]);
       return { ...counts[0], sequenceErrors, statisticsErrors, pendingOutbox: outbox[0].pending };
     }
-    return { backendPid: child.pid, auditMessages, probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
+    const [version] = await admin.query('SELECT VERSION() AS version');
+    return { backendPid: child.pid, instances, stopInstance, restartInstance, controlInstance,
+      versions: { mysql: version[0].version, redis: /redis_version:([^\r\n]+)/.exec(await redis.info('server'))?.[1] },
+      auditMessages, probeDatabase, databaseDiagnostics, messageErrorTypes, createIndependentPeers, base, auth, rooms, selectedRoom: selected.room, dataset: { users: 11, privateConversations: 10, selectedConversationMessages: 60, lastMessage: 'benchmark-message-060' }, close };
   } catch (error) { await close(); throw error; }
 }

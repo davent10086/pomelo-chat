@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pomelo 柚子助手">
+  <rect width="128" height="128" rx="30" fill="#FAF8F0"/>
+  <path d="M67 33C52 34 42 24 43 15c16-2 27 4 27 17" fill="#32764E"/>
+  <path d="M64 34C52 34 46 43 35 54 23 66 20 79 25 91c6 15 23 20 40 20 10 0 19-2 26-6 6 4 12 6 19 6 3 0 3-2 1-4-6-6-9-10-9-15 7-17 1-29-12-42C80 40 75 34 64 34Z" fill="#72B87B"/>
+  <ellipse cx="52" cy="78" rx="3.5" ry="6" fill="#285C40"/>
+  <ellipse cx="76" cy="78" rx="3.5" ry="6" fill="#285C40"/>
+</svg>

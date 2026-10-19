@@ -1,5 +1,43 @@
 # 优化数据测试
 
+## 令牌桶额度校准
+
+```powershell
+$env:BENCH_INSTANCES='2'
+$env:CALIBRATION_PROFILES='steady,tune-100,tune-150,tune-200'
+$env:CALIBRATION_SECONDS='20'
+$env:CALIBRATION_PHASES='private-load,hot-group,mixed,global-burst'
+node qa/benchmarks/calibrate-admission.mjs
+```
+
+`tune-100/150/200` 将群额度设为 40 条/秒、突发 40 条，全局额度分别为 100/150/200 条/秒、突发均为 100 条，其余沿用 `steady`。`tune-100-smooth`、`tune-150-smooth` 只将对应候选的全局突发容量降为 50，适合观察突发排队；`tune-100-local` 在 `tune-100-smooth` 基础上将群额度/突发恢复为 20/20。调参候选需明确选择，原有默认候选集合不扩大。设置 `BENCH_INSTANCES=1` 可检查单实例。脚本读取环境变量启动隔离测试服务，不修改业务 `.env` 或运行中的服务。
+
+候选复验时将 `CALIBRATION_SECONDS` 提高至 30 或更长；先串行完成一轮再启动下一轮，避免互相争用本机资源。不能根据单次、固定顺序试验断言某配置必然优于另一配置。测试后清理当前终端的上述环境变量，再运行其他命令。
+
+汇总多轮校准（传入实际报告路径）：
+
+```powershell
+node qa/benchmarks/summarize-admission-tuning.mjs test-results/admission-calibration-<第一轮>/report.json test-results/admission-calibration-<复验轮>/report.json
+```
+
+输出唯一的 `test-results/admission-tuning-*/REPORT.md` 和 `report.json`，逐轮列出完整性、延迟、吞吐和采样积压。校准会保留每个实例的测试日志，便于复查消息路径错误。
+
+## 双实例可靠性与 IM 评估
+
+```powershell
+node qa/benchmarks/multi-instance.mjs
+node qa/benchmarks/run-im-evaluation.mjs --benchmarks-only
+node qa/benchmarks/summarize-im-evaluation.mjs
+```
+
+也可直接运行 `node qa/benchmarks/run-im-evaluation.mjs`，按顺序完成双实例功能、单实例校准、双实例校准和双实例保护压测。汇总命令可传入特定的 `test-results/im-evaluation-*` 目录。需要本地 MySQL/Redis、创建临时数据库权限、项目依赖与 Playwright Chromium。
+
+功能脚本启动两个独立后端进程，共享随机测试数据库、Redis 前缀和临时上传目录；通过真实 WebSocket 和两个 Chromium 客户端检查跨实例收发、同一幂等键并发提交、丢失 ACK 后重试、125 条离线消息分页补偿、已读游标、订阅中断后的 resync、后端进程重启。故障注入仅在测试子进程中加载受测试环境与前缀约束的预加载脚本，不增加业务接口。功能检查提高了消息额度，不能用于计算默认容量。
+
+校准使用现有 `calibrate-admission.mjs`，每场景提供负载 30 秒，100 个私聊房间与两个 50 人群共 300 个连接。双实例私聊发送端固定实例 0、接收端固定实例 1，并断言全部 100 对跨实例；群连接轮流分配。`BENCH_INSTANCES=2` 也可直接用于现有校准与保护脚本，未指定时仍为单实例。校准报告的 `samples/rejectionCounters` 只采集实例 0，`rejected` 则统计所有客户端收到的拒绝，不应混淆。
+
+输出包含硬件与版本、进程 PID/端点、源码摘要、各阶段原始报告、接受吞吐、保护拒绝、意外错误、ACK/接收延迟、消息缺失与数据库审计。瞬时突发不计算稳态吞吐。所有服务与负载发生在同一台机器，默认全局 Redis 限额仍共享为 150 条/秒；结果不能证明最大容量、跨机器高可用或与 OpenIM 性能相同。脚本结束时清理本次测试数据，报告留在本地 `test-results`。
+
 在仓库根目录运行（需要现有 client 依赖、@playwright/test 与 Playwright Chromium）：
 
 ```powershell

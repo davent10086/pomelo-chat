@@ -54,7 +54,7 @@ async function run() {
     try {
       const response = await fetch(`${url}/desktop-assistant`, { signal: AbortSignal.timeout(500) });
       if (response.ok && (await response.text()).includes('/src/main.tsx')) {
-        const env = { ...process.env, POMELO_DESKTOP_URL: url };
+        const env = { ...process.env, POMELO_DESKTOP_URL: url, POMELO_SERVER_URL: parsedServer.origin };
         delete env.ELECTRON_RUN_AS_NODE;
         start(require('electron'), [path.resolve(__dirname, '..')], env);
         console.log(`Desktop: ${url} | backend: ${parsedServer.origin}`);

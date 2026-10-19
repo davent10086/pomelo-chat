@@ -87,9 +87,12 @@ const Login = () => {
 					tokenStorage.setItem(res.data.token);
 					userStorage.setItem(res.data.info);
 					// 判断是否勾选了记住密码
-					if (isRemember) {
-						rememberUser(res.data.info);
-					}
+					if (window.pomeloDesktop) {
+						const auth = { token: res.data.token, user: userStorage.getItem() };
+						await window.pomeloDesktop.publishAuth(auth);
+						try { await window.pomeloDesktop.rememberAuth(isRemember ? auth : null); }
+						catch { showMessage('warning', '已登录，但无法加密保存登录状态；下次启动需重新登录。'); }
+					} else if (isRemember) await rememberUser(res.data.info);
 					navigate('/');
 				} else {
 					showMessage('error', res.message);
@@ -106,6 +109,10 @@ const Login = () => {
 	const handleRemember = () => {
 		const newIsRemember = !isRemember;
 		setIsRemember(newIsRemember);
+		if (window.pomeloDesktop) {
+			localStorage.setItem('pomelo-desktop.remember', String(newIsRemember));
+			return;
+		}
 		localStorage.setItem('isRemember', JSON.stringify(newIsRemember));
 		if (newIsRemember === false) {
 			setIsRemember(false);
@@ -116,6 +123,10 @@ const Login = () => {
 
 	// 初始化时判断本地是否有记住密码，有则将信息填充到输入框中，同时将记住密码勾选上
 	useEffect(() => {
+		if (window.pomeloDesktop) {
+			setIsRemember(localStorage.getItem('pomelo-desktop.remember') === 'true');
+			return;
+		}
 		getUserInfo().then(res => {
 			if (res) {
 				loginFormInstance.setFieldsValue({
@@ -152,7 +163,7 @@ const Login = () => {
 							<div className={styles.login_tools}>
 								<div className={styles.remenberTool}>
 									<Checkbox onChange={handleRemember} checked={isRemember}>
-										记住密码
+										{window.pomeloDesktop ? '记住登录' : '记住密码'}
 									</Checkbox>
 								</div>
 								<div

@@ -28,6 +28,11 @@ pnpm test:security
 pnpm test:coverage
 pnpm test:all
 pnpm test:qa
+pnpm test:desktop
+pnpm test:desktop:smoke
+# Windows: build first, then run the packaged app against freshly isolated services
+pnpm build:desktop
+pnpm test:desktop:production
 ```
 
 `test:all` uses the configured test database; it does not create it. For local service-backed

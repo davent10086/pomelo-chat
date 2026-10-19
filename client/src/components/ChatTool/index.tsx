@@ -1,11 +1,11 @@
 import { SmileOutlined, PictureOutlined, FolderOutlined, PhoneOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { Button, Spin, Tooltip } from 'antd';
-import React, { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { ChangeEvent, forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
 import { useChatDraft } from './useChatDraft';
-import { IChatToolProps, IMessageListItem, ISendMessage } from './type';
+import { ChatToolHandle, IChatToolProps, IMessageListItem, ISendMessage } from './type';
 
 import { EmojiList } from '@/assets/emoji';
 import { ChatIconList } from '@/assets/icons';
@@ -17,11 +17,11 @@ import { HttpStatus } from '@/utils/constant';
 import { getFileSuffixByName } from '@/utils/File';
 import { uploadFile } from '@/utils/file-upload';
 import { useReplySuggestions } from '@/hooks/useReplySuggestions';
-import { userStorage } from '@/utils/storage';
+import { tokenStorage, userStorage } from '@/utils/storage';
 
 const toolIcons: Record<string, React.ReactNode> = { 'icon-biaoqing': <SmileOutlined />, 'icon-tupian_huaban': <PictureOutlined />, 'icon-wenjian1': <FolderOutlined />, 'icon-dianhua': <PhoneOutlined />, 'icon-video': <VideoCameraOutlined /> };
 
-const ChatTool = (props: IChatToolProps) => {
+const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 	const { curChatInfo, sendMessage, recentMessages = [], userProfile, externalInsertText } = props;
 	// H11: userStorage.getItem() 已返回对象
 	const user = userProfile && Object.keys(userProfile).length ? userProfile : userStorage.getItem();
@@ -35,6 +35,13 @@ const ChatTool = (props: IChatToolProps) => {
 		clearSent
 	} = useChatDraft(Number(user.id), curChatInfo.room, textareaRef);
 	const [loading, setLoading] = useState(false);
+	const [uploadStatus, setUploadStatus] = useState('');
+	const uploading = useRef(false);
+	const mounted = useRef(true);
+	useEffect(() => {
+		mounted.current = true;
+		return () => { mounted.current = false; };
+	}, []);
 	const [openAudioModal, setAudioModal] = useState(false);
 	const [openVideoModal, setVideoModal] = useState(false);
 	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]);
@@ -166,42 +173,44 @@ const ChatTool = (props: IChatToolProps) => {
 		}
 	};
 
-	const handleSendFileMessage = async (e: ChangeEvent<HTMLInputElement>) => {
-		if (e.target.files!.length > 0) {
-			setLoading(true);
-			const file = e.target.files![0];
-			if (file.size > 100 * 1024 * 1024) {
-				showMessage('error', '文件大小不能超过 100MB');
-				setLoading(false);
-				return;
-			}
-			try {
-				const res = await uploadFile(file, 5);
-				if (res.success && res.filePath) {
-					try {
-						const newmessage: ISendMessage = {
-							sender_id: user.id,
-							receiver_id: curChatInfo.receiver_id,
-							type: getFileSuffixByName(file.name),
-							content: res.filePath,
-							avatar: user.avatar,
-							fileSize: file.size
-						};
-						await sendMessage(newmessage);
-					} catch {
-						showMessage('error', '消息发送失败，请重试');
-					}
-				} else {
-					showMessage('error', '文件上传失败，请重试');
+	const handleSendFiles = async (files: File[]) => {
+		if (!files.length) return;
+		if (curChatInfo.room.startsWith('ai_')) { showMessage('warning', '请在私聊或群聊中发送文件'); return; }
+		if (uploading.current) { showMessage('info', '正在上传文件，请稍后再试'); return; }
+		if (files.length > 10) { showMessage('warning', '一次最多发送 10 个文件'); return; }
+		const token = tokenStorage.getItem();
+		const current = () => mounted.current && tokenStorage.getItem() === token && Number(userStorage.getItem().id) === Number(user.id);
+		uploading.current = true; setLoading(true);
+		try {
+			for (const [index, file] of files.entries()) {
+				if (!current()) break;
+				if (file.size <= 0 || file.size > 100 * 1024 * 1024) {
+					showMessage('warning', `${file.name}：文件大小需在 1B 到 100MB 之间`); continue;
 				}
-			} catch {
-				showMessage('error', '文件上传失败，请重试');
-			} finally {
-				setLoading(false);
-				imageRef.current!.value = '';
-				fileRef.current!.value = '';
+				setUploadStatus(`正在上传 ${index + 1}/${files.length}：${file.name}`);
+				try {
+					const res = await uploadFile(file, 5, undefined, undefined, progress => {
+						if (current()) setUploadStatus(`正在上传 ${index + 1}/${files.length}：${file.name} (${progress}%)`);
+					});
+					// A late upload must never send through a newly selected conversation or account.
+					if (!current()) break;
+					if (!res.success || !res.filePath) throw new Error('文件上传失败');
+					await sendMessage({ sender_id: user.id, receiver_id: curChatInfo.receiver_id,
+						type: getFileSuffixByName(file.name), content: res.filePath, avatar: user.avatar, fileSize: file.size });
+				} catch {
+					if (current()) showMessage('error', `${file.name}：上传或发送失败，请重试`);
+				}
 			}
+		} finally {
+			uploading.current = false;
+			if (mounted.current) { setLoading(false); setUploadStatus(''); }
 		}
+	};
+	useImperativeHandle(ref, () => ({ sendFiles: handleSendFiles }));
+	const handleSendFileMessage = (event: ChangeEvent<HTMLInputElement>) => {
+		const files = Array.from(event.target.files || []);
+		event.target.value = '';
+		void handleSendFiles(files);
 	};
 
 	const handleAudioModal = (visible: boolean) => setAudioModal(visible);
@@ -318,6 +327,7 @@ const ChatTool = (props: IChatToolProps) => {
 				</ul>
 				<input
 					type="file"
+					multiple
 					accept="image/*,video/*"
 					style={{ display: 'none' }}
 					ref={imageRef}
@@ -325,6 +335,7 @@ const ChatTool = (props: IChatToolProps) => {
 				/>
 				<input
 					type="file"
+					multiple
 					accept="*"
 					style={{ display: 'none' }}
 					ref={fileRef}
@@ -332,7 +343,7 @@ const ChatTool = (props: IChatToolProps) => {
 				/>
 			</div>
 			<div className={styles.chat_tool_input}>
-				<Spin spinning={loading} tip="正在发送中...">
+				<Spin spinning={loading} tip={uploadStatus || '正在发送中...'}>
 					<textarea
 						ref={textareaRef}
 						onChange={e => changeInputValue(e)}
@@ -346,7 +357,7 @@ const ChatTool = (props: IChatToolProps) => {
 				</Spin>
 			</div>
 			<div className={styles.chat_tool_btn}>
-				<Button type="primary" onClick={handleSendTextMessage}>
+				<Button type="primary" disabled={loading} onClick={handleSendTextMessage}>
 					发送
 				</Button>
 			</div>
@@ -398,6 +409,7 @@ const ChatTool = (props: IChatToolProps) => {
 			)}
 		</div>
 	);
-};
+});
+ChatTool.displayName = 'ChatTool';
 
 export default ChatTool;

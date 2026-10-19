@@ -1,18 +1,58 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, protocol, session, net, safeStorage } = require('electron');
 const path = require('node:path');
 const { PANEL_SIZE, TAB_SIZE, GAP, dockBounds } = require('./geometry.cjs');
 const { validAuth, validChat, trustedFrame } = require('./protocol.cjs');
+const { APP_ORIGIN, sameOrigin, registerAppProtocol } = require('./app-protocol.cjs');
+const { createSettings, serverKey } = require('./settings.cjs');
 
-const devUrl = new URL(process.env.POMELO_DESKTOP_URL || 'http://127.0.0.1:5173');
+const development = !app.isPackaged && Boolean(process.env.POMELO_DESKTOP_URL);
+const devUrl = new URL(development ? process.env.POMELO_DESKTOP_URL : 'http://127.0.0.1:5173');
 if (devUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(devUrl.hostname)) {
   throw new Error('Desktop development URL must be a loopback HTTP address');
 }
-const origin = devUrl.origin;
+const origin = development ? devUrl.origin : APP_ORIGIN;
+protocol.registerSchemesAsPrivileged([{ scheme: 'pomelo', privileges: {
+  standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true
+} }]);
+// A separate profile is used by automated packaged-app tests.
+if (!app.isPackaged && process.env.POMELO_DESKTOP_USER_DATA) app.setPath('userData', path.resolve(process.env.POMELO_DESKTOP_USER_DATA));
+if (app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', path.resolve(app.commandLine.getSwitchValue('user-data-dir')));
+let settings, rememberLogin = false, switching = false;
 let mainWindow, assistantWindow;
 let snapshot = { revision: 0, auth: null, chat: null };
 let expanded = false, resizeTicket = 0, syncing = false, restoreBounds = null;
 const originCorner = 'left top';
 let assistantReady = false;
+
+ipcMain.on('desktop:runtime', (event) => {
+  requireEither(event);
+  event.returnValue = { serverURL: settings.serverURL, packaged: !development };
+});
+ipcMain.handle('desktop:remember', (event, auth) => {
+  requireRole(event, 'main');
+  if (auth === null) { settings.forget(); rememberLogin = false; }
+  else {
+    if (!validAuth(auth) || auth.token !== snapshot.auth?.token || auth.user.id !== snapshot.auth?.user.id)
+      throw new Error('Login changed; retry after login');
+    settings.remember(auth); rememberLogin = true;
+  }
+});
+ipcMain.handle('desktop:server', async (event, value) => {
+  requireRole(event, 'main');
+  if (snapshot.auth || switching) throw new Error('请先退出登录再切换服务器');
+  settings.setServer(value);
+  switching = true;
+  setTimeout(() => {
+    void (async () => {
+      assistantReady = false;
+      for (const window of [assistantWindow, mainWindow]) if (window && !window.isDestroyed()) window.destroy();
+      snapshot = { revision: snapshot.revision + 1, auth: null, chat: null };
+      restoreBounds = null; expanded = false; resizeTicket = 0;
+      await createWindows();
+      switching = false;
+    })().catch(error => { console.error(error.message); app.exit(1); });
+  }, 100);
+});
 
 function broadcast() {
   snapshot = { ...snapshot, revision: snapshot.revision + 1 };
@@ -64,10 +104,21 @@ ipcMain.handle('desktop:window', (event, action) => {
 });
 
 ipcMain.handle('desktop:snapshot', event => { requireEither(event); return snapshot; });
+ipcMain.handle('desktop:download', (event, storagePath) => {
+  requireEither(event);
+  if (!snapshot.auth || !settings.serverURL || typeof storagePath !== 'string' ||
+      !/^\/uploads\/[1-9]\d*\/(image|video|file)\/[a-f0-9]{32,64}\.[a-z0-9]{1,10}$/.test(storagePath))
+    throw new Error('Invalid download');
+  event.sender.downloadURL(`${settings.serverURL}${storagePath}`, {
+    headers: { Authorization: `Bearer ${snapshot.auth.token}` }
+  });
+});
 ipcMain.handle('desktop:auth', (event, auth) => {
   requireRole(event, 'main');
   if (!validAuth(auth)) throw new Error('Invalid auth snapshot');
   const changed = snapshot.auth?.token !== auth?.token || snapshot.auth?.user.id !== auth?.user.id;
+  if (!auth) { settings.forget(); rememberLogin = false; }
+  else if (rememberLogin) settings.remember(auth);
   snapshot = { ...snapshot, auth, chat: changed ? null : snapshot.chat };
   if (changed) resetAssistant();
   broadcast();
@@ -75,6 +126,7 @@ ipcMain.handle('desktop:auth', (event, auth) => {
 ipcMain.handle('desktop:invalidate', (event, token) => {
   requireEither(event);
   if (typeof token === 'string' && snapshot.auth?.token === token) {
+    settings.forget(); rememberLogin = false;
     snapshot = { ...snapshot, auth: null, chat: null };
     resetAssistant();
     broadcast();
@@ -124,20 +176,30 @@ function secureWindow(window, assistant) {
   const allowed = url => {
     try {
       const target = new URL(url);
-      return target.origin === origin && (assistant ? target.pathname === '/desktop-assistant' : target.pathname !== '/desktop-assistant');
+      return sameOrigin(target.href, origin) && (assistant ? target.pathname === '/desktop-assistant' : target.pathname !== '/desktop-assistant');
     } catch { return false; }
   };
   window.webContents.on('will-navigate', (event, url) => { if (!allowed(url)) event.preventDefault(); });
   window.webContents.on('will-redirect', (event, url) => { if (!allowed(url)) event.preventDefault(); });
 }
 
-app.whenReady().then(async () => {
-  const webPreferences = { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true };
+async function createWindows() {
+  const restored = settings.restore();
+  snapshot.auth = restored; rememberLogin = Boolean(restored);
+  const partition = development ? undefined : `persist:pomelo-${serverKey(settings.serverURL || 'setup')}`;
+  const ses = partition ? session.fromPartition(partition) : session.defaultSession;
+  if (!development) await registerAppProtocol(ses, path.join(app.getAppPath(), 'renderer'), net, settings.serverURL);
+  ses.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
+    Boolean(contents && sameOrigin(contents.getURL(), origin) && sameOrigin(requestingOrigin, origin) && ['media', 'notifications'].includes(permission)));
+  ses.setPermissionRequestHandler((contents, permission, callback) => {
+    callback(sameOrigin(contents.getURL(), origin) && ['media', 'notifications'].includes(permission));
+  });
+  const webPreferences = { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, ...(partition ? { partition } : {}) };
   const area = screen.getPrimaryDisplay().workArea;
   const width = Math.min(1100, area.width - PANEL_SIZE.width - GAP);
   mainWindow = new BrowserWindow({ x: area.x + Math.max(0, Math.round((area.width - width - PANEL_SIZE.width - GAP) / 2)),
     y: area.y + Math.max(0, Math.round((area.height - 800) / 2)), width, height: Math.min(800, area.height),
-    minWidth: Math.min(640, width), minHeight: Math.min(480, area.height), frame: false, transparent: true, backgroundColor: '#00000000', roundedCorners: true, maximizable: false, title: 'Pomelo Chat', icon: path.join(__dirname, '../client/public/yuzu-chat.png'), show: false, webPreferences });
+    minWidth: Math.min(640, width), minHeight: Math.min(480, area.height), frame: false, transparent: true, backgroundColor: '#00000000', roundedCorners: true, maximizable: false, title: 'Pomelo Chat', icon: path.join(__dirname, development ? '../client/public/yuzu-chat.png' : 'renderer/yuzu-chat.png'), show: false, webPreferences });
   assistantWindow = new BrowserWindow({
     ...dockBounds(mainWindow.getBounds(), area, false).assistant, parent: mainWindow,
     frame: false, transparent: true, backgroundColor: '#00000000',
@@ -153,8 +215,8 @@ app.whenReady().then(async () => {
   mainWindow.on('restore', () => { syncDock(); broadcast(); });
   mainWindow.on('show', () => { syncDock(); broadcast(); });
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.on('closed', () => app.quit());
-  assistantWindow.on('closed', () => app.quit());
+  mainWindow.on('closed', () => { if (!switching) app.quit(); });
+  assistantWindow.on('closed', () => { if (!switching) app.quit(); });
   mainWindow.webContents.on('render-process-gone', () => {
     snapshot = { ...snapshot, auth: null, chat: null }; resetAssistant(); broadcast();
   });
@@ -162,9 +224,15 @@ app.whenReady().then(async () => {
     if (mainFrame && !inPlace) { assistantReady = false; resetAssistant(); assistantWindow.hide(); }
   });
   assistantWindow.webContents.on('did-finish-load', () => { assistantReady = true; broadcast(); });
-  screen.on('display-removed', syncDock);
-  screen.on('display-metrics-changed', syncDock);
   await Promise.all([mainWindow.loadURL(origin), assistantWindow.loadURL(`${origin}/desktop-assistant`)]);
   mainWindow.show();
+}
+app.whenReady().then(async () => {
+  settings = createSettings(app.getPath('userData'), safeStorage, validAuth);
+  // Development keeps its existing Vite configuration and needs no setup screen.
+  if (development && process.env.POMELO_SERVER_URL) settings.setServer(process.env.POMELO_SERVER_URL);
+  screen.on('display-removed', syncDock);
+  screen.on('display-metrics-changed', syncDock);
+  await createWindows();
 }).catch(error => { console.error(error.message); app.exit(1); });
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => { if (!switching) app.quit(); });

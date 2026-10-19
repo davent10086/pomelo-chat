@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+desktop/renderer/
+release/
 
 # Logs
 npm-debug.log*

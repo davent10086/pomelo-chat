@@ -5,6 +5,10 @@ export interface DesktopChat { room: string; type: 'private' | 'group'; receiver
 export interface DesktopSnapshot { revision: number; auth: DesktopAuth | null; chat: DesktopChat | null }
 export interface AssistantBounds { origin: string; width: number; height: number; x: number; y: number }
 export interface DesktopBridge {
+	getRuntime(): { serverURL: string; packaged: boolean };
+	setServer(value: string): Promise<void>;
+	rememberAuth(auth: DesktopAuth | null): Promise<void>;
+	downloadFile(storagePath: string): Promise<void>;
 	windowControl(action: 'minimize' | 'maximize' | 'close'): Promise<boolean>;
 	getSnapshot(): Promise<DesktopSnapshot>;
 	publishAuth(auth: DesktopAuth | null): Promise<void>;
@@ -19,10 +23,15 @@ declare global { interface Window { pomeloDesktop?: DesktopBridge } }
 export const isDesktopAssistant = () => window.location.pathname === '/desktop-assistant';
 
 /** Only the main renderer publishes credentials; microtasks combine token + user writes. */
-export function initializeDesktopSync() {
+export async function initializeDesktopSync() {
 	const bridge = window.pomeloDesktop;
 	if (!bridge || isDesktopAssistant()) return;
 	document.documentElement.classList.add('desktop-main-surface');
+	const initial = await bridge.getSnapshot();
+	if (initial.auth && !tokenStorage.getItem()) {
+		tokenStorage.setItem(initial.auth.token);
+		userStorage.setItem(initial.auth.user);
+	}
 	let queued = false;
 	let synchronizedToken = '';
 	const publish = () => {

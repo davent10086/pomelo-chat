@@ -5,7 +5,11 @@ import { defineConfig } from 'vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-	plugins: [react()],
+	plugins: [react(), {
+		name: 'desktop-local-assets',
+		transformIndexHtml: html => process.env.POMELO_DESKTOP_BUILD === '1'
+			? html.replace(/<link[^>]+at\.alicdn\.com[^>]+>/g, '') : html
+	}],
 	// The upload worker loads this lazily; prebundle it before serving pages so
 	// first upload cannot trigger dependency optimization and a full-page reload.
 	optimizeDeps: { include: ['spark-md5'] },

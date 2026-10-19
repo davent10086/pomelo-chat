@@ -7,9 +7,10 @@ import '@/assets/styles/global.less';
 import RouteRender from '@/router';
 import { initializeDesktopSync } from '@/desktop/bridge';
 import DesktopTitleBar from '@/desktop/TitleBar';
+import DesktopServerSettings from '@/desktop/ServerSettings';
 
-initializeDesktopSync();
-
+async function start() {
+await initializeDesktopSync();
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 	<BrowserRouter>
 		<ConfigProvider
@@ -32,8 +33,12 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
 		>
 			<App>
 				<DesktopTitleBar />
-				<RouteRender />
+				<DesktopServerSettings><RouteRender /></DesktopServerSettings>
 			</App>
 		</ConfigProvider>
 	</BrowserRouter>
 );
+}
+void start().catch(() => {
+	document.getElementById('root')!.textContent = '桌面初始化失败，请关闭应用后重试。';
+});

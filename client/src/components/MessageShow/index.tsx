@@ -126,7 +126,11 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 				<button
 					type="button"
 					className={styles.content_file}
-					onClick={() => downloadFile(getAuthorizedMediaURL(messageContent))}
+					onClick={() => {
+						if (window.pomeloDesktop) void window.pomeloDesktop.downloadFile(messageContent)
+							.catch(() => antdMessage.error('下载失败，请重试'));
+						else downloadFile(getAuthorizedMediaURL(messageContent));
+					}}
 					aria-label={`下载文件 ${getFileName(messageContent)} `}
 				>
 					<div className={styles.content_file_name}>

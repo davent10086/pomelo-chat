@@ -1,3 +1,4 @@
+const { sameOrigin } = require('./app-protocol.cjs');
 function validAuth(value) {
   return value === null || Boolean(value && typeof value.token === 'string' &&
     value.token.length > 0 && value.token.length <= 8192 && value.user &&
@@ -19,7 +20,7 @@ function trustedFrame(event, window, origin, role) {
     event.senderFrame !== window.webContents.mainFrame) return false;
   try {
     const url = new URL(event.senderFrame.url);
-    return url.origin === origin && (role === 'assistant'
+    return sameOrigin(url.href, origin) && (role === 'assistant'
       ? url.pathname === '/desktop-assistant' : url.pathname !== '/desktop-assistant');
   } catch { return false; }
 }

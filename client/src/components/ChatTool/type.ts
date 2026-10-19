@@ -57,5 +57,8 @@ export interface IChatToolProps {
 	// 从父组件触发插入文本到输入框，id 变化时执行
 	externalInsertText?: { id: number; text: string; room: string };
 }
+export interface ChatToolHandle {
+	sendFiles(files: File[]): Promise<void>;
+}
 import type { IMessageItem } from '@/components/MessageShow/type';
 import type { IUserInfo } from '@/utils/storage';

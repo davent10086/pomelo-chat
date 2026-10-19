@@ -3,10 +3,20 @@
   "private": true,
   "version": "0.1.0",
   "main": "main.cjs",
+  "description": "Pomelo Chat Windows desktop client",
+  "author": "davent lee",
+  "license": "ISC",
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "test": "node --test tests/*.test.cjs",
-    "test:smoke": "node scripts/smoke.cjs"
+    "test:smoke": "node scripts/smoke.cjs",
+    "build:renderer": "node scripts/build.cjs",
+    "pack": "pnpm build:renderer && electron-builder --win --dir --publish never",
+    "dist": "pnpm build:renderer && electron-builder --win --publish never",
+    "test:production": "node scripts/production-smoke.cjs"
   },
-  "devDependencies": { "electron": "44.7.0" }
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "^26.15.3"
+  }
 }

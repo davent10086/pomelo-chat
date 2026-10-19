@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Tooltip } from 'antd';
+import { TeamOutlined } from '@ant-design/icons';
 import type { IMessageListItem } from '@/components/ChatTool/type';
 import ImageLoad from '@/components/ImageLoad';
 import SearchContainer from '@/components/SearchContainer';
@@ -50,9 +51,7 @@ export default function ConversationList({
 								<div className={styles.chat_name}>
 									<span>{item.name}</span>
 									{isGroupChat(item) && (
-										<span
-											className={`icon iconfont icon-jinqunliaoliao ${styles.group_icon}`}
-										></span>
+										<TeamOutlined className={styles.group_icon} />
 									)}
 								</div>
 								<div className={styles.chat_message}>
