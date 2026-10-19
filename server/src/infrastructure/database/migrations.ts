@@ -251,6 +251,10 @@ export const initializeDatabase = async (
 		await runCompatibilityMigrations();
 		await backfillCompatibilityData();
 		await repairSystemData();
+		if (!(await isMigrationApplied('friend_presence_index_v1'))) {
+			await runMigrationSql('friend_presence_index_v1', 'ALTER TABLE friend ADD INDEX idx_friend_presence (user_id, owner_id)');
+			await recordMigration('friend_presence_index_v1');
+		}
 		await migrateOutboxRoomIndex();
 		// eslint-disable-next-line no-console
 		console.log('MySQL 数据表初始化/迁移完成');

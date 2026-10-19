@@ -4,9 +4,8 @@ import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
 import { verifyTokenWithSession } from '../identity/public';
 import { updateContactPresence } from '../social/public';
-import { NotificationUser } from './notification';
+import { notifyPresenceContacts } from './presence';
 import {
-	notificationUsers,
 	registerNotificationSocket,
 	removeNotificationSocket
 } from './connections';
@@ -27,14 +26,18 @@ export const initUserNotification = async (ws: WebSocket, req: Request): Promise
 		registerSessionSocket(ws, curUsername, token, verifyTokenWithSession);
 		const presenceLease = crypto.randomUUID();
 		await better_chat.set(`presence:${curUsername}`, presenceLease, 'EX', 30);
+		await better_chat.publish(`${process.env.REDIS_KEY_PREFIX || ''}pomelo:presence:changed`,
+			JSON.stringify({ username: curUsername, lease: presenceLease }));
 		let present = true;
 		const heartbeat = setInterval(() => {
 			void validateSessionSocket(ws)
-				.then(valid =>
-					valid && present && ws.readyState === 1
-						? better_chat.set(`presence:${curUsername}`, presenceLease, 'EX', 30)
-						: undefined
-				)
+				.then(async valid => {
+					if (!valid || !present || ws.readyState !== 1) return;
+					const renewed = await better_chat.eval(
+						"if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('EXPIRE', KEYS[1], 30) end return 0",
+						1, `presence:${curUsername}`, presenceLease);
+					if (renewed !== 1) ws.close(4004, 'connection replaced');
+				})
 				.catch(err => console.error('[auth] presence:', err));
 		}, 15000);
 		heartbeat.unref();
@@ -49,37 +52,30 @@ export const initUserNotification = async (ws: WebSocket, req: Request): Promise
 					presenceLease
 				)
 				.catch(err => console.error('[auth] presence cleanup:', err));
-			if (removed === 1)
+			if (removed === 1) {
 				await updateContactPresence(curUsername, 'offline').catch(err =>
 					console.error('[auth] offline update:', err)
 				);
+				await notifyPresenceContacts(curUsername);
+				await better_chat.publish(`${process.env.REDIS_KEY_PREFIX || ''}pomelo:presence:changed`,
+					JSON.stringify({ username: curUsername, lease: presenceLease }));
+			}
 		};
 		if (ws.readyState !== 1) {
 			await cleanupPresence();
 			return;
 		}
-		registerNotificationSocket(curUsername, ws, cleanupPresence);
-		for (const username of notificationUsers()) {
-			if (username === curUsername) continue;
-			void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
-				console.error('[auth] notification:', err)
-			);
-		}
+		registerNotificationSocket(curUsername, ws, cleanupPresence, presenceLease);
 
 		ws.on('close', () => {
-			if (removeNotificationSocket(curUsername, ws)) {
-				for (const username of notificationUsers()) {
-					void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
-						console.error('[auth] notification:', err)
-					);
-				}
-			}
+			removeNotificationSocket(curUsername, ws);
 		});
 
 		ws.on('error', (err: Error) => {
 			console.error(`[通知管道] 连接出错 username=${curUsername}:`, err.message);
 		});
 		await updateContactPresence(curUsername, 'online');
+		await notifyPresenceContacts(curUsername);
 	} catch (err) {
 		console.error('[auth] notification channel failed:', err);
 		ws.close(4001, 'notification channel unavailable');

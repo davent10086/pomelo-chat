@@ -1,8 +1,12 @@
 import type Redis from 'ioredis';
 import { better_chat } from '../../infrastructure/redis';
 import { closeRevokedSockets } from './session-sockets';
+import { getNotificationSocket, getNotificationLease } from './connections';
+import { recheckRoomSockets } from './room-access';
 const redisKeyPrefix = process.env.REDIS_KEY_PREFIX || '';
 const SESSION_CHANNEL = `${redisKeyPrefix}pomelo:session:changed`;
+const PRESENCE_CHANNEL = `${redisKeyPrefix}pomelo:presence:changed`;
+const ROOM_CHANNEL = `${redisKeyPrefix}pomelo:room:access`;
 let sessionSubscriber: Redis | undefined;
 const onRedisEnd = () => sessionSubscriber?.disconnect();
 export const startSessionSubscription = async () => {
@@ -11,11 +15,21 @@ export const startSessionSubscription = async () => {
 	sessionSubscriber = subscriber;
 	better_chat.on('end', onRedisEnd);
 	subscriber.on('error', err => console.error('[auth] session subscriber:', err.message));
-	subscriber.on('message', async (_channel, raw) => {
+	subscriber.on('message', async (channel, raw) => {
 		try {
 			if (sessionSubscriber !== subscriber) return;
-			const event = JSON.parse(raw) as { username: string };
+			const event = JSON.parse(raw) as { username: string; room?: string; userId?: string };
+			if (channel === ROOM_CHANNEL) {
+				if (typeof event.room === 'string') await recheckRoomSockets(event.room, event.userId);
+				return;
+			}
 			if (typeof event.username === 'string') {
+				if (channel === PRESENCE_CHANNEL) {
+					const current = await better_chat.get(`presence:${event.username}`);
+					const socket = getNotificationSocket(event.username);
+					if (socket && current && current !== getNotificationLease(event.username)) socket.close(4004, 'connection replaced');
+					return;
+				}
 				const current = await better_chat.get(`token:${event.username}`);
 				if (sessionSubscriber !== subscriber) return;
 				closeRevokedSockets(event.username, current || undefined);
@@ -25,7 +39,7 @@ export const startSessionSubscription = async () => {
 		}
 	});
 	try {
-		await subscriber.subscribe(SESSION_CHANNEL);
+		await subscriber.subscribe(SESSION_CHANNEL, PRESENCE_CHANNEL, ROOM_CHANNEL);
 	} catch (error) {
 		stopSessionSubscription();
 		throw error;

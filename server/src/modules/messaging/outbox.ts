@@ -2,6 +2,7 @@ import * as repository from './repository';
 import { randomUUID } from 'crypto';
 import { withTransaction } from '../../infrastructure/database-query';
 import { countMessageMetric } from '../../infrastructure/message-metrics';
+import { better_chat } from '../../infrastructure/redis';
 
 const LEASE_SECONDS = 60;
 const CONCURRENCY = 8;
@@ -113,7 +114,14 @@ export const startMessageOutbox = (handler: (id: number) => Promise<void>): void
 	worker = new MessageOutboxWorker(handler);
 };
 export const enableMessageOutbox = (): void => worker?.start();
-export const flushMessageOutbox = (): Promise<void> => worker?.flush() || Promise.resolve();
+export const flushMessageOutbox = async (): Promise<void> => {
+	if (process.env.OUTBOX_DRIVER === 'go') {
+		await better_chat.publish(`${process.env.REDIS_KEY_PREFIX || ''}pomelo:outbox:wake`, '1')
+			.catch(error => console.error('[message:outbox] wake failed:', error.message));
+		return;
+	}
+	await worker?.flush();
+};
 export const stopMessageOutbox = async (): Promise<void> => {
 	await worker?.stop();
 	worker = undefined;

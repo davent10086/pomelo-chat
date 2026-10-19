@@ -1,8 +1,11 @@
 # Backend modular monolith
 
-The backend runs in one Node.js process. HTTP, WebSocket, SSE, migrations and background
-tasks keep their existing startup and shutdown behavior. Modules communicate through
-ordinary function calls; this refactor introduces no additional services or databases.
+Business modules run in a Node.js process and communicate through ordinary function
+calls. The root launcher defaults to a Go gateway and Go Outbox worker; direct Node
+startup retains the legacy adapters when the driver flags are unset or `node`.
+Go proxies HTTP/SSE and calls a service-authenticated private business bridge for
+WebSocket operations. No business write transaction is split across processes.
+See ../docs/go-realtime.md for deployment, contracts, validation and rollback.
 
 `infrastructure/database.ts` owns connection configuration, the pool and test-target guards.
 `infrastructure/database/schema.ts` holds table definitions in foreign-key order, while
@@ -61,6 +64,12 @@ room authorization, outbox recovery and socket revocation are preserved.
 Delivery remains at least once; clients merge by message ID. Socket session checks remain
 active, and slow sockets reconnect and recover persisted history. The main Agent still uses
 parallel deterministic preprocessing, with writes requiring explicit user confirmation.
+
+The Go worker shares the messaging module's Outbox ownership: it updates only delivery
+claims, leases, retry state and completion, and reads message/recipient projections.
+Node alone owns schema migration and atomic message insertion. The cross-language
+message format is checked against ../contracts/realtime-v1.json. Redis subscription
+reconnection requests resynchronization; Pub/Sub still has no offline replay.
 
 Independent AI conversations expose draft text without guessing a recipient. The user selects
 an existing private/group conversation and reviews the message. POST /assistant/actions/message-draft

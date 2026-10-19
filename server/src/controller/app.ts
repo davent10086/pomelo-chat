@@ -16,6 +16,7 @@ import { authenticateUploadAccess } from '../composition';
 import { createRateLimiter } from '../infrastructure/rate-limit';
 import { uploadRoot } from '../infrastructure/file-storage';
 import { messageMetricsHandler } from '../infrastructure/message-metrics';
+import { createGatewayRouter } from '../modules/realtime/gateway-http';
 
 const app = express();
 let routesRegistered = false;
@@ -93,6 +94,8 @@ const apiRateLimit = createRateLimiter({
  * L3: 移除强制 octet-stream，让 express.static 根据扩展名自动设置 content-type
  */
 const staticDownload: RequestHandler = (req, res, next) => {
+	// Authorized media is also embedded by the packaged desktop application.
+	res.header('Cross-Origin-Resource-Policy', 'cross-origin');
 	res.header('Referrer-Policy', 'no-referrer');
 	const origin = req.headers.origin;
 	if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -114,16 +117,20 @@ export const registerAppRoutes = (): void => {
 
 	app.use(securityHeaders);
 	app.get('/internal/metrics', messageMetricsHandler);
-	app.use('/uploads', authenticateUploadAccess, staticDownload, express.static(uploadRoot));
+	app.use('/uploads', staticDownload, authenticateUploadAccess, express.static(uploadRoot));
 
 	/**
 	 * 处理 HTTP 请求体中的参数
 	 */
 	app.use(bodyParser.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
 	app.use(bodyParser.urlencoded({ limit: process.env.FORM_BODY_LIMIT || '2mb', extended: true }));
+	app.use('/internal/realtime', createGatewayRouter());
 	app.use(requestContext);
 
 	app.use('', cors);
+	app.get('/api/chat/v1/health', (_req, res) => {
+		res.json({ service: 'pomelo-chat', version: 1 });
+	});
 	app.use('/api/chat/v1', cors, apiRateLimit);
 	app.use('/api/chat/v1/auth', cors, authRouter());
 	app.use('/api/chat/v1/friend', cors, friendRouter());

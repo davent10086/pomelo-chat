@@ -1,0 +1,57 @@
+groups:
+  - name: pomelo-runtime
+    rules:
+      - alert: PomeloServiceUnavailable
+        expr: up{job=~"pomelo-go|pomelo-node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Pomelo metrics endpoint is unavailable'
+      - alert: PomeloRealtimeSubscriptionDown
+        expr: ((pomelo_realtime_data_subscription_ready == 0 or pomelo_realtime_control_subscription_ready == 0) and on(instance, job) (pomelo_realtime_role_gateway == 1)) or ((pomelo_realtime_wake_subscription_ready == 0) and on(instance, job) (pomelo_realtime_role_worker == 1))
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'A required realtime Redis subscription is unavailable'
+      - alert: PomeloOutboxOldestMessage
+        expr: pomelo_outbox_oldest_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Committed messages have waited more than 30 seconds'
+      - alert: PomeloOutboxBacklog
+        expr: pomelo_outbox_pending > 500
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Outbox backlog exceeds the default admission budget'
+      - alert: PomeloOutboxSamplingFailed
+        expr: pomelo_outbox_sample_healthy == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Outbox pressure sampling is failing'
+      - alert: PomeloDeliveryFailures
+        expr: increase(pomelo_outbox_dispatch_errors_total[5m]) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Repeated Outbox publication failures'
+      - alert: PomeloRealtimeBackpressure
+        expr: increase(pomelo_socket_slow_disconnects_total[5m]) > 10 or increase(pomelo_room_queue_overflow_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Realtime queues are disconnecting clients'
+      - alert: PomeloBackupStale
+        expr: (time() - pomelo_backup_last_success_timestamp_seconds > 86400) and on(instance, job) (pomelo_backup_monitoring_enabled == 1)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No verified offline local backup in the last 24 hours'

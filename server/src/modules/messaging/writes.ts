@@ -42,6 +42,8 @@ export const writeAndSend = async (
 				Array<{ id: number; last_seq: number }>
 			>([room], query);
 			if (!conversations.length) throw new Error('Conversation not found');
+			if (!(await authorizeChatRoom(msg.sender_id, room, type, query)))
+				throw new Error('Room access revoked while waiting for transaction');
 			if (sessionGuard && !(await sessionGuard()))
 				throw new Error('Session revoked while waiting for transaction');
 			if (msg.client_msg_id) {

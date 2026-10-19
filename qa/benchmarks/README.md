@@ -1,5 +1,20 @@
 # 优化数据测试
 
+## 主分支与 Go 迁移对照
+
+`compare-main.cjs` 接受一个从 `main` 导出的独立源码目录，依次比较主分支、当前 Node 回退模式、当前 Go 模式，并反序复验。快照需要可解析与主分支 `server/package.json` 匹配的依赖；数据库连接配置读取当前工作区 `server/.env`，不会写入快照或报告。
+
+```powershell
+node qa/benchmarks/compare-main.cjs <main快照绝对路径> 15
+node qa/benchmarks/compare-main.cjs <main快照绝对路径> 15 --revocation-only
+```
+
+每个版本使用独立临时数据库、Redis 前缀和附件目录，结束后清理。默认消息准入参数保持相同，仅提高 HTTP 测试账号准备额度。私聊为 10 对独立账号，每对每秒 2 条；群聊为 10 个不同接收者，每秒 4 条。记录发送 ACK 和全部预期接收者实际接收的 P50/P95/P99，断言幂等重试、序号、统计和 Outbox 清空。另直接删除一名群成员资格，不发布控制事件，观察已有连接是否仍收到新消息；主分支结果作为行为观察，新版必须拒绝投递并关闭连接。`--revocation-only` 只运行三种版本的协议与撤权探针。
+
+报告保存在 `test-results/main-comparison-*` 或 `main-revocation-*`。Node 使用 ts-node，Go 使用编译二进制；启动成本不计入 CPU 区间。主分支和当前 Node 模式为两个 Node 进程，Go 模式为一个 Node 和两个 Go all 进程，因此 RSS 总和不能直接证明语言内存效率。短时本地测试不代表容量上限或高可用，需同时检查失败和未生成槽位，不能只引用成功请求延迟。
+
+优化前后的同拓扑对照：先保留完整的优化前 `server/src`、Go 模块源码及所需配置/依赖，再设置 `COMPARE_BEFORE_ROOT` 指向快照目录，运行 `compare-main.cjs <main快照绝对路径> 15 --optimization`。按“优化前、优化后、优化后、优化前”串行复验，双方均使用一个 Node 和两个 Go all 进程，报告保存在 `test-results/go-optimization-*`；支持指标的版本还记录每阶段内部调用与连接队列耗时的计数和总和差值。源码快照不得在测试中途修改，不能把增加业务 Node 数量的收益计入代码优化。
+
 在仓库根目录运行（需要现有 client 依赖、@playwright/test 与 Playwright Chromium）：
 
 ```powershell

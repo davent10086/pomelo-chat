@@ -5,6 +5,9 @@ export const createHttpHandlers = (application: {
 	friends: ReturnType<typeof import('./friends').createFriendApplication>;
 	groups: ReturnType<typeof import('./groups').createGroupApplication>;
 }) => ({
+	removeGroupMember: async (req: Request, res: Response): Promise<void> => {
+		respond(res, await application.groups.removeGroupMember(req.user as Actor, req.body || {}));
+	},
 	searchUser: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.friends.searchUser(req.user as Actor, req.query));
 	},

@@ -21,6 +21,9 @@ $env:DATABASE_URL_TEST='mysql://root:password@127.0.0.1:3306/pomelo_chat_test'
 $env:REDIS_URL_TEST='redis://127.0.0.1:6379/15'
 
 pnpm test:unit
+pnpm test:realtime # Go 1.26+, isolated MySQL/Redis, all four driver combinations
+pnpm test:realtime:soak # 60s, real distinct-member group plus process/subscription failures
+pnpm test:ops # offline snapshot and new-target local restore drill
 pnpm test:database
 pnpm test:api
 pnpm test:integration
@@ -32,7 +35,7 @@ pnpm test:qa
 
 `test:all` uses the configured test database; it does not create it. For local service-backed
 checks that create and remove their own database, use `node server/scripts/run-isolated-tests.js`
-with `system`, `backend`, `migrations`, or `browser`. The runner reads local MySQL credentials
+with `system`, `backend`, `migrations`, `realtime`, or `browser`. The runner reads local MySQL credentials
 from `server/.env`. `pnpm test:real-chat` uses that runner to verify two real browser clients,
 including private read receipts, sender refresh and offline-message read recovery.
 

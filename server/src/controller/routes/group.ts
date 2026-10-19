@@ -6,6 +6,7 @@ const router = Router();
 
 export default () => {
 	router.get('/group_list', authenticateToken, group.getGroupChatList);
+	router.post('/remove_member', authenticateToken, group.removeGroupMember);
 	router.get('/search_group', authenticateToken, group.searchGroupChat);
 	router.get('/group_info', authenticateToken, group.getGroupChatInfo);
 	router.post('/create_group', authenticateToken, group.createGroupChat);

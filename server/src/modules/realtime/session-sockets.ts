@@ -1,25 +1,33 @@
 import type { WebSocket } from 'ws';
+import { forEachConcurrent } from '../../shared/parallel';
 
 type SessionCheck = (token: string) => Promise<unknown>;
-const sockets = new Map<WebSocket, { username: string; token: string; verify: SessionCheck }>();
+const sockets = new Map<WebSocket, { username: string; token: string; verify: SessionCheck; roomCheck?: () => Promise<boolean> }>();
 let timer: ReturnType<typeof setInterval> | undefined;
+let checking: Promise<void> | undefined;
 
 /** Revalidate before every delivery/write; pubsub closes idle sockets promptly. */
 export const registerSessionSocket = (
 	ws: WebSocket,
 	username: string,
 	token: string,
-	verify: SessionCheck
+	verify: SessionCheck,
+	roomCheck?: () => Promise<boolean>
 ): void => {
 	if (ws.readyState !== 1) return;
-	sockets.set(ws, { username, token, verify });
+	sockets.set(ws, { username, token, verify, roomCheck });
 	ws.once('close', () => sockets.delete(ws));
 };
 
-export const validateSessionSocket = async (ws: WebSocket): Promise<boolean> => {
+export const validateSessionSocket = async (ws: WebSocket, checkRoom = true): Promise<boolean> => {
+	if (ws.readyState !== 1) return false;
 	const session = sockets.get(ws);
 	if (!session || !(await session.verify(session.token))) {
 		if (ws.readyState < 2) ws.close(4001, 'session revoked');
+		return false;
+	}
+	if (checkRoom && session.roomCheck && !(await session.roomCheck())) {
+		if (ws.readyState < 2) ws.close(4003, 'room access revoked');
 		return false;
 	}
 	return ws.readyState === 1;
@@ -35,10 +43,12 @@ export const closeRevokedSockets = (username: string, currentToken?: string): vo
 export const startSessionChecks = () => {
 	if (timer) return;
 	timer = setInterval(() => {
-		for (const ws of sockets.keys())
-			void validateSessionSocket(ws).catch(() => {
+		if (checking) return;
+		checking = forEachConcurrent([...sockets.keys()], 16, async ws => {
+			await validateSessionSocket(ws).catch(() => {
 				if (ws.readyState < 2) ws.close(4001, 'session unavailable');
 			});
+		}).finally(() => { checking = undefined; });
 	}, 15000);
 	timer.unref();
 };

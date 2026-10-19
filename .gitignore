@@ -38,3 +38,6 @@ docs/*architecture-gap*.md
 docs/outbox-performance.md
 docs/message-overload-protection.md
 ~$*
+services/realtime/bin/
+/backups/
+ops/monitoring/secrets/

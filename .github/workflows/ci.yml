@@ -29,6 +29,10 @@ jobs:
       JWT_SECRET: ci-test-secret-not-for-production
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/realtime/go.mod
+          cache-dependency-path: services/realtime/go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -41,11 +45,26 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter pomelo-chat-server test:architecture
+      - run: go test -race ./...
+        working-directory: services/realtime
+      - run: go vet ./...
+        working-directory: services/realtime
+      - run: pnpm test:realtime
+      - run: pnpm test:realtime:soak
+        env:
+          SOAK_SECONDS: '30'
+          SOAK_GROUP_MEMBERS: '8'
+      - run: pnpm test:ops
+      - run: docker run --rm -v "${{ github.workspace }}/ops/monitoring:/rules:ro" -w /rules --entrypoint /bin/promtool prom/prometheus:v3.15.0 check rules alerts.yml
+      - run: docker run --rm -v "${{ github.workspace }}/ops/monitoring:/rules:ro" -w /rules --entrypoint /bin/promtool prom/prometheus:v3.15.0 test rules alerts.test.yml
       - run: pnpm lint
       - run: pnpm --filter pomelo-chat-server test:db-migrations
       - run: pnpm test:system
       - run: pnpm test:all
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - run: node server/scripts/run-isolated-tests.js browser real-chat.e2e.spec.ts assistant-message-send.e2e.spec.ts
+        env:
+          TEST_GO_REALTIME: '1'
       - run: pnpm audit --prod --audit-level=high
       - run: node qa/run-qa.js

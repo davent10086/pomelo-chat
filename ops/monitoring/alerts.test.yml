@@ -1,0 +1,57 @@
+rule_files: [alerts.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'pomelo_backup_monitoring_enabled{instance="enabled:3001",job="pomelo-node"}'
+        values: '1+0x1600'
+      - series: 'pomelo_backup_last_success_timestamp_seconds{instance="enabled:3001",job="pomelo-node"}'
+        values: '0+0x1600'
+      - series: 'pomelo_backup_monitoring_enabled{instance="disabled:3001",job="pomelo-node"}'
+        values: '0+0x1600'
+      - series: 'pomelo_backup_last_success_timestamp_seconds{instance="disabled:3001",job="pomelo-node"}'
+        values: '0+0x1600'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: PomeloBackupStale
+        exp_alerts:
+          - exp_labels: {instance: 'enabled:3001', job: pomelo-node, severity: critical}
+            exp_annotations: {summary: 'No verified offline local backup in the last 24 hours'}
+  - interval: 1m
+    input_series:
+      - series: 'pomelo_outbox_oldest_seconds{instance="worker:3000",job="pomelo-go"}'
+        values: '45+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PomeloOutboxOldestMessage
+        exp_alerts:
+          - exp_labels: {instance: 'worker:3000', job: pomelo-go, severity: critical}
+            exp_annotations: {summary: 'Committed messages have waited more than 30 seconds'}
+  - interval: 1m
+    input_series:
+      - series: 'pomelo_realtime_role_gateway{instance="worker:3000",job="pomelo-go"}'
+        values: '0+0x5'
+      - series: 'pomelo_realtime_data_subscription_ready{instance="worker:3000",job="pomelo-go"}'
+        values: '0+0x5'
+      - series: 'pomelo_realtime_control_subscription_ready{instance="worker:3000",job="pomelo-go"}'
+        values: '0+0x5'
+      - series: 'pomelo_realtime_role_worker{instance="worker:3000",job="pomelo-go"}'
+        values: '1+0x5'
+      - series: 'pomelo_realtime_wake_subscription_ready{instance="worker:3000",job="pomelo-go"}'
+        values: '1+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PomeloRealtimeSubscriptionDown
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'pomelo_realtime_role_gateway{instance="gateway:3000",job="pomelo-go"}'
+        values: '1+0x5'
+      - series: 'pomelo_realtime_control_subscription_ready{instance="gateway:3000",job="pomelo-go"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PomeloRealtimeSubscriptionDown
+        exp_alerts:
+          - exp_labels: {instance: 'gateway:3000', job: pomelo-go, severity: critical}
+            exp_annotations: {summary: 'A required realtime Redis subscription is unavailable'}

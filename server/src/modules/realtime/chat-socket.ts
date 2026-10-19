@@ -2,6 +2,7 @@ import type { RawData, WebSocket } from 'ws';
 import type { Request } from 'express';
 import { verifyTokenWithSession } from '../identity/public';
 import { registerSessionSocket, validateSessionSocket } from './session-sockets';
+import { registerRoomSocket } from './room-access';
 import { authorizeChatRoom } from '../social/public';
 import { fetchHistoryMessages } from '../messaging/public';
 import { writeAndSend } from '../messaging/public';
@@ -106,7 +107,9 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		ChatRooms[room] ||= {};
 		const socketKey = `${id}:${Math.random().toString(36).slice(2)}`;
 		ChatRooms[room][socketKey] = ws;
-		registerSessionSocket(ws, String(decoded.username), token, verifyTokenWithSession);
+		registerSessionSocket(ws, String(decoded.username), token, verifyTokenWithSession,
+			async () => !!(await authorizeChatRoom(decoded.id as UserId, room, type)));
+		registerRoomSocket(ws, decoded.id as UserId, room, type);
 		// Register message handling before the initial history frame. A client may
 		// send immediately after receiving that frame, so registering it afterwards
 		// creates a race that silently drops the first message.
@@ -157,7 +160,8 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 							type: mediaType,
 							file_size: Number.isFinite(Number(message.fileSize)) ? Number(message.fileSize) : 0
 						},
-						() => validateSessionSocket(ws)
+						// Room authorization uses the existing SQL transaction in writeAndSend.
+						() => validateSessionSocket(ws, false)
 					);
 				});
 				if (!(await validateSessionSocket(ws))) return;

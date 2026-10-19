@@ -27,6 +27,7 @@ import { randomUUID } from 'crypto';
 import { CommonStatus, FriendStatus } from '../../shared/status';
 import { withTransaction } from '../../infrastructure/database-query';
 import { parseSearchPage, escapeSearchTerm } from '../../shared/search-page';
+import { forEachConcurrent } from '../../shared/parallel';
 export const createFriendApplication = (dependencies: SocialEffects) => {
 	const { notifyUser: NotificationUser, isOnline } = dependencies;
 	interface FriendRow {
@@ -146,7 +147,7 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 						user_id: target.id,
 						username: target.username,
 						avatar: target.avatar,
-						online_status: isOnline(target.username) ? 'online' : 'offline',
+						online_status: (await isOnline(target.username)) ? 'online' : 'offline',
 						remark: target.username,
 						group_id: senderGroup.id,
 						room: uuid
@@ -159,7 +160,7 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 						user_id: sender.id,
 						username: sender.username,
 						avatar: sender.avatar,
-						online_status: isOnline(sender.username) ? 'online' : 'offline',
+						online_status: (await isOnline(sender.username)) ? 'online' : 'offline',
 						remark: sender.name,
 						group_id: targetGroup.id,
 						room: uuid
@@ -193,6 +194,9 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 				? await repository.listFriendsByOwner<FriendRow[]>([sender.id])
 				: [];
 			const byGroup = new Map<string, FriendRow[]>();
+			await forEachConcurrent(friends, 16, async friend => {
+				friend.online_status = (await isOnline(friend.username)) ? 'online' : 'offline';
+			});
 			for (const friend of friends) {
 				const key = String(friend.group_id);
 				const bucket = byGroup.get(key) || [];
@@ -222,6 +226,7 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 		try {
 			const results = await readModel.findFriendProfile<FriendDetailRow[]>([id, actor.id]);
 			if (results.length !== 0) {
+				results[0].online_status = (await isOnline(results[0].username)) ? 'online' : 'offline';
 				return success(results[0]);
 			} else {
 				return failure(CommonStatus.NOT_FOUND);

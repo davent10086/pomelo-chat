@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+  - alerts.yml
+scrape_configs:
+  - job_name: pomelo-go
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/pomelo_metrics_token
+    static_configs:
+      - targets: ['127.0.0.1:3000']
+  - job_name: pomelo-node
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/pomelo_metrics_token
+    static_configs:
+      - targets: ['127.0.0.1:3001']

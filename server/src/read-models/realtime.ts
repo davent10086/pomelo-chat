@@ -1,5 +1,9 @@
 import { Query } from '../infrastructure/database-query';
 import type { SqlQuery } from '../shared/actor';
+export const listPresenceRecipients = <T = unknown>(bindings: unknown): Promise<T> =>
+	Query<T>(`SELECT DISTINCT owner.username FROM user changed
+		JOIN friend f ON f.user_id = changed.id JOIN user owner ON owner.id = f.owner_id
+		WHERE changed.username = ?`, bindings);
 export const loadMessageForDelivery = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query

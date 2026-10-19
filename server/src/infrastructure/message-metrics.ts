@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'crypto';
+import { readFileSync } from 'fs';
 import type { RequestHandler } from 'express';
 
 const counters = new Map<string, number>();
@@ -51,5 +52,12 @@ export const messageMetricsHandler: RequestHandler = (req, res) => {
 		return;
 	}
 	res.setHeader('Cache-Control', 'no-store');
+	const backupStatus = process.env.BACKUP_STATUS_FILE;
+	setMessageGauge('pomelo_backup_monitoring_enabled', backupStatus ? 1 : 0);
+	if (backupStatus) {
+		let timestamp = 0;
+		try { const row = JSON.parse(readFileSync(backupStatus, 'utf8')); if (Number.isFinite(row.lastSuccess) && row.lastSuccess > 0) timestamp = row.lastSuccess; } catch { /* missing or invalid status is unhealthy */ }
+		setMessageGauge('pomelo_backup_last_success_timestamp_seconds', timestamp);
+	}
 	res.type('text/plain; version=0.0.4').send(renderMessageMetrics());
 };

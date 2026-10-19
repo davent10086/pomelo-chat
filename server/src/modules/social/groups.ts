@@ -405,6 +405,27 @@ export const createGroupApplication = (dependencies: SocialEffects) => {
 		}
 	};
 	return {
+		removeGroupMember: async (actor: Actor, input: { groupId?: unknown; userId?: unknown }): Promise<Outcome> => {
+			const groupId = Number(input.groupId), userId = input.userId === undefined ? Number(actor.id) : Number(input.userId);
+			if (!Number.isSafeInteger(groupId) || groupId < 1 || !Number.isSafeInteger(userId) || userId < 1)
+				return failure(CommonStatus.PARAM_ERR);
+			try {
+				const removed = await withTransaction(async query => {
+					const rows = await repository.lockGroupForMembershipChange<Array<{ id: number; creator_id: number; room: string }>>([groupId], query);
+					const group = rows[0];
+					if (!group || userId === group.creator_id ||
+						(Number(actor.id) !== userId && Number(actor.id) !== group.creator_id)) return null;
+					if (!(await repository.findExistingMembership<unknown[]>([groupId, actor.id], query)).length) return null;
+					await repository.removeGroupMembership([groupId, userId], query);
+					return group;
+				});
+				if (!removed) return failure(CommonStatus.TOKEN_ERR);
+				await dependencies.notifyRoomAccessChanged?.(removed.room, 'group', userId)
+					.catch(() => console.error('[group] access event failed; send-time checks remain active'));
+				await NotificationUser({ receiver_id: userId, name: 'groupChatList' }).catch(() => undefined);
+				return success();
+			} catch { return failure(CommonStatus.SERVER_ERR); }
+		},
 		createGroupChat,
 		getGroupChatList,
 		searchGroupChat,

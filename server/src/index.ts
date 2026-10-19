@@ -6,7 +6,9 @@ import app, { registerAppRoutes } from './controller/app';
 import { startBackgroundServices, stopBackgroundServices } from './runtime';
 import { better_chat } from './infrastructure/redis';
 import db, { assertDatabaseConnection, initDatabase } from './infrastructure/database';
+import { validateRealtimeConfig } from './infrastructure/realtime-config';
 
+validateRealtimeConfig();
 const port = Number(process.env.PORT || 3000);
 let stopping = false;
 
@@ -27,7 +29,7 @@ const startServer = async (): Promise<void> => {
 	if (stopping) return;
 	await new Promise<void>((resolve, reject) => {
 		server.once('error', reject);
-		server.listen(port, '0.0.0.0', () => {
+		server.listen(port, process.env.BIND_HOST || (process.env.REALTIME_DRIVER === 'go' ? '127.0.0.1' : '0.0.0.0'), () => {
 			server.off('error', reject);
 			console.log(`Server listening on http://0.0.0.0:${port}`);
 			resolve();

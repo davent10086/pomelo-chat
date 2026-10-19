@@ -12,10 +12,10 @@ import * as files from './modules/files/application';
 import { createRtcCalls, createRtcApplication } from './modules/rtc/public';
 import {
 	NotificationUser,
-	getNotificationSocket,
 	notifySessionChanged
 } from './modules/realtime/public';
 import { publishReadReceipt } from './modules/realtime/public';
+import { notifyRoomAccessChanged } from './modules/realtime/public';
 import * as actions from './modules/assistant/actions';
 import * as agent from './modules/assistant/agent-application';
 import { createHttpHandlers as identityHandlers } from './modules/identity/http';
@@ -26,6 +26,7 @@ import { createHttpHandlers as rtcHandlers } from './modules/rtc/http';
 import { createHttpHandlers as assistantHandlers } from './modules/assistant/http';
 import { createUploadAccessMiddleware } from './modules/files/access-http';
 import { verifyTokenWithSession, isAuthenticatedPayload } from './modules/identity/public';
+import { better_chat } from './infrastructure/redis';
 export const rtcCalls = createRtcCalls({ notifyUser: NotificationUser });
 export const identity = createIdentityApplication({
 	releaseUserCall: rtcCalls.releaseUserCall,
@@ -34,8 +35,9 @@ export const identity = createIdentityApplication({
 	updateContactPresence
 });
 const socialEffects = {
+	notifyRoomAccessChanged,
 	notifyUser: NotificationUser,
-	isOnline: (username: string) => !!getNotificationSocket(username),
+	isOnline: async (username: string) => !!(await better_chat.exists(`presence:${username}`)),
 	initializeGroupMessage
 };
 export const social = {

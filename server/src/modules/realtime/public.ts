@@ -7,3 +7,4 @@ export { getNotificationSocket, stopNotificationConnections } from './connection
 export * from './session-events';
 export * from './session-sockets';
 export { publishReadReceipt } from './message-delivery';
+export { notifyRoomAccessChanged } from './room-access';

@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+const goRealtime = process.env.TEST_GO_REALTIME === '1';
 
 if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST)
   throw new Error(
@@ -21,14 +22,20 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "node -r ts-node/register/transpile-only src/index.ts",
-      cwd: "./server",
+      command: goRealtime ? "node scripts/start-stack.cjs --dev" : "node -r ts-node/register/transpile-only src/index.ts",
+      cwd: goRealtime ? "." : "./server",
       url: "http://127.0.0.1:3199/api/chat/v1/message/chat_list",
       timeout: 60000,
       env: {
         CORS_ORIGINS: "http://127.0.0.1:5199",
         NODE_ENV: "test",
         PORT: "3199",
+        NODE_PORT: "3299",
+        NODE_INTERNAL_URL: "http://127.0.0.1:3299",
+        GO_REALTIME_ADDR: ":3199",
+        REALTIME_DRIVER: goRealtime ? 'go' : 'node',
+        OUTBOX_DRIVER: goRealtime ? 'go' : 'node',
+        REALTIME_INTERNAL_TOKEN: 'browser-realtime-internal-test-credential-32',
         REDIS_URL: process.env.REDIS_URL_TEST,
         REDIS_KEY_PREFIX: process.env.TEST_REDIS_KEY_PREFIX || "browser-regression:",
         ...(process.env.UPLOAD_ROOT ? { UPLOAD_ROOT: process.env.UPLOAD_ROOT } : {}),

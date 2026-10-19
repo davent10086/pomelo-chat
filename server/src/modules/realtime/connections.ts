@@ -2,22 +2,26 @@ import type { WebSocket } from 'ws';
 
 interface Connection {
 	ws: WebSocket;
+	lease: string;
 	dispose: () => Promise<void>;
 }
 const connections = new Map<string, Connection>();
 const cleanups = new Set<Promise<void>>();
 
 export const getNotificationSocket = (username: string) => connections.get(username)?.ws;
+export const getNotificationLease = (username: string) => connections.get(username)?.lease;
 export const notificationUsers = () => [...connections.keys()];
 export const registerNotificationSocket = (
 	username: string,
 	ws: WebSocket,
-	cleanup: () => Promise<void>
+	cleanup: () => Promise<void>,
+	lease = ''
 ) => {
 	const previous = connections.get(username);
 	let disposed: Promise<void> | undefined;
 	connections.set(username, {
 		ws,
+		lease,
 		dispose: () => {
 			if (!disposed) {
 				disposed = cleanup().catch(error =>

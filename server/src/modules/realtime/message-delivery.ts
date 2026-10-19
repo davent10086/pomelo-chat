@@ -2,6 +2,7 @@ import * as readModel from '../../read-models/realtime';
 import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
 import { validateSessionSocket } from './session-sockets';
+import { validateRoomSocket } from './room-access';
 import { authorizeChatRoom } from '../social/public';
 import { NotificationUser } from './notification';
 import { sendSocketFrame } from './socket-send';
@@ -41,7 +42,7 @@ export const sendLocalRoom = async (
 ): Promise<void> => {
 	await forEachConcurrent(Object.entries(ChatRooms[room] || {}), 16, async ([key, ws]) => {
 		try {
-			if (!(await validateSessionSocket(ws))) return;
+			if (!(await validateRoomSocket(ws))) return;
 			if (
 				'name' in message &&
 				message.name === 'read_receipt' &&
@@ -95,7 +96,7 @@ export const subscribeRoomFanout = async (): Promise<void> => {
 	subscriber.on('message', (_channel, raw) => {
 		try {
 			const payload = JSON.parse(raw) as FanoutPayload;
-			if (!payload || payload.instanceId === INSTANCE_ID || !payload.room || !payload.message)
+			if (!payload || (payload.version !== undefined && payload.version !== 1) || payload.instanceId === INSTANCE_ID || !payload.room || !payload.message)
 				return;
 			void sendLocalRoom(payload.room, payload.message, payload.persistedAt).catch(err =>
 				console.error('[message] delivery:', err)
@@ -132,7 +133,7 @@ export const startMessageDelivery = async () => {
 		} else await NotificationUser({ receiver_id: row.receiver_id, name: 'chatList' });
 	});
 
-	enableMessageOutbox();
+	if (process.env.OUTBOX_DRIVER !== 'go') enableMessageOutbox();
 };
 export const stopMessageDelivery = async () => {
 	await stopMessageOutbox();

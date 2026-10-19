@@ -12,6 +12,6 @@ export default () => {
 	router.post('/resolve', authenticateToken, message.resolveMessages);
 	router.get('/history', authenticateToken, message.getHistory);
 	router.post('/read', authenticateToken, message.markRead);
-	router.ws('/connect_chat', connectChat);
+	if (process.env.REALTIME_DRIVER !== 'go') router.ws('/connect_chat', connectChat);
 	return router;
 };

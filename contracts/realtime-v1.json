@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "formatCases": [
+    { "bytes": 0, "file_size": "0B", "timestamp": 0, "created_at": "1970/1/1 08:00:00" },
+    { "bytes": 1023, "file_size": "1023B", "timestamp": 1792368000000, "created_at": "2026/10/19 08:00:00" },
+    { "bytes": 1024, "file_size": "1K", "timestamp": 1735653600000, "created_at": "2024/12/31 22:00:00" },
+    { "bytes": 1536, "file_size": "1.5K", "timestamp": 1792396800000, "created_at": "2026/10/19 16:00:00" },
+    { "bytes": 1000000, "file_size": "976.56K", "timestamp": 1792368000000, "created_at": "2026/10/19 08:00:00" }
+  ],
+  "message": { "id": 42, "client_msg_id": "fixture-message-42", "room_seq": 7, "sender_id": 1, "receiver_id": 2, "content": "协议样例", "room": "fixture-room", "avatar": null, "type": "text", "file_size": "0B", "created_at": "2026/10/19 08:00:00" }
+}

@@ -1,5 +1,9 @@
 import { Query } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
+export const lockGroupForMembershipChange = <T = unknown>(bindings: unknown, executor: SqlQuery): Promise<T> =>
+	executor<T>('SELECT id, creator_id, room FROM group_chat WHERE id = ? FOR UPDATE', bindings);
+export const removeGroupMembership = (bindings: unknown, executor: SqlQuery) =>
+	executor('DELETE FROM group_members WHERE group_id = ? AND user_id = ?', bindings);
 export const lockContactGroups = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
@@ -198,20 +202,22 @@ export const findGroupRoom = <T = unknown>(
 
 export const findAccessibleGroupRoom = <T = unknown>(
 	bindings: unknown,
-	executor: SqlQuery = Query
+	executor: SqlQuery = Query,
+	lock = false
 ): Promise<T> => {
 	return executor<T>(
-		`SELECT gc.id FROM group_chat AS gc INNER JOIN group_members AS gm ON gm.group_id = gc.id WHERE gm.user_id = ? AND gc.room = ? LIMIT 1`,
+		`SELECT gc.id FROM group_chat AS gc INNER JOIN group_members AS gm ON gm.group_id = gc.id WHERE gm.user_id = ? AND gc.room = ? LIMIT 1${lock ? ' FOR SHARE' : ''}`,
 		bindings
 	);
 };
 
 export const findAccessiblePrivateRoom = <T = unknown>(
 	bindings: unknown,
-	executor: SqlQuery = Query
+	executor: SqlQuery = Query,
+	lock = false
 ): Promise<T> => {
 	return executor<T>(
-		`SELECT f.user_id FROM friend AS f INNER JOIN friend_group AS fg ON fg.id = f.group_id WHERE fg.user_id = ? AND f.room = ? LIMIT 1`,
+		`SELECT f.user_id FROM friend AS f INNER JOIN friend_group AS fg ON fg.id = f.group_id WHERE fg.user_id = ? AND f.room = ? LIMIT 1${lock ? ' FOR SHARE' : ''}`,
 		bindings
 	);
 };
@@ -220,7 +226,7 @@ export const updateFriendPresence = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('UPDATE friend SET online_status = ? WHERE username = ?', bindings);
+	return executor<T>('UPDATE friend f JOIN user changed ON changed.id = f.user_id SET f.online_status = ? WHERE changed.username = ?', bindings);
 };
 
 export const insertDefaultFriendGroup = <T = unknown>(

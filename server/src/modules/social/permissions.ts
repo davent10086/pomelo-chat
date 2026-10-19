@@ -8,12 +8,12 @@ interface GroupMembershipRow {
 interface FriendMembershipRow {
 	user_id: number;
 }
-export const authorizeChatRoom = async (userId: UserId, room: string, type: ChatType) => {
+export const authorizeChatRoom = async (userId: UserId, room: string, type: ChatType, executor?: SqlQuery) => {
 	if (type === 'group') {
-		const rows = await repository.findAccessibleGroupRoom<GroupMembershipRow[]>([userId, room]);
+		const rows = await repository.findAccessibleGroupRoom<GroupMembershipRow[]>([userId, room], executor, !!executor);
 		return rows.length ? { receiverId: rows[0].id } : null;
 	}
-	const rows = await repository.findAccessiblePrivateRoom<FriendMembershipRow[]>([userId, room]);
+	const rows = await repository.findAccessiblePrivateRoom<FriendMembershipRow[]>([userId, room], executor, !!executor);
 	return rows.length ? { receiverId: rows[0].user_id } : null;
 };
 

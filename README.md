@@ -8,11 +8,15 @@ Pomelo Chat 是一个支持浏览器与 Electron 桌面的即时通讯项目，�
 
 ## 项目架构
 
-采用 **TypeScript 模块化单体**：后端在一个 Node.js 进程内运行，通过模块公开接口协作；SQL 集中在 repository 和 read-model 中，使用 mysql2 访问 MySQL，当前未引入 ORM 或 Go 服务。
+业务后端采用 **TypeScript 模块化单体**，通过模块公开接口协作；SQL 集中在 repository 和 read-model 中，使用 mysql2 访问 MySQL。默认由独立 **Go 实时网关与 Outbox Worker** 承接长连接和消息发布，支持分角色部署及短期 Node.js 回退。
 
 ```mermaid
 flowchart LR
-  Client["React / Electron"] -->|HTTP / WebSocket / SSE| Server["Express 模块化单体"]
+  Client["React / Electron"] -->|HTTP / WebSocket / SSE| Gateway["Go 实时网关"]
+  Gateway -->|HTTP / SSE / 内部业务调用| Server["Express 模块化单体"]
+  Worker["Go Outbox Worker"] --> MySQL
+  Worker --> Redis
+  Redis --> Gateway
   Server --> Identity["认证与社交"]
   Server --> Messaging["消息与 Outbox"]
   Server --> Assistant["AI 助手与 MCP"]
@@ -31,7 +35,7 @@ flowchart LR
 | --- | --- |
 | 客户端 | React 18、TypeScript、Vite、Ant Design |
 | 桌面端 | Electron 主窗口与可折叠助手侧栏 |
-| 后端 | Node.js、Express、express-ws，HTTP / WebSocket / SSE |
+| 后端 | Node.js / Express 业务服务；Go 网关与 Outbox；HTTP / WebSocket / SSE |
 | 数据与状态 | MySQL 8+、mysql2、Redis / ioredis |
 | AI | LangChain `createAgent`、千问兼容接口、MCP |
 | 音视频 | LiveKit SFU，后端校验成员权限并签发房间 token |
@@ -68,7 +72,7 @@ Redis Lua 原子扣减用户、房间和全局令牌桶，配合进程内排队�
 
 ## 本地运行
 
-准备 Node.js 20、pnpm 10、MySQL 8+ 和 Redis。先创建 `DB_NAME` 对应的数据库；后端负责表结构迁移，不自动创建数据库。
+准备 Node.js 20、pnpm 10、Go 1.26+、MySQL 8+ 和 Redis。先创建 `DB_NAME` 对应的数据库；Node.js 负责表结构迁移，不自动创建数据库。
 
 首次配置（已有 `.env` 时直接修改）：
 
@@ -92,6 +96,10 @@ pnpm dev:desktop
 # 构建前后端
 pnpm build
 ```
+
+根目录服务启动命令默认运行 Go（对外 `3000`）和 Node.js（内部 `3001`），后端修改后需重启。
+生产运行 `pnpm build` 后使用 `pnpm serve`，并配置至少 32 字符的 `REALTIME_INTERNAL_TOKEN`。
+两种服务必须使用相同的显式 MySQL、Redis 和 key prefix 配置；回退、独立角色部署及指标说明见 [Go 实时服务](docs/go-realtime.md)。
 
 多人音视频需另外启动本地 LiveKit：
 
@@ -138,6 +146,8 @@ node server/scripts/run-isolated-tests.js browser
 
 - [测试配置与命令](tests/README.md)
 - [后端模块与事务约束](server/ARCHITECTURE.md)
+- [Go 网关、Outbox、验证与回退](docs/go-realtime.md)
+- [成员撤销、故障测试、监控与本地备份恢复](docs/backend-operations.md)
 - [桌面端开发](desktop/README.md)
 - [压测脚本使用方法](qa/benchmarks/README.md)
 
