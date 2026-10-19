@@ -4,6 +4,8 @@ packages:
   - desktop
 
 onlyBuiltDependencies:
+  - '@prisma/engines'
+  - prisma
   - '@swc/core'
   - bcrypt
   - esbuild

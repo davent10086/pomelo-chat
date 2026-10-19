@@ -8,7 +8,7 @@ Pomelo Chat 是一个支持浏览器与 Electron 桌面的即时通讯项目，�
 
 ## 项目架构
 
-采用 **TypeScript 模块化单体**：后端在一个 Node.js 进程内运行，通过模块公开接口协作；SQL 集中在 repository 和 read-model 中，使用 mysql2 访问 MySQL，当前未引入 ORM 或 Go 服务。
+采用 **TypeScript 模块化单体**：后端在一个 Node.js 进程内运行，通过模块公开接口协作。业务查询和事务由 Prisma 访问 MySQL；用户、部分文件及房间权限查询使用模型 API，复杂 SQL 保留在 repository 和 read-model 中，当前不包含 Go 服务。
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ flowchart LR
 | 客户端 | React 18、TypeScript、Vite、Ant Design |
 | 桌面端 | Electron 主窗口与可折叠助手侧栏 |
 | 后端 | Node.js、Express、express-ws，HTTP / WebSocket / SSE |
-| 数据与状态 | MySQL 8+、mysql2、Redis / ioredis |
+| 数据与状态 | MySQL 8+、Prisma 7 / MariaDB 驱动、Redis / ioredis；mysql2 用于表结构迁移 |
 | AI | LangChain `createAgent`、千问兼容接口、MCP |
 | 音视频 | LiveKit SFU，后端校验成员权限并签发房间 token |
 
@@ -71,7 +71,7 @@ Redis Lua 原子扣减用户、房间和全局令牌桶，配合进程内排队�
 
 ## 本地运行
 
-准备 Node.js 20、pnpm 10、MySQL 8+ 和 Redis。先创建 `DB_NAME` 对应的数据库；后端负责表结构迁移，不自动创建数据库。
+准备 Node.js 20.19+（或 22.12+）、pnpm 10、MySQL 8+ 和 Redis。先创建 `DB_NAME` 对应的数据库；后端负责表结构迁移，不自动创建数据库。
 
 首次配置（已有 `.env` 时直接修改）：
 
@@ -136,9 +136,11 @@ tests/            单元测试和数据库边界测试
 pnpm lint
 pnpm test:unit
 pnpm --filter pomelo-chat-server test:architecture
+pnpm --filter pomelo-chat-server prisma:validate
 
 # 读取本地 MySQL 凭据，自动创建并清理独立测试数据库
 node server/scripts/run-isolated-tests.js backend
+node server/scripts/run-isolated-tests.js prisma
 node server/scripts/run-isolated-tests.js system
 node server/scripts/run-isolated-tests.js overload
 node server/scripts/run-isolated-tests.js browser
@@ -152,6 +154,9 @@ node server/scripts/run-isolated-tests.js browser
 - [压测脚本使用方法](qa/benchmarks/README.md)
 
 报告和测试产物保留在本地，不提交到 Git。
+
+Prisma 模型位于 `server/prisma/schema.prisma`，安装依赖时自动生成客户端；修改模型后运行 `pnpm --filter pomelo-chat-server prisma:generate`。生成文件不提交到 Git。
+连接配置兼容原有 `DB_*`，也支持 `DATABASE_URL`；测试库 URL 优先。当前仍由 `db:migrate` 负责结构升级和数据修复，Prisma 仅负责查询/事务，不要同时运行 Prisma Migrate 或 `db push` 改表。详见 [Prisma 接入说明](server/prisma/README.md)。
 
 ## 当前边界
 

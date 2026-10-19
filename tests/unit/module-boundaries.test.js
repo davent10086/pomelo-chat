@@ -26,3 +26,9 @@ test('architecture check accepts transaction contracts and public APIs but rejec
 	assert.ok(checkSources({'modules/assistant/repository.ts': "const sql = 'INSERT INTO message SET ?';"}).some(error => error.includes('writes table owned elsewhere')));
 	assert.ok(checkSources({'read-models/query.ts': "const sql = 'DELETE FROM user WHERE id = ?';"}).some(error => error.includes('write in read model')));
 });
+
+test('Prisma preserves repository ownership and forbids ORM access in application services', () => {
+	assert.deepEqual(checkSources({ 'modules/identity/repository.ts': 'db.user.create({ data: {} });' }), []);
+	assert.ok(checkSources({ 'modules/social/repository.ts': 'db.user.updateMany({ data: {} });' }).some(error => error.includes('Prisma model owned elsewhere')));
+	assert.ok(checkSources({ 'modules/social/application.ts': "import { prisma } from '../../infrastructure/prisma';" }).some(error => error.includes('ORM access outside repository')));
+});

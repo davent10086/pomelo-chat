@@ -1,7 +1,7 @@
 require('ts-node/register/transpile-only');
 const assert = require('node:assert/strict');
 const { uploadChunk } = require('../src/modules/files/public');
-const db = require('../src/infrastructure/database').default;
+const { prisma } = require('../src/infrastructure/prisma');
 const { withTransaction } = require('../src/infrastructure/database-query');
 (async () => {
 	assert.equal(
@@ -13,28 +13,16 @@ const { withTransaction } = require('../src/infrastructure/database-query');
 		).code,
 		1003
 	);
-	const original = db.getConnection;
+	const original = prisma.$transaction;
 	const operations = [];
-	const connection = {
-		beginTransaction: done => {
-			operations.push('begin');
-			done();
-		},
-		commit: done => {
-			operations.push('commit');
-			done();
-		},
-		rollback: done => {
-			operations.push('rollback');
-			done();
-		},
-		release: () => operations.push('release'),
-		query: (sql, values, done) => {
-			operations.push(sql);
-			done(null, { affectedRows: 1 });
-		}
+	prisma.$transaction = async operation => {
+		operations.push('begin');
+		try {
+			const value = await operation({ $executeRaw: async query => { operations.push(query.sql); return 1; } });
+			operations.push('commit'); return value;
+		} catch (error) { operations.push('rollback'); throw error; }
+		finally { operations.push('release'); }
 	};
-	db.getConnection = done => done(null, connection);
 	try {
 		await withTransaction(async query => {
 			await query('first write');
@@ -84,7 +72,7 @@ const { withTransaction } = require('../src/infrastructure/database-query');
 		);
 		assert.equal(attempts, 1, 'ambiguous failures are never retried');
 	} finally {
-		db.getConnection = original;
+		prisma.$transaction = original;
 	}
 	console.log(
 		'[p2-regressions] upload rejection and transaction commit/rollback/release behavior passed'

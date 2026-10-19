@@ -60,6 +60,8 @@ jobs:
       - run: pnpm --filter pomelo-chat-server test:architecture
       - run: pnpm lint
       - run: pnpm --filter pomelo-chat-server test:db-migrations
+      - run: pnpm --filter pomelo-chat-server prisma:validate
+      - run: pnpm --filter pomelo-chat-server test:prisma
       - run: pnpm test:system
       - run: pnpm test:all
       - run: pnpm exec playwright install --with-deps chromium

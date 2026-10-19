@@ -24,7 +24,13 @@ require('ts-node/register/transpile-only');
 // Track actual periodic work and network attempts during module loading.
 const activeTimers = new Set();
 const originalSetInterval = global.setInterval, originalClearInterval = global.clearInterval;
-global.setInterval = (...args) => { const timer = originalSetInterval(...args); activeTimers.add(timer); return timer; };
+global.setInterval = (...args) => {
+	const timer = originalSetInterval(...args);
+	// Database pool maintenance belongs to closeDatabase(), not stopBackgroundServices().
+	const caller = new Error().stack?.split('\n')[2] || '';
+	if (!/[\\/]node_modules[\\/]/.test(caller)) activeTimers.add(timer);
+	return timer;
+};
 global.clearInterval = timer => { activeTimers.delete(timer); return originalClearInterval(timer); };
 const net = require('node:net');
 const originalConnect = net.Socket.prototype.connect;
@@ -571,7 +577,7 @@ async function finish(code) {
 			await fs.rm(directory, { recursive: true, force: true });
 	}
 	await better_chat.quit().catch(() => {});
-	db.end();
+	await require('../src/infrastructure/database').closeDatabase();
 	process.exit(code);
 }
 

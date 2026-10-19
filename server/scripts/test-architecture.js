@@ -43,6 +43,8 @@ function checkSources(sources) {
 					const other = moduleOf(target);
 					if (own && !file.endsWith('/repository.ts') && target === 'infrastructure/database')
 						errors.push(`${file}: pool access outside repository`);
+					if (own && !file.endsWith('/repository.ts') && target === 'infrastructure/prisma')
+						errors.push(`${file}: ORM access outside repository`);
 					if (
 						own &&
 						!file.endsWith('/repository.ts') &&
@@ -84,6 +86,15 @@ function checkSources(sources) {
 				['Query', 'query'].includes(node.expression.text)
 			)
 				errors.push(`${file}: SQL execution outside repository`);
+			if (own && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+				ts.isPropertyAccessExpression(node.expression.expression)) {
+				const model = node.expression.expression.name.text;
+				const method = node.expression.name.text;
+				if (Object.values(ownership).flat().includes(model) &&
+					/^(create|createMany|update|updateMany|delete|deleteMany|upsert)$/.test(method) &&
+					!ownership[own]?.includes(model))
+					errors.push(`${file}: ${own} writes Prisma model owned elsewhere: ${model}`);
+			}
 			if (
 				(own || file.startsWith('read-models/')) &&
 				(ts.isStringLiteral(node) ||
@@ -130,6 +141,7 @@ function sourcesAt(directory) {
 	const sources = {};
 	function scan(folder) {
 		for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+			if (folder === directory && entry.name === 'generated') continue;
 			const file = path.join(folder, entry.name);
 			if (entry.isDirectory()) scan(file);
 			else if (entry.name.endsWith('.ts'))

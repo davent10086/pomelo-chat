@@ -54,6 +54,12 @@ start another transaction or use the global pool. User registration and default 
 creation are atomic. Group creation and its initial message are atomic. Message insertion,
 sequence advancement, statistics, attachment reference and outbox insertion are atomic.
 
+`SqlQuery` is now backed by Prisma interactive transactions. An infrastructure-owned binding
+maps the executor to its Prisma transaction client so model API calls and retained raw SQL use
+the same connection. Prisma owns business queries; mysql2 remains the schema-migration driver.
+Prisma schema generation does not own DDL: the existing locked migration runner remains the
+only schema upgrade authority. See `prisma/README.md` for generation and lifecycle details.
+
 Files validates and locks owned metadata; messaging writes the attachment reference using
 the same executor. Notifications occur after commit. Existing action claims, leases, idempotency,
 room authorization, outbox recovery and socket revocation are preserved.

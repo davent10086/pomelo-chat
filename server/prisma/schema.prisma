@@ -1,0 +1,316 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model assistant_action {
+  id          String                  @id @db.VarChar(64)
+  user_id     Int
+  type        String                  @db.VarChar(32)
+  payload     Json
+  selection   Json?
+  result      Json?
+  status      assistant_action_status @default(pending)
+  expires_at  DateTime                @db.DateTime(0)
+  lease_until DateTime?               @db.DateTime(0)
+  created_at  DateTime?               @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at  DateTime?               @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  user        user                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "assistant_action_ibfk_1")
+
+  @@index([user_id, created_at], map: "idx_assistant_action_user")
+}
+
+model assistant_memory {
+  id              Int       @id @default(autoincrement())
+  user_id         Int
+  category        String    @default("preference") @db.VarChar(32)
+  content         String    @db.VarChar(1000)
+  confirmation_id String?   @db.VarChar(64)
+  created_at      DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at      DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+
+  @@unique([user_id, confirmation_id], map: "uniq_assistant_memory_action")
+  @@index([user_id, category], map: "idx_assistant_memory_category")
+  @@index([user_id], map: "idx_assistant_memory_user")
+}
+
+model assistant_task {
+  id              Int                   @id @default(autoincrement())
+  user_id         Int
+  source_room     String?               @db.VarChar(255)
+  confirmation_id String?               @db.VarChar(64)
+  source_index    Int?
+  title           String                @db.VarChar(500)
+  assignee        String?               @db.VarChar(255)
+  due             String?               @db.VarChar(255)
+  status          assistant_task_status @default(open)
+  created_at      DateTime?             @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at      DateTime?             @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  user            user                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "assistant_task_ibfk_1")
+
+  @@unique([user_id, confirmation_id, source_index], map: "uniq_assistant_task_action")
+  @@index([user_id, source_room], map: "idx_assistant_task_source_room")
+  @@index([user_id, status], map: "idx_assistant_task_user_status")
+}
+
+model conversation {
+  id                Int                 @id @default(autoincrement())
+  room              String              @unique(map: "uniq_conversation_room") @db.VarChar(255)
+  type              conversation_type
+  target_id         Int?
+  last_message_id   Int?
+  last_seq          BigInt              @default(0)
+  created_at        DateTime?           @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at        DateTime?           @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  conversation_read conversation_read[]
+
+  @@index([type, target_id], map: "idx_conversation_type_target")
+  @@index([updated_at], map: "idx_conversation_updated")
+}
+
+model conversation_read {
+  id              Int          @id @default(autoincrement())
+  conversation_id Int
+  user_id         Int
+  last_read_seq   BigInt       @default(0)
+  updated_at      DateTime?    @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  conversation    conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "conversation_read_ibfk_1")
+
+  @@unique([conversation_id, user_id], map: "uniq_conversation_read_user")
+  @@index([user_id, conversation_id], map: "idx_conversation_read_user")
+}
+
+model file_metadata {
+  id                 Int                      @id @default(autoincrement())
+  owner_id           Int
+  file_hash          String                   @db.VarChar(128)
+  ext                String                   @db.VarChar(16)
+  media_type         file_metadata_media_type
+  storage_path       String                   @db.VarChar(500)
+  size               BigInt                   @default(0)
+  mime               String?                  @db.VarChar(128)
+  status             file_metadata_status     @default(ready)
+  created_at         DateTime?                @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at         DateTime?                @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  user               user                     @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "file_metadata_ibfk_1")
+  message_attachment message_attachment[]
+
+  @@unique([owner_id, file_hash, ext], map: "uniq_file_owner_hash_ext")
+  @@index([owner_id, created_at], map: "idx_file_owner")
+  @@index([status, updated_at], map: "idx_file_status")
+}
+
+model friend {
+  id               Int                   @id @default(autoincrement())
+  user_id          Int
+  username         String                @db.VarChar(50)
+  avatar           String?               @db.VarChar(255)
+  online_status    friend_online_status? @default(offline)
+  remark           String?               @db.VarChar(50)
+  group_id         Int?
+  room             String?               @db.VarChar(255)
+  unread_msg_count Int?                  @default(0)
+  created_at       DateTime?             @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at       DateTime?             @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  owner_id         Int?
+  friend_group     friend_group?         @relation(fields: [group_id], references: [id], onUpdate: NoAction, map: "friend_ibfk_1")
+
+  @@unique([owner_id, user_id], map: "uniq_friend_owner_user")
+  @@index([group_id, user_id], map: "idx_friend_group_user")
+  @@index([room], map: "idx_friend_room")
+  @@index([group_id], map: "idx_group_id")
+}
+
+model friend_group {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  username   String    @db.VarChar(255)
+  name       String    @db.VarChar(50)
+  created_at DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  friend     friend[]
+  user       user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "friend_group_ibfk_1")
+
+  @@index([user_id], map: "idx_user_id")
+}
+
+model group_chat {
+  id            Int             @id @default(autoincrement())
+  name          String          @db.VarChar(50)
+  creator_id    Int
+  avatar        String?         @db.VarChar(255)
+  announcement  String?         @db.Text
+  room          String?         @db.VarChar(255)
+  created_at    DateTime?       @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at    DateTime?       @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  user          user            @relation(fields: [creator_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "group_chat_ibfk_1")
+  group_members group_members[]
+
+  @@index([creator_id], map: "idx_creator_id")
+  @@index([room], map: "idx_group_chat_room")
+}
+
+model group_members {
+  id         Int        @id @default(autoincrement())
+  group_id   Int
+  user_id    Int
+  nickname   String     @db.VarChar(50)
+  created_at DateTime?  @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at DateTime?  @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  group_chat group_chat @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "group_members_ibfk_1")
+
+  @@unique([group_id, user_id], map: "uniq_group_members_group_user")
+  @@index([group_id], map: "idx_group_id")
+  @@index([user_id], map: "idx_user_id")
+}
+
+model mcp_audit_log {
+  id                    Int       @id @default(autoincrement())
+  user_id               Int?
+  server_name           String?   @db.VarChar(128)
+  tool                  String    @db.VarChar(255)
+  event                 String    @db.VarChar(64)
+  requires_confirmation Boolean   @default(false)
+  confirmed             Boolean   @default(false)
+  status                String    @db.VarChar(32)
+  error_message         String?   @db.VarChar(500)
+  created_at            DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+
+  @@index([server_name, created_at], map: "idx_mcp_audit_server_created")
+  @@index([tool, created_at], map: "idx_mcp_audit_tool_created")
+  @@index([user_id, created_at], map: "idx_mcp_audit_user_created")
+}
+
+model message {
+  id                 Int                  @id @default(autoincrement())
+  conversation_id    Int?
+  client_msg_id      String?              @db.VarChar(64)
+  room_seq           BigInt               @default(0)
+  sender_id          Int
+  receiver_id        Int
+  content            String               @db.LongText
+  room               String               @db.VarChar(255)
+  type               message_type
+  media_type         message_media_type
+  file_size          Int?                 @default(0)
+  status             Int                  @default(0)
+  created_at         DateTime?            @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  file_name          String?              @db.VarChar(255)
+  user               user                 @relation(fields: [sender_id], references: [id], onDelete: Cascade, map: "message_ibfk_1")
+  message_attachment message_attachment[]
+  message_outbox     message_outbox?
+
+  @@unique([sender_id, client_msg_id], map: "uniq_message_client")
+  @@index([conversation_id, room_seq], map: "idx_message_conversation_seq")
+  @@index([receiver_id, status, room], map: "idx_message_receiver_status")
+  @@index([room, created_at], map: "idx_message_room_created")
+  @@index([room, id], map: "idx_message_room_id")
+  @@index([room, type, id], map: "idx_message_room_type_id")
+}
+
+model message_attachment {
+  message_id    Int
+  file_id       Int
+  message       message       @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "message_attachment_ibfk_1")
+  file_metadata file_metadata @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "message_attachment_ibfk_2")
+
+  @@id([message_id, file_id])
+  @@index([file_id], map: "idx_attachment_file")
+}
+
+model message_outbox {
+  message_id      Int       @id
+  conversation_id Int
+  attempts        Int       @default(0)
+  next_attempt_at DateTime  @default(dbgenerated("CURRENT_TIMESTAMP")) @db.DateTime(0)
+  delivered_at    DateTime? @db.DateTime(0)
+  claim_token     String?   @db.VarChar(36)
+  lease_until     DateTime? @db.DateTime(0)
+  message         message   @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "message_outbox_ibfk_1")
+
+  @@index([delivered_at, next_attempt_at], map: "idx_outbox_pending")
+  @@index([conversation_id, delivered_at, message_id], map: "idx_outbox_room_pending")
+}
+
+model message_statistics {
+  id         Int       @id @default(autoincrement())
+  room       String    @unique(map: "uniq_message_statistics_room") @db.VarChar(255)
+  total      Int
+  created_at DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+  updated_at DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+}
+
+model schema_migrations {
+  id         String    @id @db.VarChar(128)
+  applied_at DateTime? @default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamp(0)
+}
+
+model user {
+  id               Int                @id @default(autoincrement())
+  username         String             @unique(map: "username") @db.VarChar(255)
+  password         String             @db.VarChar(255)
+  phone            String             @unique(map: "uniq_user_phone") @db.VarChar(50)
+  avatar           String?            @db.VarChar(255)
+  name             String?            @db.VarChar(255)
+  salt             String             @default("") @db.VarChar(20)
+  signature        String?            @db.LongText
+  created_at       DateTime?          @default(dbgenerated("CURRENT_TIMESTAMP")) @db.DateTime(0)
+  assistant_action assistant_action[]
+  assistant_task   assistant_task[]
+  file_metadata    file_metadata[]
+  friend_group     friend_group[]
+  group_chat       group_chat[]
+  message          message[]
+}
+
+enum conversation_type {
+  private
+  group
+  assistant
+}
+
+enum file_metadata_media_type {
+  image
+  video
+  file
+}
+
+enum friend_online_status {
+  online
+  offline
+}
+
+enum assistant_action_status {
+  pending
+  executing
+  completed
+  cancelled
+}
+
+enum assistant_task_status {
+  open
+  completed
+}
+
+enum file_metadata_status {
+  uploading
+  ready
+  deleted
+}
+
+enum message_type {
+  private
+  group
+}
+
+enum message_media_type {
+  text
+  image
+  video
+  file
+}

@@ -4,7 +4,7 @@ process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
 
 import bcrypt from 'bcrypt';
 
-import db, { assertDatabaseConnection, initDatabase } from '../src/infrastructure/database';
+import { assertDatabaseConnection, initDatabase } from '../src/infrastructure/database';
 import { withTransaction } from '../src/infrastructure/database-query';
 
 type WriteResult = { insertId: number };
@@ -120,4 +120,4 @@ main()
 		console.error('[seed:anime-demo] failed:', error instanceof Error ? error.message : String(error));
 		process.exitCode = 1;
 	})
-	.finally(() => db.end());
+	.finally(async () => (await import('../src/infrastructure/database')).closeDatabase());

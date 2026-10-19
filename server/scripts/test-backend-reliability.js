@@ -559,6 +559,6 @@ async function finish(code) {
 		originalError('[backend-reliability] cleanup failed:', error);
 		code = 1;
 	}
-	await new Promise(resolve => db.end(resolve));
+	await require('../src/infrastructure/database').closeDatabase();
 	process.exitCode = code;
 }

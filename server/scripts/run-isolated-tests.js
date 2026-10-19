@@ -5,16 +5,19 @@ const mysql = require('mysql2');
 const fs = require('node:fs');
 const Redis = require('ioredis');
 const mode = process.argv[2] || 'system';
-if (!['system', 'browser', 'desktop', 'migrations', 'backend', 'qa', 'overload'].includes(mode))
-	throw new Error('Expected system, browser, desktop, migrations, backend, qa, or overload');
+if (!['system', 'browser', 'desktop', 'migrations', 'backend', 'qa', 'overload', 'prisma'].includes(mode))
+	throw new Error('Expected system, browser, desktop, migrations, backend, qa, overload, or prisma');
 const root = path.resolve(__dirname, '../..');
 const serverRoot = path.join(root, 'server');
 require('dotenv').config({ path: path.join(serverRoot, '.env'), quiet: true });
+const configuredTestUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;
+const testTarget = configuredTestUrl ? new URL(configuredTestUrl) : undefined;
+if (testTarget && testTarget.protocol !== 'mysql:') throw new Error('Expected a MySQL test URL');
 const configuration = {
-	host: process.env.DB_HOST || '127.0.0.1',
-	port: Number(process.env.DB_PORT || 3306),
-	user: process.env.DB_USER || 'root',
-	password: process.env.DB_PASSWORD || ''
+	host: testTarget?.hostname || process.env.DB_HOST || '127.0.0.1',
+	port: Number(testTarget?.port || process.env.DB_PORT || 3306),
+	user: testTarget ? decodeURIComponent(testTarget.username) : process.env.DB_USER || 'root',
+	password: testTarget ? decodeURIComponent(testTarget.password) : process.env.DB_PASSWORD || ''
 };
 const database = `pomelo_${mode}_test_${Date.now()}`;
 const redisPrefix = `${database}:`;
@@ -43,7 +46,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 			: mode === 'qa' ? [path.join(root, 'qa/run-qa.js')] : [
 					path.join(
 						__dirname,
-						mode === 'migrations' ? 'test-db-migrations.js' : mode === 'backend' ? 'test-backend-reliability.js' : mode === 'overload' ? 'test-message-overload.js' : 'test-system-integrity.js'
+						mode === 'prisma' ? 'test-prisma.js' : mode === 'migrations' ? 'test-db-migrations.js' : mode === 'backend' ? 'test-backend-reliability.js' : mode === 'overload' ? 'test-message-overload.js' : 'test-system-integrity.js'
 					)
 				];
 	const child = spawn(process.execPath, args, {
@@ -80,7 +83,7 @@ connection.query('CREATE DATABASE ??', [database], error => {
 		if (path.dirname(uploadRoot) !== testFilesRoot || !path.basename(uploadRoot).startsWith('chat-uploads-'))
 			throw new Error('Unsafe upload cleanup target');
 		fs.rmSync(uploadRoot, { recursive: true, force: true });
-		if (!/^pomelo_(system|browser|desktop|migrations|backend|qa|overload)_test_\d+$/.test(database))
+		if (!/^pomelo_(system|browser|desktop|migrations|backend|qa|overload|prisma)_test_\d+$/.test(database))
 			throw new Error('Unsafe cleanup target');
 		connection.query('DROP DATABASE ??', [database], err => {
 			if (err) console.error('[isolated-tests] cleanup failed:', err.code);

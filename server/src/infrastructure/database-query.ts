@@ -1,45 +1,34 @@
-import db from './database';
-import type { PoolConnection, QueryValues } from 'mysql2';
+import { prisma, bindOrmExecutor, databaseError } from './prisma';
+import { executeSql } from './prisma-sql';
+import { assertSafeTestDatabaseConfiguration } from './database-config';
+import type { SqlQuery } from '../shared/actor';
 
-// 封装统一的 sql 语句执行函数
-export const Query = <T>(sql: string, info?: unknown): Promise<T> => {
-	return new Promise((resolve, reject) => {
-		db.query(sql, info as QueryValues, (err, results) => {
-			if (err) return reject(err);
-			resolve(results as T);
-		});
-	});
-};
+export const Query: SqlQuery = bindOrmExecutor(
+	async <T>(sql: string, info?: unknown): Promise<T> => {
+		assertSafeTestDatabaseConfiguration();
+		try {
+			if (/^\s*INSERT\b/i.test(sql))
+				return await prisma.$transaction(tx => executeSql<T>(tx, sql, info));
+			return await executeSql<T>(prisma, sql, info);
+		} catch (error) {
+			throw databaseError(error);
+		}
+	},
+	prisma
+);
 
-const withTransactionOnce = async <T>(
-	fn: (query: <R>(sql: string, info?: unknown) => Promise<R>) => Promise<T>
-): Promise<T> => {
-	const connection = await new Promise<PoolConnection>((resolve, reject) => {
-		db.getConnection((err, conn) => (err ? reject(err) : resolve(conn)));
-	});
-	const query = <R>(sql: string, info?: unknown): Promise<R> =>
-		new Promise((resolve, reject) => {
-			connection.query(sql, info as QueryValues, (err, results) => {
-				if (err) return reject(err);
-				resolve(results as R);
-			});
-		});
+const withTransactionOnce = async <T>(fn: (query: SqlQuery) => Promise<T>): Promise<T> => {
+	assertSafeTestDatabaseConfiguration();
 	try {
-		await new Promise<void>((resolve, reject) => {
-			connection.beginTransaction(err => (err ? reject(err) : resolve()));
+		return await prisma.$transaction(async tx => {
+			const query = bindOrmExecutor(
+				<R>(sql: string, info?: unknown) => executeSql<R>(tx, sql, info),
+				tx
+			);
+			return fn(query);
 		});
-		const result = await fn(query);
-		await new Promise<void>((resolve, reject) => {
-			connection.commit(err => (err ? reject(err) : resolve()));
-		});
-		return result;
 	} catch (error) {
-		await new Promise<void>(resolve => {
-			connection.rollback(() => resolve());
-		});
-		throw error;
-	} finally {
-		connection.release();
+		throw databaseError(error);
 	}
 };
 

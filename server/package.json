@@ -4,10 +4,18 @@
   "version": "1.0.0",
   "description": "pomelo-chat 项目的后端部分",
   "main": "dist/index.js",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
   "author": {
     "name": "daventLee"
   },
   "scripts": {
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "prisma:pull": "prisma db pull",
+    "test:prisma": "node scripts/run-isolated-tests.js prisma",
     "start": "nodemon --watch src --ext ts --exec \"ts-node --files src/index.ts\"",
     "build": "tsc -p tsconfig.json",
     "serve": "node dist/index.js",
@@ -40,6 +48,8 @@
     "@langchain/openai": "^1.5.5",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@modelcontextprotocol/server": "^2.0.0-beta.4",
+    "@prisma/adapter-mariadb": "7.10.1",
+    "@prisma/client": "7.10.1",
     "bcrypt": "^6.0.0",
     "body-parser": "^1.20.2",
     "dotenv": "^17.4.2",
@@ -67,6 +77,7 @@
     "lint-staged": "^15.2.2",
     "nodemon": "^3.1.7",
     "prettier": "^3.2.5",
+    "prisma": "7.10.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },

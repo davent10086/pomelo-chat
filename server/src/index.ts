@@ -5,7 +5,7 @@ import expressWs from 'express-ws';
 import app, { registerAppRoutes } from './controller/app';
 import { startBackgroundServices, stopBackgroundServices } from './runtime';
 import { better_chat } from './infrastructure/redis';
-import db, { assertDatabaseConnection, initDatabase } from './infrastructure/database';
+import { assertDatabaseConnection, initDatabase, closeDatabase } from './infrastructure/database';
 
 const port = Number(process.env.PORT || 3000);
 let stopping = false;
@@ -85,7 +85,7 @@ export const stopServer = () => {
 				if (better_chat.status !== 'wait' && better_chat.status !== 'end') await better_chat.quit();
 				else better_chat.disconnect();
 			})(),
-			new Promise<void>((resolve, reject) => db.end(error => (error ? reject(error) : resolve())))
+			closeDatabase()
 		]);
 		const failures = [...stopped, ...dependencies].filter(
 			(result): result is PromiseRejectedResult => result.status === 'rejected'

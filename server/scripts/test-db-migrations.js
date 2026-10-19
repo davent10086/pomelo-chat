@@ -54,7 +54,7 @@ const legacy = execFileSync(process.execPath, ['-r', 'ts-node/register/transpile
     const wrong = await Query('SELECT o.message_id FROM message_outbox o JOIN message m ON m.id=o.message_id WHERE o.conversation_id<>m.conversation_id OR o.conversation_id IS NULL');
     assert.equal(wrong.length,0);
     console.log('[db-migrations] legacy outbox backfill preserves pending, leased and delivered records');
-  })().finally(async()=>{if(userId) await Query('DELETE FROM user WHERE id=?',[userId]);if(conversationId)await Query('DELETE FROM conversation WHERE id=?',[conversationId]);await new Promise(resolve=>db.end(resolve));}).catch(error=>{console.error(error);process.exitCode=1;});
+  })().finally(async()=>{if(userId) await Query('DELETE FROM user WHERE id=?',[userId]);if(conversationId)await Query('DELETE FROM conversation WHERE id=?',[conversationId]);await require('./src/infrastructure/database').closeDatabase();}).catch(error=>{console.error(error);process.exitCode=1;});
 `], { cwd: serverRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
 assert.match(legacy,/legacy outbox backfill preserves/);
 

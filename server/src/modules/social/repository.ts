@@ -1,5 +1,7 @@
 import { Query } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
+import { ormQuery } from '../../infrastructure/prisma';
+import type { Prisma } from '../../generated/prisma/client';
 export const lockContactGroups = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
@@ -200,9 +202,20 @@ export const findAccessibleGroupRoom = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>(
-		`SELECT gc.id FROM group_chat AS gc INNER JOIN group_members AS gm ON gm.group_id = gc.id WHERE gm.user_id = ? AND gc.room = ? LIMIT 1`,
-		bindings
+	const [userId, room] = bindings as [number | string, string];
+	return ormQuery<T>(
+		executor,
+		db =>
+			db.group_chat.findMany({
+				where: { room, group_members: { some: { user_id: Number(userId) } } },
+				select: { id: true },
+				take: 1
+			}),
+		() =>
+			executor<T>(
+				`SELECT gc.id FROM group_chat AS gc INNER JOIN group_members AS gm ON gm.group_id = gc.id WHERE gm.user_id = ? AND gc.room = ? LIMIT 1`,
+				bindings
+			)
 	);
 };
 
@@ -210,9 +223,20 @@ export const findAccessiblePrivateRoom = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>(
-		`SELECT f.user_id FROM friend AS f INNER JOIN friend_group AS fg ON fg.id = f.group_id WHERE fg.user_id = ? AND f.room = ? LIMIT 1`,
-		bindings
+	const [userId, room] = bindings as [number | string, string];
+	return ormQuery<T>(
+		executor,
+		db =>
+			db.friend.findMany({
+				where: { room, friend_group: { is: { user_id: Number(userId) } } },
+				select: { user_id: true },
+				take: 1
+			}),
+		() =>
+			executor<T>(
+				`SELECT f.user_id FROM friend AS f INNER JOIN friend_group AS fg ON fg.id = f.group_id WHERE fg.user_id = ? AND f.room = ? LIMIT 1`,
+				bindings
+			)
 	);
 };
 
@@ -227,5 +251,12 @@ export const insertDefaultFriendGroup = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('INSERT INTO friend_group SET ?', bindings);
+	return ormQuery<T>(
+		executor,
+		db =>
+			db.friend_group
+				.create({ data: bindings as Prisma.friend_groupUncheckedCreateInput })
+				.then(row => ({ insertId: row.id, affectedRows: 1 })),
+		() => executor<T>('INSERT INTO friend_group SET ?', bindings)
+	);
 };

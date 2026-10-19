@@ -325,6 +325,6 @@ main()
 		} finally {
 			cleanup.disconnect();
 			better_chat.disconnect();
-			await new Promise(resolve => db.end(resolve));
+			await require('../src/infrastructure/database').closeDatabase();
 		}
 	});

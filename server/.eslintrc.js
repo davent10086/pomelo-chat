@@ -1,5 +1,6 @@
 module.exports = {
 	root: true,
+	ignorePatterns: ['src/generated/**'],
 	env: {
 		browser: true,
 		commonjs: true,
