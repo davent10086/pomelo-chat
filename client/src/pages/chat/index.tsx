@@ -29,6 +29,7 @@ const isFriendInfo = (chatInfo: IFriendInfo | IGroupChatInfo): chatInfo is IFrie
 };
 
 const isGroupChat = (item: IMessageListItem) => !item.receiver_username;
+const isAssistantListItem = (item: IMessageListItem | undefined) => !!item && (item.receiver_username === AI_USERNAME || item.room?.startsWith('ai_'));
 
 // M4: forwardRef 濠电姷鏁搁崑娑⑺囬幍顔剧煓闁硅揪闄勯崐鐢告煟閹达絾顥夌紒鈧畝鍕厸鐎广儱娲﹂弳鈺冪磼閳ь剚绻呯弧绛?缂傚倸鍊风欢锟犲磻婢舵劦鏁嬬憸鏃堝箖濡ゅ懏鐓ラ悗锝庡厴閺?IChatRef
 const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
@@ -43,21 +44,20 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	);
 	const [curChatInfo, setCurChatInfo] = useState<IMessageListItem>();
 	const [focusMessageId, setFocusMessageId] = useState<number>();
-	const isAssistantListItem = (item: IMessageListItem | undefined) =>
-		!!item && (item.receiver_username === AI_USERNAME || item.room?.startsWith('ai_'));
 	const assistantSelected = isAssistantListItem(curChatInfo);
 	const normalRoom = curChatInfo && !assistantSelected ? curChatInfo.room : undefined;
 	const normalType = curChatInfo && isGroupChat(curChatInfo) ? 'group' : 'private';
 	const chatTool = useRef<ChatToolHandle>(null);
+	const receiverId = curChatInfo?.receiver_id, chatName = curChatInfo?.name;
 	const fileDrop = useFileDrop(normalRoom, files => { void chatTool.current?.sendFiles(files); }, onChatError);
 	useEffect(() => {
 		const bridge = window.pomeloDesktop;
 		if (!bridge) return;
-		void bridge.publishChat(normalRoom && curChatInfo ? {
-			room: normalRoom, type: normalType, receiverId: curChatInfo.receiver_id, name: curChatInfo.name
+		void bridge.publishChat(normalRoom && receiverId !== undefined && chatName !== undefined ? {
+			room: normalRoom, type: normalType, receiverId, name: chatName
 		} : null).catch(() => undefined);
 		return () => { void bridge.publishChat(null).catch(() => undefined); };
-	}, [normalRoom, normalType, curChatInfo?.receiver_id, curChatInfo?.name]);
+	}, [normalRoom, normalType, receiverId, chatName]);
 	const normal = useNormalConversation(
 		normalRoom,
 		normalType,
@@ -141,9 +141,12 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 			void refreshChatList();
 		}
 	};
+	// Initial selection is a mount-time snapshot; later navigation uses chooseRoom.
+	const [initialConversation] = useState(() => ({ selected: initSelectedChat, refresh: refreshChatList, ensure: ensureConversation, enter: assistant.enter, welcome: assistant.welcome }));
 	useEffect(() => {
 		let disposed = false;
-		void refreshChatList().then(items => {
+		const initSelectedChat = initialConversation.selected;
+		void initialConversation.refresh().then(items => {
 			if (disposed || !initSelectedChat) return;
 			let item = items?.find(chat => chat.room === initSelectedChat.room);
 			if (!item) {
@@ -160,18 +163,18 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 					lastMessage: 'No message history',
 					type: 'text'
 				};
-				ensureConversation(item);
+				initialConversation.ensure(item);
 			}
 			setCurChatInfo(item);
 			if (isAssistantListItem(item)) {
-				assistant.enter();
-				assistant.welcome(item.room);
+				initialConversation.enter();
+				initialConversation.welcome(item.room);
 			}
 		});
 		return () => {
 			disposed = true;
 		};
-	}, []);
+	}, [initialConversation]);
 
 	useImperativeHandle(ref, () => ({
 		refreshChatList: async () => {

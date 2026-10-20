@@ -1,6 +1,6 @@
 import { MessageOutlined, ContactsOutlined, FolderOutlined, LogoutOutlined } from '@ant-design/icons';
 import { Tooltip, Button, Popover } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import styles from './index.module.less';
@@ -25,6 +25,7 @@ import { handleLogout } from '@/utils/logout';
 import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage';
 import { safeParse } from '@/utils/safe-parse';
 import ReconnectingWebSocket from '@/utils/websocket';
+import Request from '@/utils/request';
 
 const navigationIcons = { 'icon-message': <MessageOutlined />, 'icon-24px': <ContactsOutlined />, 'icon-wenjian': <FolderOutlined />, 'icon-tuichudenglu': <LogoutOutlined /> };
 
@@ -34,6 +35,7 @@ const Container = () => {
 	const location = useLocation();
 	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
 	const user = userStorage.getItem();
+	const username = user.username;
 	const [currentIcon, setCurrentIcon] = useState<string>('icon-message');
 	useEffect(() => {
 		setCurrentIcon(location.pathname === '/files' ? 'icon-wenjian' : location.pathname === '/address-book' ? 'icon-24px' : 'icon-message');
@@ -113,11 +115,11 @@ const Container = () => {
 	);
 
 	// 进入主页面时建立 websocket 连接（H3: 携带 token 认证）
-	const initSocket = () => {
+	const initSocket = useCallback(() => {
 		socket.current?.destroy();
 		const token = tokenStorage.getItem();
 		const ws = new ReconnectingWebSocket(
-			`${wsBaseURL}/auth/user_channel?username=${encodeURIComponent(user.username)}&token=${encodeURIComponent(token)}`
+			`${wsBaseURL}/auth/user_channel?username=${encodeURIComponent(username)}`, undefined, ['pomelo-token', token]
 		);
 
 		ws.onMessage = e => {
@@ -163,6 +165,12 @@ const Container = () => {
 			addressBookRef.current?.refreshFriendList();
 			addressBookRef.current?.refreshGroupChatList();
 			chatRef.current?.refreshChatList();
+			void Request.get<{ call: { callId: string; room: string; mode: string; callReceiverList: ICallReceiverInfo[] } | null }>('/rtc/current').then(result => {
+				const call = result.data.data?.call;
+				if (socket.current !== ws || tokenStorage.getItem() !== token || !call) return;
+				setCallId(call.callId); setRoom(call.room); setCurMode(call.mode); setCallReceiverList(call.callReceiverList);
+				if (call.mode.includes('audio')) setAudioModal(true); else setVideoModal(true);
+			}).catch(() => undefined);
 		};
 
 		ws.onClose = event => {
@@ -185,7 +193,7 @@ const Container = () => {
 
 		ws.connect();
 		socket.current = ws;
-	};
+	}, [username, navigate, showMessage]);
 	// L1: 添加 cleanup，组件卸载时关闭 socket
 	useEffect(() => {
 		initSocket();
@@ -195,7 +203,7 @@ const Container = () => {
 				socket.current = null;
 			}
 		};
-	}, []);
+	}, [initSocket]);
 
 	const handleChooseChat = (item: IFriendInfo | IGroupChatInfo) => {
 		setCurrentIcon('icon-message');

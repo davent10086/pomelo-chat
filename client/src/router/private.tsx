@@ -14,7 +14,7 @@ const PrivateRoute = (props: IPrivateRouteProps) => {
 	}
 	return (
 		<>
-			<Navigate to="/login" />;
+			<Navigate to="/login" />
 		</>
 	);
 };

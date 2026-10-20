@@ -266,7 +266,8 @@ export const runLangChainAgent = async (
 		normalizeMessageContent(lastAiMessage?.content) || '我暂时没有得到有效结果。'
 	);
 	let structuredValue = result?.structuredResponse;
-	if (onTextDelta && fallbackContent && !context?.readOnly) {
+	const needsMetadata = /待办|提醒|安排|任务|总结|归纳|回复|草稿|代写|代发|发给|发送|记住|记忆|todo|task|remind|summari[sz]e|reply|draft|send|remember/i.test(input);
+	if (onTextDelta && fallbackContent && !context?.readOnly && needsMetadata) {
 		try {
 			const extractor = model.withStructuredOutput(AgentResponseSchema.omit({ content: true }));
 			const extracted = await extractor.invoke(

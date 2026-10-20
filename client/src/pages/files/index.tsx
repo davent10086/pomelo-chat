@@ -60,7 +60,7 @@ export default function ChatFiles() {
 		downloading.current.add(item.content);
 		try {
 			if (window.pomeloDesktop) await window.pomeloDesktop.downloadFile(item.content, item.file_name || undefined);
-			else await downloadFile(getAuthorizedMediaURL(item.content), item.file_name || undefined);
+			else await downloadFile(await getAuthorizedMediaURL(item.content), item.file_name || undefined);
 		} catch { message.error('下载失败，请检查连接和会话权限后重试'); }
 		finally { downloading.current.delete(item.content); }
 	};

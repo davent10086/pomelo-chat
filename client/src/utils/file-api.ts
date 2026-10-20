@@ -24,7 +24,7 @@ interface IVertifyRes {
 // 文件分片上传接口请求参数
 interface IUploadChunkParams {
 	// 文件分片
-	chunk: ArrayBuffer;
+	chunk: Blob;
 	// 当前分片序号
 	chunkIndex: number;
 	// 文件Hash

@@ -39,7 +39,7 @@ export class SendQueue {
 	private active() {
 		return !this.stopped && Number(userStorage.getItem().id) === this.options.userId;
 	}
-	private item(row: PendingMessage): IMessageItem {
+	private item(row: PendingMessage, status: 'pending' | 'failed' = 'failed'): IMessageItem {
 		return {
 			...row.message,
 			content: String(row.message.content),
@@ -47,7 +47,7 @@ export class SendQueue {
 			file_size: null,
 			file_name: row.message.fileName,
 			created_at: new Date(row.createdAt),
-			status: 'failed',
+			status,
 			failureReason:
 				row.stopped ||
 				(Date.now() - row.createdAt > 86400000
@@ -77,10 +77,10 @@ export class SendQueue {
 		}
 		if (!tokenStorage.getItem() || Number(userStorage.getItem().id) !== this.options.userId) {
 			await removePendingMessage(row.key).catch(() => undefined);
-			return { clientMsgId: id, ok: false };
+			throw new Error('登录状态已变化，消息未发送');
 		}
-		if (!this.active()) return { clientMsgId: id, ok: false };
-		this.options.onMessages([this.item(row)]);
+		if (!this.active()) throw new Error('会话已切换，消息已保留在待发送队列');
+		this.options.onMessages([this.item(row, 'pending')]);
 		await this.transmit(row, true);
 		return { clientMsgId: id, ok: true };
 	}

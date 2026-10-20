@@ -3,20 +3,28 @@ import type { Request } from 'express';
 import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
 import { verifyTokenWithSession } from '../identity/public';
-import { updateContactPresence } from '../social/public';
+import { updateContactPresence, presenceObservers } from '../social/public';
 import { NotificationUser } from './notification';
-import {
-	notificationUsers,
-	registerNotificationSocket,
-	removeNotificationSocket
-} from './connections';
+import { registerNotificationSocket, removeNotificationSocket } from './connections';
 import { registerSessionSocket, validateSessionSocket } from './session-sockets';
 export const initUserNotification = async (ws: WebSocket, req: Request): Promise<void> => {
 	try {
 		const url = req.url!.split('?')[1];
 		const params = new URLSearchParams(url);
 		const curUsername = params.get('username') || '';
-		const token = params.get('token') || '';
+		const notifyObservers = async () => {
+			const observers = await presenceObservers(curUsername);
+			await Promise.all(
+				observers.map(({ username }) =>
+					NotificationUser({ receiver_username: username, name: 'friendList' })
+				)
+			);
+		};
+		const token =
+			String(req.headers['sec-websocket-protocol'] || '')
+				.split(',')
+				.map(value => value.trim())
+				.find(value => value !== 'pomelo-token') || '';
 		// 校验 token
 		const decoded = await verifyTokenWithSession(token);
 		if (!decoded || decoded.username !== curUsername) {
@@ -49,31 +57,22 @@ export const initUserNotification = async (ws: WebSocket, req: Request): Promise
 					presenceLease
 				)
 				.catch(err => console.error('[auth] presence cleanup:', err));
-			if (removed === 1)
+			if (removed === 1) {
 				await updateContactPresence(curUsername, 'offline').catch(err =>
 					console.error('[auth] offline update:', err)
 				);
+				await notifyObservers().catch(err => console.error('[auth] notification:', err));
+			}
 		};
 		if (ws.readyState !== 1) {
 			await cleanupPresence();
 			return;
 		}
 		registerNotificationSocket(curUsername, ws, cleanupPresence);
-		for (const username of notificationUsers()) {
-			if (username === curUsername) continue;
-			void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
-				console.error('[auth] notification:', err)
-			);
-		}
+		void notifyObservers().catch(err => console.error('[auth] notification:', err));
 
 		ws.on('close', () => {
-			if (removeNotificationSocket(curUsername, ws)) {
-				for (const username of notificationUsers()) {
-					void NotificationUser({ receiver_username: username, name: 'friendList' }).catch(err =>
-						console.error('[auth] notification:', err)
-					);
-				}
-			}
+			removeNotificationSocket(curUsername, ws);
 		});
 
 		ws.on('error', (err: Error) => {

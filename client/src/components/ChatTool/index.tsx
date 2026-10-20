@@ -1,6 +1,6 @@
 import { SmileOutlined, PictureOutlined, FolderOutlined, PhoneOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { Button, Spin, Tooltip } from 'antd';
-import React, { ChangeEvent, forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { ChangeEvent, forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 
 import { getGroupMembers } from './api';
 import styles from './index.module.less';
@@ -38,6 +38,7 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 	const [loading, setLoading] = useState(false);
 	const [uploadStatus, setUploadStatus] = useState('');
 	const uploading = useRef(false);
+	const sendingText = useRef(false);
 	const mounted = useRef(true);
 	useEffect(() => {
 		mounted.current = true;
@@ -150,7 +151,8 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 	};
 
 	const handleSendTextMessage = async () => {
-		if (!inputValue.trim() || loading) return;
+		if (!inputValue.trim() || loading || sendingText.current) return;
+		sendingText.current = true;
 		const sentText = inputValue;
 		let accepted = false;
 		const onAccepted = () => {
@@ -171,6 +173,8 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 			if (!accepted) onAccepted();
 		} catch {
 			showMessage('error', '消息发送失败，请重试');
+		} finally {
+			sendingText.current = false;
 		}
 	};
 
@@ -238,9 +242,7 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 		}
 	};
 
-	// L5: emojiList 用 useMemo 缓存，避免每次渲染重建
-	const emojiList = useMemo(
-		() => (
+	const emojiList = (
 			<div className={styles.emoji_list}>
 				{EmojiList.map(item => (
 					<button
@@ -254,8 +256,6 @@ const ChatTool = forwardRef<ChatToolHandle, IChatToolProps>((props, ref) => {
 					</button>
 				))}
 			</div>
-		),
-		[]
 	);
 
 	const isGroupChat = (item: IMessageListItem) => !item.receiver_username;

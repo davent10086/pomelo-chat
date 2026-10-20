@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+.git
+server/uploads
+tmp
+test-results
+playwright-report
+release
+qa/results
+*.log

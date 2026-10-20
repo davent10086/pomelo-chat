@@ -2,6 +2,10 @@ import { Query } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
 import { ormQuery } from '../../infrastructure/prisma';
 import type { Prisma } from '../../generated/prisma/client';
+export const findPresenceObservers = (bindings: unknown): Promise<Array<{ username: string }>> =>
+	Query('SELECT DISTINCT u.username FROM friend f JOIN friend_group fg ON fg.id = f.group_id JOIN user u ON u.id = fg.user_id WHERE f.username = ?', bindings);
+export const findAccessibleGroupMembers = (room: string, users: Array<number | string>): Promise<Array<{ user_id: number }>> =>
+	Query('SELECT gm.user_id FROM group_members gm JOIN group_chat gc ON gc.id = gm.group_id WHERE gc.room = ? AND gm.user_id IN (?)', [room, users]);
 export const lockContactGroups = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query

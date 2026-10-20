@@ -89,7 +89,9 @@ export const searchRoomMessages = async (
 		options
 	});
 	const messages = rows.slice(0, limit);
-	return { messages, hasMore: rows.length > limit, nextBeforeId: messages.at(-1)?.id };
+	return { messages, hasMore: rows.length > limit,
+		nextBeforeId: options.afterId ? undefined : messages.at(-1)?.id,
+		nextAfterId: options.afterId ? messages.at(-1)?.id : undefined };
 };
 export const contextRoomMessages = async (
 	userId: UserId,

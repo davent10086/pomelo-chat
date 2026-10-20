@@ -72,7 +72,7 @@ export class Request {
 				const requestToken = error.config?.headers?.Authorization;
 				const currentToken = tokenStorage.getItem();
 				if (
-					apiError.status === 401 &&
+					apiError.status === 401 && apiError.code === 1002 &&
 					currentToken &&
 					requestToken === `Bearer ${currentToken}` &&
 					typeof window !== 'undefined' &&

@@ -45,7 +45,8 @@ return 1`;
 		};
 		const keys = [
 			`rtc:call:${state.id}`,
-			...Object.keys(state.members).map(name => `rtc:busy:${name}`)
+			...Object.keys(state.members).map(name => `rtc:busy:${name}`),
+			`rtc:room:${type}:${room}`
 		];
 		if (
 			Number(
@@ -66,10 +67,14 @@ return 1`;
 		const raw = await better_chat.get(`rtc:call:${id}`);
 		return raw ? (JSON.parse(raw) as CallState) : null;
 	};
+	const getRoomCall = async (type: CallState['type'], room: string): Promise<CallState | null> => {
+		const id = await better_chat.get(`rtc:room:${type}:${room}`);
+		return id ? getCall(id) : null;
+	};
 	const transitionCall = async (
 		id: string,
 		user: string,
-		action: 'accept' | 'leave' | 'timeout'
+		action: 'accept' | 'leave' | 'timeout' | 'rejoin'
 	): Promise<CallState | null> => {
 		for (let attempt = 0; attempt < 5; attempt++) {
 			const raw = await better_chat.get(`rtc:call:${id}`);
@@ -89,9 +94,11 @@ return 1`;
 				else
 					for (const name of Object.keys(state.members))
 						if (state.members[name] === 'invited') state.members[name] = 'left';
-			} else if (action === 'accept') {
+			} else if (action === 'accept' || action === 'rejoin') {
 				if (
-					state.members[user] === 'left' ||
+					(action === 'rejoin'
+						? state.type !== 'group' || state.status !== 'active' || state.members[user] !== 'left'
+						: state.members[user] === 'left') ||
 					state.expiresAt <= Date.now() ||
 					(state.members[user] === 'invited' && state.ringUntil <= Date.now())
 				)
@@ -112,15 +119,27 @@ return 1`;
 			}
 			const names = Object.keys(state.members);
 			const script = `if redis.call('GET',KEYS[1]) ~= ARGV[1] then return 0 end
+if ARGV[5] == 'rejoin' then
+ local busy=redis.call('GET',KEYS[tonumber(ARGV[6])])
+ if busy and busy ~= ARGV[3] then return -1 end
+end
 redis.call('SET',KEYS[1],ARGV[2],'EX',7200)
 local state=cjson.decode(ARGV[2]); local names=cjson.decode(ARGV[4]);
-for i = 2,#KEYS do
+for i = 2,#KEYS-1 do
  local name=names[i-1]
  if state.status == 'ended' or state.members[name] == 'left' then
   if redis.call('GET',KEYS[i]) == ARGV[3] then redis.call('DEL',KEYS[i]) end
  elseif state.members[name] == 'joined' then redis.call('SET',KEYS[i],ARGV[3],'EX',7200) end
-end return 1`;
-			const keys = [`rtc:call:${id}`, ...names.map(name => `rtc:busy:${name}`)];
+end
+if state.status == 'ended' then
+ if redis.call('GET',KEYS[#KEYS]) == ARGV[3] then redis.call('DEL',KEYS[#KEYS]) end
+else redis.call('SET',KEYS[#KEYS],ARGV[3],'EX',7200) end
+return 1`;
+			const keys = [
+				`rtc:call:${id}`,
+				...names.map(name => `rtc:busy:${name}`),
+				`rtc:room:${state.type}:${state.room}`
+			];
 			if (
 				Number(
 					await better_chat.eval(
@@ -130,7 +149,9 @@ end return 1`;
 						raw,
 						JSON.stringify(state),
 						id,
-						JSON.stringify(names)
+						JSON.stringify(names),
+						action,
+						names.indexOf(user) + 2
 					)
 				) !== 1
 			)
@@ -164,6 +185,7 @@ end return 1`;
 	};
 	let expiring: Promise<void> | undefined;
 	let timer: ReturnType<typeof setInterval> | undefined;
+	let presenceOffset = 0;
 	const startCallTimeouts = () => {
 		if (timer) return;
 		timer = setInterval(() => {
@@ -176,6 +198,19 @@ end return 1`;
 						const state = await getCall(id);
 						if (state) await transitionCall(id, state.caller, 'timeout');
 						else await better_chat.zrem(deadlines, id);
+					}
+					// Sweep a bounded page of live calls too: server crashes and half-open sockets
+					// must not keep users busy until the two-hour call deadline.
+					const live = await better_chat.zrange(deadlines, presenceOffset, presenceOffset + 49);
+					presenceOffset = live.length < 50 ? 0 : presenceOffset + 50;
+					for (const id of live) {
+						if (!timer) break;
+						const state = await getCall(id);
+						if (!state || state.status === 'ended') continue;
+						for (const [name, status] of Object.entries(state.members)) {
+							if (status === 'joined' && !(await better_chat.exists(`presence:${name}`)))
+								await transitionCall(id, name, 'leave');
+						}
 					}
 				})
 				.catch(err => console.error('[rtc] timeout recovery:', err))
@@ -197,6 +232,7 @@ end return 1`;
 	return {
 		createCall,
 		getCall,
+		getRoomCall,
 		transitionCall,
 		startCallTimeouts,
 		stopCallTimeouts,

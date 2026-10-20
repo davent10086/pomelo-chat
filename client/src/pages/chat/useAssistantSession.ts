@@ -29,6 +29,9 @@ export function useAssistantSession(
 	const actions = useAssistantActions(request, showMessage);
 	const tasks = useAssistantTasks(Number(user.id), request, actions, showMessage);
 	const memory = useAssistantMemory(Number(user.id), request, actions, showMessage);
+	const { reset: resetTasks } = tasks;
+	const { reset: resetMemory } = memory;
+	const { reset: resetActions } = actions;
 	const { memoryEnabled, memoryModalOpen } = memory;
 	const [agentResult, setAgentResult] = useState<AgentReplyResult | null>(null);
 	const [liveAgentEvents, setLiveAgentEvents] = useState<AgentEvent[]>([]);
@@ -59,7 +62,7 @@ export function useAssistantSession(
 					? previous.actions?.filter(item => item.confirmationId !== action.confirmationId)
 					: previous.actions?.map(item =>
 							item.confirmationId === action.confirmationId
-								? { ...item, status: status.status }
+								? { ...item, status: status.status, retryable: status.retryable }
 								: item
 						),
 				toolTrace:
@@ -85,7 +88,6 @@ export function useAssistantSession(
 		});
 	const checkAgentAction = (action: AgentAction) =>
 		actions.run(action, 'query', status => applyAgentStatus(action, status), {
-			retry: true,
 			error: '暂时无法查询操作状态'
 		});
 	const cancelAgentAction = (action: AgentAction) =>
@@ -136,66 +138,91 @@ export function useAssistantSession(
 			created_at: new Date()
 		};
 		setMessages(prev => [...prev, aiMsg]);
-		const reply = await generateReply(String(message.content), contextMessages, {
-			signal: streamAbort.current.signal,
-			room: curChatInfo!.room,
-			currentChatType: 'assistant',
-			currentReceiverId: curChatInfo!.receiver_id,
-			recentMessages: [...messages, userMsg],
-			memoryEnabled,
-			onDelta: text => {
-				if (activeAgentStream.current !== streamId) return;
-				hasTextDelta = true;
-				setMessages(prev =>
-					prev.map(item =>
-						item.clientMsgId === streamId ? { ...item, content: text || '正在思考…' } : item
-					)
-				);
-			},
-			onEvent: event => {
-				if (activeAgentStream.current !== streamId || !event.tool) return;
-				setLiveAgentEvents(prev => [...prev, event].slice(-40));
-				if (!hasTextDelta && event.type === 'tool_started') {
+		try {
+			const reply = await generateReply(String(message.content), contextMessages, {
+				throwOnError: true,
+				signal: streamAbort.current.signal,
+				room: curChatInfo!.room,
+				currentChatType: 'assistant',
+				currentReceiverId: curChatInfo!.receiver_id,
+				recentMessages: [...messages, userMsg],
+				memoryEnabled,
+				onDelta: text => {
+					if (activeAgentStream.current !== streamId) return;
+					hasTextDelta = true;
 					setMessages(prev =>
 						prev.map(item =>
-							item.clientMsgId === streamId
-								? { ...item, content: `正在调用工具：${event.tool}…` }
-								: item
+							item.clientMsgId === streamId ? { ...item, content: text || '正在思考…' } : item
 						)
 					);
+				},
+				onEvent: event => {
+					if (activeAgentStream.current !== streamId || !event.tool) return;
+					setLiveAgentEvents(prev => [...prev, event].slice(-40));
+					if (!hasTextDelta && event.type === 'tool_started') {
+						setMessages(prev =>
+							prev.map(item =>
+								item.clientMsgId === streamId
+									? { ...item, content: `正在调用工具：${event.tool}…` }
+									: item
+							)
+						);
+					}
 				}
+			});
+			if (activeAgentStream.current !== streamId) return;
+			const replyText = reply.text;
+			if (activeAgentStream.current === streamId) {
+				setAgentResult(reply);
+				setAgentStreaming(false);
+				if (reply.draftMessage || reply.actions?.some(action => action.requiresConfirmation))
+					setPanelOpen(true);
 			}
-		});
-		if (activeAgentStream.current !== streamId) return;
-		const replyText = reply.text;
-		if (activeAgentStream.current === streamId) {
-			setAgentResult(reply);
-			setAgentStreaming(false);
-			if (reply.draftMessage || reply.actions?.some(action => action.requiresConfirmation))
-				setPanelOpen(true);
+			setMessages(prev =>
+				prev.map(item => (item.clientMsgId === streamId ? { ...item, content: replyText } : item))
+			);
+			appendAiHistory({ ...aiMsg, content: replyText });
+			onPreview(curChatInfo.room, replyText);
+			activeAgentStream.current = undefined;
+		} catch (error) {
+			if (activeAgentStream.current !== streamId) return;
+			const reason = error instanceof Error ? error.message : 'AI 服务暂时不可用';
+			setMessages(prev =>
+				prev.map(item =>
+					item.clientMsgId === streamId
+						? {
+								...item,
+								status: 'failed',
+								failureReason: reason,
+								content: hasTextDelta
+									? item.content
+									: '本次没有生成可用回答，请重新发送问题。涉及写操作时，请先查询操作状态。'
+							}
+						: item
+				)
+			);
+			throw error;
+		} finally {
+			if (activeAgentStream.current === streamId) {
+				activeAgentStream.current = undefined;
+				setAgentStreaming(false);
+			}
 		}
-		setMessages(prev =>
-			prev.map(item => (item.clientMsgId === streamId ? { ...item, content: replyText } : item))
-		);
-		appendAiHistory({ ...aiMsg, content: replyText });
-		onPreview(curChatInfo.room, replyText);
-		activeAgentStream.current = undefined;
-
 		return;
 	};
 
 	const leave = useCallback(() => {
 		request.invalidate();
-		tasks.reset();
-		memory.reset();
-		actions.reset();
+		resetTasks();
+		resetMemory();
+		resetActions();
 		streamAbort.current?.abort();
 		activeAgentStream.current = undefined;
 		setAgentStreaming(false);
 		setLiveAgentEvents([]);
 		setAgentResult(null);
 		setPanelOpen(false);
-	}, [request, tasks.reset, memory.reset, actions.reset]);
+	}, [request, resetTasks, resetMemory, resetActions]);
 	const enter = () => {
 		leave();
 		setMessages(aiHistory);

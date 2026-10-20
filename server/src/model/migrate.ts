@@ -1,7 +1,5 @@
 import 'dotenv/config';
 
-process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
-
 let activeDb: { end: () => void } | undefined;
 
 const main = async () => {

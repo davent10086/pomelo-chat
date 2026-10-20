@@ -3,6 +3,25 @@ import { setup, login } from "./helpers/chat";
 
 test.setTimeout(30000);
 
+test('AI failure is marked explicitly and releases the stream lock for another question', async ({ page }) => {
+  const { api, a } = await setup();
+  let calls = 0;
+  await page.route('**/assistant/agent/stream', async route => {
+    if (++calls === 1) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 1008, message: 'injected model outage' }) });
+    else await route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ content: '服务恢复后的回答', actions: [] })}\n\ndata: [DONE]\n\n` });
+  });
+  try {
+    await login(page, a);
+    await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
+    const input = page.getByLabel('消息输入框');
+    await input.fill('第一次问题'); await input.press('Enter');
+    await expect(page.getByLabel(/生成失败/)).toBeVisible();
+    await input.fill('再试一次'); await input.press('Enter');
+    await expect(page.locator('[data-message-index]').getByText('服务恢复后的回答', { exact: true })).toBeVisible();
+    expect(calls).toBe(2);
+  } finally { await api.dispose(); }
+});
+
 test('accepted AI questions clear immediately and late completion preserves identical new drafts', async ({ page }) => {
   const { api, a } = await setup();
   let release!: () => void;

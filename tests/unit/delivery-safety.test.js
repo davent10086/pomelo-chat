@@ -41,6 +41,17 @@ function cleanRooms(t) {
   });
 }
 
+test('large-group fanout batches permission reads and still rejects revoked users', async t => {
+  cleanRooms(t);
+  let queries = 0;
+  patch(t, social, { findAccessibleGroupMembers: async (_room, ids) => { queries++; assert.equal(ids.length, 32); return ids.filter(id => id !== 32).map(user_id => ({ user_id })); },
+    findAccessibleGroupRoom: async () => { throw Error('must not perform per-recipient permission SQL'); } });
+  const sockets = Array.from({ length: 32 }, (_, index) => socket('batch-room', 'group', index + 1, index !== 30));
+  await delivery.sendLocalRoom('batch-room', { id: 1, room_seq: 1, sender_id: 100, content: 'batch' });
+  assert.equal(queries, 1); assert.equal(sockets.filter(ws => ws.frames.length).length, 30);
+  assert.equal(sockets[30].closeCode, 4001); assert.equal(sockets[31].closeCode, 4003);
+});
+
 test('ordinary local/foreign fanout rechecks group and private membership, before receipts', async t => {
   cleanRooms(t);
   let allowed = true;
@@ -93,7 +104,8 @@ test('late async fanout and equal-sequence retries do not regress a socket', asy
   await delivery.sendLocalRoom('ordered', { ...message, id: 2, room_seq: 2 });
   release(); await first;
   await delivery.sendLocalRoom('ordered', { ...message, id: 2, room_seq: 2 });
-  assert.deepEqual(ws.frames.map(frame => frame.room_seq), [2]);
+  assert.deepEqual(ws.frames.filter(frame => frame.room_seq).map(frame => frame.room_seq), [2]);
+  assert.deepEqual(ws.frames.filter(frame => frame.name === 'resync').map(frame => frame.fromSeq), [0], 'late lower sequence triggers recovery from before the gap');
 });
 
 function fakeOutbox(t) {

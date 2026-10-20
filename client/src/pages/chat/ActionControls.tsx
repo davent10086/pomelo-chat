@@ -16,6 +16,7 @@ interface ActionControlsProps {
 	confirmLabel: string;
 	queryLabel?: string;
 	canConfirm?: boolean;
+	retryable?: boolean;
 	showStatus?: boolean;
 	onConfirm: () => void;
 	onCancel: () => void;
@@ -26,8 +27,9 @@ export const ActionControls = ({
 	status,
 	busy,
 	confirmLabel,
-	queryLabel = '查询结果／重试',
+	queryLabel = '查询结果',
 	canConfirm = true,
+	retryable = false,
 	showStatus = false,
 	onConfirm,
 	onCancel,
@@ -38,6 +40,7 @@ export const ActionControls = ({
 	if (status === 'executing') return <div className={styles.actionControls}>
 		<span role="status">正在执行，请稍候…</span>
 		<Button size="small" onClick={onQuery} disabled={busy}>查询进度</Button>
+		{retryable && <Button size="small" onClick={onConfirm} disabled={busy}>重试执行</Button>}
 	</div>;
 	return (
 	<div className={styles.actionControls}>

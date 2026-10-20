@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws';
+import { verifyTokenWithSession, verifyTokensWithSessions } from '../identity/public';
 
 type SessionCheck = (token: string) => Promise<unknown>;
 const sockets = new Map<WebSocket, { username: string; token: string; verify: SessionCheck }>();
@@ -13,7 +14,20 @@ export const registerSessionSocket = (
 ): void => {
 	if (ws.readyState !== 1) return;
 	sockets.set(ws, { username, token, verify });
+	ws.on('pong', () => alive.set(ws, true));
 	ws.once('close', () => sockets.delete(ws));
+};
+const alive = new WeakMap<WebSocket, boolean>();
+export const validateSessionSockets = async (batch: WebSocket[]): Promise<Set<WebSocket>> => {
+	const allowed = new Set<WebSocket>();
+	const standard = batch.filter(ws => sockets.get(ws)?.verify === verifyTokenWithSession);
+	const results = await verifyTokensWithSessions(standard.map(ws => sockets.get(ws)!.token));
+	standard.forEach((ws, index) => {
+		if (results[index] && ws.readyState === 1) allowed.add(ws);
+		else if (ws.readyState < 2) ws.close(4001, 'session revoked');
+	});
+	await Promise.all(batch.filter(ws => !standard.includes(ws)).map(async ws => { if (await validateSessionSocket(ws)) allowed.add(ws); }));
+	return allowed;
 };
 
 export const validateSessionSocket = async (ws: WebSocket): Promise<boolean> => {
@@ -35,10 +49,13 @@ export const closeRevokedSockets = (username: string, currentToken?: string): vo
 export const startSessionChecks = () => {
 	if (timer) return;
 	timer = setInterval(() => {
-		for (const ws of sockets.keys())
+		for (const ws of sockets.keys()) {
+			if (alive.get(ws) === false) { ws.terminate(); continue; }
+			if (typeof ws.ping === 'function') { alive.set(ws, false); ws.ping(); }
 			void validateSessionSocket(ws).catch(() => {
 				if (ws.readyState < 2) ws.close(4001, 'session unavailable');
 			});
+		}
 	}, 15000);
 	timer.unref();
 };

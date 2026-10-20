@@ -26,7 +26,12 @@ export const createHttpHandlers = (
 		);
 	},
 	agentChat: async (req: Request, res: Response): Promise<void> => {
-		respond(res, await application.agentChat(req.user as Actor, req.body || {}));
+		const controller = new AbortController();
+		const close = () => controller.abort();
+		const deadline = setTimeout(() => controller.abort(), 120000);
+		res.once('close', close);
+		try { respond(res, await application.agentChat(req.user as Actor, req.body || {}, controller.signal)); }
+		finally { clearTimeout(deadline); res.removeListener('close', close); }
 	},
 	listAgentTools: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.listAgentTools(req.user as Actor));

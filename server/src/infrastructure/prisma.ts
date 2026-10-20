@@ -6,11 +6,12 @@ import type { SqlQuery } from '../shared/actor';
 // Prisma owns the business-query pool. mysql2 remains only for schema upgrades/test fixtures.
 const adapter = new PrismaMariaDb({
 	...databaseSettings,
-	connectionLimit: 10,
+	connectionLimit: databaseSettings.connectionLimit,
 	connectTimeout: 5000,
 	acquireTimeout: 5000,
 	socketTimeout: 10000,
 	foundRows: true
+	, initSql: "SET time_zone = '+08:00'"
 });
 /** Prisma encodes SQL wall-clock fields as UTC; mysql2 previously interpreted them as local. */
 export const encodeDatabaseValues = <T>(value: T): T => {

@@ -1,0 +1,49 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: pomelo_chat
+      MYSQL_USER: pomelo
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    volumes: [mysql_data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127.0.0.1 -uroot']
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  server:
+    build: {context: ., target: server}
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      DB_HOST: mysql
+      DB_USER: pomelo
+      DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      DB_NAME: pomelo_chat
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      TRUST_PROXY: uniquelocal
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes: [uploads:/data/uploads]
+    restart: unless-stopped
+  web:
+    build: {context: ., target: web}
+    ports: ['8080:80']
+    depends_on:
+      server: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  mysql_data:
+  redis_data:
+  uploads:

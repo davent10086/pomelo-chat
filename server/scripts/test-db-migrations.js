@@ -1,3 +1,9 @@
+process.env.NODE_ENV = 'test';
+// Validate before spawning ANY child that can initialize or mutate the database.
+require('dotenv').config({ path: require('node:path').join(__dirname, '../.env'), quiet: true });
+const testUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;
+if (!testUrl || !/(^|[_-])test([_-]|$)|[_-]test$/i.test(decodeURIComponent(new URL(testUrl).pathname.slice(1))))
+  throw new Error('DATABASE_URL_TEST must name an explicit test database');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');

@@ -27,10 +27,12 @@ import { CommonStatus, FileStatus } from '../../shared/status';
 import { isAllowedUploadMime, normalizeUploadMetadata } from '../../shared/file';
 import { better_chat } from '../../infrastructure/redis';
 import { uploadRoot } from '../../infrastructure/file-storage';
+import { boundedInteger } from '../../shared/validation';
+import { maxUploadBytes, reserveChunk, releaseUploadQuota, withUploadLease, admitUploadSession } from './upload-policy';
 
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
-const MAX_CHUNK_COUNT = Number(process.env.MAX_UPLOAD_CHUNKS || 100);
-const MAX_UPLOAD_SIZE = Number(process.env.MAX_UPLOAD_SIZE_BYTES || 100 * 1024 * 1024);
+const MAX_CHUNK_COUNT = boundedInteger('MAX_UPLOAD_CHUNKS', 100, 1, 1000);
+const MAX_UPLOAD_SIZE = maxUploadBytes;
 
 interface UploadSession {
 	totalCount: number;
@@ -47,12 +49,12 @@ const getUploadPaths = (userId: number | string, fileHash: unknown, extname: unk
 		uploadRoot,
 		String(userId),
 		metadata.suffix,
-		metadata.fileHash
+		`${metadata.fileHash}-${metadata.ext}`
 	);
 	return {
 		...metadata,
 		dirPath,
-		filePath: `${dirPath}.${metadata.ext}`,
+		filePath: join(uploadRoot, String(userId), metadata.suffix, `${metadata.fileHash}.${metadata.ext}`),
 		fileDBPath: `/uploads/${userId}/${metadata.suffix}/${metadata.fileHash}.${metadata.ext}`
 	};
 };
@@ -111,7 +113,7 @@ const registerFile = async (
 	]);
 };
 
-export const verifyFile = async (actor: Actor, parameters: VerifyFileInput): Promise<Outcome> => {
+const verifyFileUnlocked = async (actor: Actor, parameters: VerifyFileInput, assertLease: () => Promise<void>): Promise<Outcome> => {
 	const { fileHash, totalCount, extname } = parameters || {};
 	const paths = getUploadPaths(actor.id, fileHash, extname);
 	const count = Number(totalCount);
@@ -126,6 +128,10 @@ export const verifyFile = async (actor: Actor, parameters: VerifyFileInput): Pro
 			await registerFile(actor.id, paths);
 			return success({ neededFileList: [], filePath: paths.fileDBPath }, FileStatus.FILE_EXIST);
 		}
+		if (!(await admitUploadSession(String(actor.id), `${paths.fileHash}:${paths.ext}`))) return failure(FileStatus.FILE_TOO_LARGE);
+		await assertLease();
+		await fs.promises.mkdir(paths.dirPath, { recursive: true });
+		await fs.promises.writeFile(join(paths.dirPath, '.upload.json'), JSON.stringify({ ext: paths.ext }));
 		await repository.markFileUploading([actor.id, paths.fileHash, paths.ext]);
 		const key = uploadSessionKey(actor.id, paths.fileHash, paths.ext);
 		const candidate = JSON.stringify({ totalCount: count, uploadToken: randomUUID() });
@@ -147,6 +153,13 @@ export const verifyFile = async (actor: Actor, parameters: VerifyFileInput): Pro
 	}
 };
 
+export const verifyFile = async (actor: Actor, parameters: VerifyFileInput): Promise<Outcome> => {
+	const paths = getUploadPaths(actor.id, parameters?.fileHash, parameters?.extname);
+	if (!paths) return failure(CommonStatus.PARAM_ERR);
+	try { return await withUploadLease(uploadSessionKey(actor.id, paths.fileHash, paths.ext), assertLease => verifyFileUnlocked(actor, parameters, assertLease)); }
+	catch { return failure(CommonStatus.SERVER_ERR); }
+};
+
 /**
  * 上传文件块
  */
@@ -161,7 +174,7 @@ export const uploadChunk = async (actor: Actor, parameters: UploadChunkInput): P
 		!paths ||
 		!Number.isInteger(chunkIndex) ||
 		chunkIndex < 1 ||
-		!chunk ||
+		!Buffer.isBuffer(chunk) || chunk.length < 1 || chunk.length > 10 * 1024 * 1024 ||
 		!isAllowedUploadMime(parameters.mime)
 	) {
 		return failure(CommonStatus.PARAM_ERR);
@@ -172,6 +185,14 @@ export const uploadChunk = async (actor: Actor, parameters: UploadChunkInput): P
 	const chunkPath = join(dirPath, `chunk-${chunkIndex}`);
 
 	try {
+		return await withUploadLease(uploadSessionKey(actor.id, paths.fileHash, paths.ext), async assertLease => {
+			if (!(await readSession(actor.id, paths, parameters.uploadToken))) return failure(CommonStatus.PARAM_ERR);
+			await assertLease();
+			const previous = await reserveChunk(String(actor.id), `${paths.fileHash}:${paths.ext}`, chunkIndex, (chunk as Buffer).length);
+			if (previous < 0) return failure(FileStatus.FILE_TOO_LARGE);
+			let written = false;
+			const temporaryChunk = `${chunkPath}.part-${randomUUID()}`;
+			try {
 		const hasDir = await fs.promises
 			.access(dirPath)
 			.then(() => true)
@@ -181,9 +202,23 @@ export const uploadChunk = async (actor: Actor, parameters: UploadChunkInput): P
 			await fs.promises.mkdir(dirPath, { recursive: true });
 		}
 
-		await fs.promises.writeFile(chunkPath, chunk as Buffer);
+		await fs.promises.writeFile(temporaryChunk, chunk as Buffer);
+		await assertLease();
+		await fs.promises.rename(temporaryChunk, chunkPath);
+		written = true;
+		await better_chat.expire(uploadSessionKey(actor.id, paths.fileHash, paths.ext), UPLOAD_SESSION_TTL_SECONDS);
+		await admitUploadSession(String(actor.id), `${paths.fileHash}:${paths.ext}`);
 
 		return success();
+			} catch (error) {
+				await fs.promises.rm(temporaryChunk, { force: true }).catch(() => undefined);
+				// Once bytes are on disk their reservation remains, even if lease renewal fails.
+				if (!written) {
+					try { await assertLease(); await reserveChunk(String(actor.id), `${paths.fileHash}:${paths.ext}`, chunkIndex, previous); } catch { /* A new owner controls accounting; preserve the conservative reservation. */ }
+				}
+				throw error;
+			}
+		});
 	} catch {
 		return failure(CommonStatus.SERVER_ERR);
 	}
@@ -192,7 +227,7 @@ export const uploadChunk = async (actor: Actor, parameters: UploadChunkInput): P
 /**
  * 合并文件
  */
-export const mergeFile = async (actor: Actor, parameters: MergeFileInput): Promise<Outcome> => {
+const mergeFileUnlocked = async (actor: Actor, parameters: MergeFileInput, assertLease: () => Promise<void>): Promise<Outcome> => {
 	const { fileHash, extname } = parameters || {};
 	if (!fileHash || !extname) {
 		return failure(CommonStatus.PARAM_ERR);
@@ -230,7 +265,10 @@ export const mergeFile = async (actor: Actor, parameters: MergeFileInput): Promi
 			).every(Boolean)
 		)
 			throw new Error('incomplete upload chunks');
+		const sizes = await Promise.all(files.map(name => fs.promises.stat(join(dirPath, name))));
+		if (sizes.reduce((total, stat) => total + stat.size, 0) > MAX_UPLOAD_SIZE) return failure(FileStatus.FILE_TOO_LARGE);
 		for (let index = 1; index <= session.totalCount; index++) {
+			await assertLease();
 			await pipeline(
 				fs.createReadStream(join(dirPath, `chunk-${index}`)),
 				fs.createWriteStream(tempPath, { flags: index === 1 ? 'w' : 'a' })
@@ -241,6 +279,7 @@ export const mergeFile = async (actor: Actor, parameters: MergeFileInput): Promi
 		const algorithm = paths.fileHash.length === 64 ? 'sha256' : 'md5';
 		if ((await hashFile(tempPath, algorithm)) !== paths.fileHash)
 			throw new Error('upload checksum mismatch');
+		await assertLease();
 		await fs.promises.rename(tempPath, filePath);
 	} catch {
 		await fs.promises.rm(tempPath, { force: true }).catch(() => undefined);
@@ -250,16 +289,27 @@ export const mergeFile = async (actor: Actor, parameters: MergeFileInput): Promi
 	}
 
 	try {
+		await assertLease();
 		await registerFile(actor.id, paths);
 	} catch (err) {
 		console.error('[file] metadata write failed:', err);
 		return failure(CommonStatus.SERVER_ERR);
 	}
+	await assertLease();
 	await removeDir(dirPath);
+	await releaseUploadQuota(String(actor.id), `${paths.fileHash}:${paths.ext}`);
 	await better_chat
 		.del(uploadSessionKey(actor.id, paths.fileHash, paths.ext))
 		.catch(err => console.error('[file] session cleanup:', err));
 	return success({ message: '文件合并成功', filePath: fileDBPath });
+};
+
+export const mergeFile = async (actor: Actor, parameters: MergeFileInput): Promise<Outcome> => {
+	const paths = getUploadPaths(actor.id, parameters?.fileHash, parameters?.extname);
+	if (!paths) return failure(CommonStatus.PARAM_ERR);
+	try {
+		return await withUploadLease(uploadSessionKey(actor.id, paths.fileHash, paths.ext), assertLease => mergeFileUnlocked(actor, parameters, assertLease));
+	} catch { return failure(CommonStatus.SERVER_ERR); }
 };
 
 /**

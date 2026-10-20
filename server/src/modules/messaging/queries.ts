@@ -2,6 +2,7 @@ import * as repository from './repository';
 import * as readModel from '../../read-models/messaging';
 import { withTransaction } from '../../infrastructure/database-query';
 import { formatBytes } from '../../shared/format';
+import { formatTimestamp } from '../../shared/time';
 import { authorizeChatRoom } from '../social/public';
 import {
 	HISTORY_PAGE_SIZE,
@@ -23,7 +24,7 @@ export const formatHistoryMessages = (rows: HistoryMessageRow[]) =>
 		avatar: item.avatar,
 		type: item.media_type,
 		file_size: formatBytes(item.file_size),
-		created_at: new Date(item.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+		created_at: formatTimestamp(item.created_at)
 	}));
 
 export const fetchHistoryMessages = async (
@@ -50,29 +51,33 @@ export const fetchHistoryMessages = async (
 	);
 	const hasCursor = Number.isInteger(beforeId) && Number(beforeId) > 0;
 	if (Number.isSafeInteger(afterSeq) && Number(afterSeq) >= 0) {
-		const rows = await readModel.listHistoryAfterSequence<HistoryMessageRow[]>([
+		const page = await readModel.listHistoryAfterSequence<HistoryMessageRow[]>([
 			room,
 			type,
 			afterSeq,
-			safeLimit
+			safeLimit + 1
 		]);
+		const rows = page.slice(0, safeLimit);
 		return {
 			authorized,
 			peerReadSeq,
 			messages: formatHistoryMessages(rows),
-			hasMore: rows.length === safeLimit,
-			nextBeforeId: rows[0]?.id
+			hasMore: page.length > safeLimit,
+			nextBeforeId: rows[0]?.id,
+			nextAfterSeq: rows.length ? Number(rows[rows.length - 1].room_seq) : afterSeq
 		};
 	}
 
-	const params = hasCursor ? [room, type, beforeId, safeLimit] : [room, type, safeLimit];
-	const rows = await readModel.listHistoryBeforeId<HistoryMessageRow[]>(params, { hasCursor });
+	const params = hasCursor ? [room, type, beforeId, safeLimit + 1] : [room, type, safeLimit + 1];
+	const page = await readModel.listHistoryBeforeId<HistoryMessageRow[]>(params, { hasCursor });
+	const rows = page.slice(Math.max(0, page.length - safeLimit));
 	return {
 		authorized,
 		peerReadSeq,
 		messages: formatHistoryMessages(rows),
-		hasMore: rows.length === safeLimit,
-		nextBeforeId: rows[0]?.id
+		hasMore: page.length > safeLimit,
+		nextBeforeId: rows[0]?.id,
+		nextAfterSeq: undefined
 	};
 };
 

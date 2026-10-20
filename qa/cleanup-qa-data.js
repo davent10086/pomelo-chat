@@ -33,7 +33,7 @@ const cleanupRedis = async () => {
     do {
       const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', `${redisKeyPrefix}*`, 'COUNT', 100);
       cursor = nextCursor;
-      if (keys.length) await redis.unlink(...keys);
+      if (keys.length) await redis.del(...keys);
     } while (cursor !== '0');
   } finally {
     redis.disconnect();

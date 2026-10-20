@@ -15,6 +15,7 @@ export function useNormalConversation(
 ) {
 	const session = useChatSocket({ onError });
 	const history = useHistoryView(room, type, onError);
+	const { locate: locateHistory, reset: resetHistory } = history;
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [bottomState, setBottomState] = useState<{ room?: string; type?: string; value: boolean }>({
 		value: false
@@ -30,8 +31,8 @@ export function useNormalConversation(
 		return leaveConversation;
 	}, [room, type, userId, openConversation, leaveConversation]);
 	useEffect(() => {
-		if (room && sourceId) void history.locate(sourceId);
-	}, [room, sourceId, history.locate]);
+		if (room && sourceId) void locateHistory(sourceId);
+	}, [room, sourceId, locateHistory]);
 	const messages = useMemo(
 		() =>
 			mergeMessages(session.historyMsg, session.newMessage).filter(
@@ -79,10 +80,10 @@ export function useNormalConversation(
 	);
 	const leave = useCallback(() => {
 		leaveConversation();
-		history.reset();
+		resetHistory();
 		setSearchOpen(false);
 		setBottomState({ value: false });
-	}, [leaveConversation, history.reset]);
+	}, [leaveConversation, resetHistory]);
 	return {
 		messages,
 		historyMsg: displayHistory,

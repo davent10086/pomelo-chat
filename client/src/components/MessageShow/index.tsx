@@ -22,7 +22,7 @@ import {
 	getMediaSize,
 	urlExists
 } from '@/utils/File';
-import { getAuthorizedMediaURL } from '@/utils/media-url';
+import { getAuthorizedMediaURL, useAuthorizedMediaURL } from '@/utils/media-url';
 import { userStorage } from '@/utils/storage';
 import { formatChatContentTime } from '@/utils/time';
 
@@ -55,20 +55,24 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 	const [curMediaInfo, setCurMediaInfo] = useState<IMediaInfo | null>(null);
 	const [isVideoPlay, setIsVideoPlay] = useState(false);
 	const [isFileExist, setIsFileExist] = useState(true);
+	const mediaURL = useAuthorizedMediaURL(messageType === 'text' ? '' : messageContent);
 
 	useEffect(() => {
-		if (messageType !== 'text') {
-			urlExists(getAuthorizedMediaURL(messageContent)).then(res => {
-				if (!res) setIsFileExist(false);
+		let active = true;
+		setIsFileExist(true);
+		setCurMediaInfo(null);
+		if (messageType !== 'text' && mediaURL) {
+			urlExists(mediaURL).then(res => {
+				if (active) setIsFileExist(res);
 			});
 		}
-		if (messageType === 'image' || messageType === 'video') {
-			const mediaURL = getAuthorizedMediaURL(messageContent);
+		if (mediaURL && (messageType === 'image' || messageType === 'video')) {
 			getMediaSize(mediaURL, messageType)
-				.then(size => setCurMediaInfo({ type: messageType, url: mediaURL, size }))
+				.then(size => { if (active) setCurMediaInfo({ type: messageType, url: mediaURL, size }); })
 				.catch(() => undefined);
 		}
-	}, [messageType, messageContent]);
+		return () => { active = false; };
+	}, [messageType, messageContent, mediaURL]);
 
 	if (!isFileExist) return <ChatContentPocket />;
 
@@ -89,7 +93,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 			return curMediaInfo ? (
 				<div className={styles.content_video}>
 					<video
-						src={getAuthorizedMediaURL(messageContent)}
+						src={mediaURL}
 						muted
 						style={{ width: getMediaShowSize(curMediaInfo.size, 'video').width }}
 					/>
@@ -110,7 +114,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 						width={800}
 					>
 						<video
-							src={getAuthorizedMediaURL(messageContent)}
+							src={mediaURL}
 							muted
 							controls
 							autoPlay
@@ -129,7 +133,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 					onClick={() => {
 						if (window.pomeloDesktop) void window.pomeloDesktop.downloadFile(messageContent, fileName || undefined)
 							.catch(() => antdMessage.error('下载失败，请重试'));
-						else void downloadFile(getAuthorizedMediaURL(messageContent), fileName || undefined).catch(() => antdMessage.error('下载失败，请重试'));
+						else void getAuthorizedMediaURL(messageContent).then(url => downloadFile(url, fileName || undefined)).catch(() => antdMessage.error('下载失败，请重试'));
 					}}
 					aria-label={`下载文件 ${fileName || getFileName(messageContent)}`}
 				>
@@ -155,6 +159,8 @@ const MessageShow = (props: IMessageShowProps) => {
 	const isSelf = sender_id === user.id;
 
 	const statusMeta = (() => {
+		if (sender_id === 0 && status === 'failed')
+			return { text: `生成失败：${message.failureReason || '请重试'}`, icon: <CloseCircleOutlined /> };
 		if (!isSelf) return null;
 		if (status === 'failed')
 			return { text: message.failureReason || '发送失败', icon: <CloseCircleOutlined /> };
@@ -253,6 +259,7 @@ const MessageShow = (props: IMessageShowProps) => {
 					<div className={styles.message_bubble_wrap}>
 						{moreActions}
 						<ChatContent messageType={type} messageContent={content} fileSize={file_size} fileName={message.file_name || message.fileName} />
+						{statusMeta && <span role="status" aria-label={statusMeta.text} className={`${styles.message_status} ${styles.status_failed}`}>{statusMeta.icon}{statusMeta.text}</span>}
 					</div>
 				</div>
 			)}

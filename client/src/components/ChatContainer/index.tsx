@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import styles from './index.module.less';
 import { IChatContainerProps } from './type';
@@ -79,14 +79,14 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return () => observer.disconnect();
 	}, [allMessages, visibleRange]);
 	// M6: 累计高度计算（基于测量值或估算值）
-	const getCumulativeHeight = (index: number) => {
+	const getCumulativeHeight = useCallback((index: number) => {
 		let total = 0;
 		for (let i = 0; i < Math.min(index, allMessages.length); i++) {
 			total +=
 				measuredHeights.current.get(getMessageKey(allMessages[i], i)) || ESTIMATE_ITEM_HEIGHT;
 		}
 		return total;
-	};
+	}, [allMessages]);
 
 	const getTotalHeight = () => {
 		return getCumulativeHeight(allMessages.length);
@@ -131,7 +131,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 			cancelAnimationFrame(frame);
 			cancelAnimationFrame(innerFrame);
 		};
-	}, [focusMessageId, layoutVersion, allMessages]);
+	}, [focusMessageId, layoutVersion, allMessages, getCumulativeHeight]);
 
 	useLayoutEffect(() => {
 		const container = chatContainerRef.current;
@@ -155,7 +155,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 					getCumulativeHeight(index) +
 					anchor.current.offset;
 		}
-	}, [allMessages, focusMessageId]);
+	}, [allMessages, focusMessageId, getCumulativeHeight]);
 
 	// 计算可见范围（M6: 动态高度）
 	useEffect(() => {
@@ -212,7 +212,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 		return () => {
 			container.removeEventListener('scroll', handleScroll);
 		};
-	}, [allMessages.length, layoutVersion]);
+	}, [allMessages, layoutVersion]);
 
 	// M5: 消息列表变更时清理缓存，避免跨会话污染与内存泄漏
 	useEffect(() => {
@@ -262,7 +262,7 @@ const ChatContainer = (props: IChatContainerProps) => {
 				});
 			}
 		}
-	}, [newMsg, followNew]);
+	}, [newMsg, followNew, focusMessageId, allMessages.length, visibleRange.end]);
 
 	const renderMessage = (message: IMessageItem, index: number) => {
 		const cacheKey = getMessageKey(message, index);

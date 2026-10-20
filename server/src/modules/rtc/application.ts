@@ -27,13 +27,41 @@ export const createRtcApplication = (dependencies: {
 	calls: RtcCalls;
 	notifyUser: (data: NotificationData) => Promise<void>;
 }) => {
-	const { createCall, getCall, transitionCall } = dependencies.calls;
+	const { createCall, getCall, getRoomCall, transitionCall } = dependencies.calls;
 	const NotificationUser = dependencies.notifyUser;
 	type ChatType = 'private' | 'group';
 	const MAX_PARTICIPANTS = 20;
 
 	const isChatType = (value: unknown): value is ChatType =>
 		value === 'private' || value === 'group';
+	const currentCall = async (actor: Actor): Promise<Outcome> => {
+		try {
+			const id = await better_chat.get(`rtc:busy:${actor.username}`);
+			const state = id ? await getCall(id) : null;
+			if (
+				!state ||
+				state.status === 'ended' ||
+				state.members[actor.username] !== 'invited' ||
+				state.ringUntil <= Date.now()
+			)
+				return success({ call: null });
+			if (!(await authorizeChatRoom(actor.id, state.room, state.type)))
+				return failure(CommonStatus.UNAUTHORIZED);
+			const recipients = await getRecipients(actor.id, state.room, state.type);
+			return success({
+				call: {
+					callId: state.id,
+					room: state.room,
+					mode: state.mode,
+					callReceiverList: recipients.filter(
+						item => item.username in state.members && state.members[item.username] !== 'left'
+					)
+				}
+			});
+		} catch {
+			return failure(CommonStatus.CONNECTION_ERR);
+		}
+	};
 	const createJoinToken = async (
 		actor: Actor,
 		parameters: CreateJoinTokenInput
@@ -80,7 +108,21 @@ export const createRtcApplication = (dependencies: {
 				return failure(CommonStatus.UNAUTHORIZED);
 			if (!(await better_chat.get(`presence:${actor.username}`)))
 				return failure(CommonStatus.CONNECTION_ERR);
-			const recipients = (await getRecipients(actor.id, room, type)).slice(0, MAX_PARTICIPANTS - 1);
+			const recipients = await getRecipients(actor.id, room, type);
+			const ongoing = type === 'group' ? await getRoomCall(type, room) : null;
+			if (
+				ongoing?.status === 'active' &&
+				ongoing.mode === mode &&
+				ongoing.members[actor.username] === 'left'
+			) {
+				const resumed = await transitionCall(ongoing.id, actor.username, 'rejoin');
+				if (!resumed || resumed.status !== 'active') return failure(CommonStatus.NOT_FOUND);
+				return success({
+					callId: resumed.id,
+					recipients: recipients.filter(item => resumed.members[item.username] === 'joined'),
+					expiresAt: resumed.expiresAt
+				});
+			}
 			const candidates = await Promise.all(
 				recipients.map(async item => ({
 					item,
@@ -88,7 +130,10 @@ export const createRtcApplication = (dependencies: {
 					busy: !!(await better_chat.get(`rtc:busy:${item.username}`))
 				}))
 			);
-			const online = candidates.filter(c => c.online && !c.busy).map(c => c.item);
+			const online = candidates
+				.filter(c => c.online && !c.busy)
+				.slice(0, MAX_PARTICIPANTS - 1)
+				.map(c => c.item);
 			if (!online.length) return failure(CommonStatus.NOT_FOUND);
 			const state = await createCall(
 				room,
@@ -119,7 +164,12 @@ export const createRtcApplication = (dependencies: {
 	};
 	const acceptCall = async (actor: Actor, parameters: AcceptCallInput): Promise<Outcome> => {
 		try {
-			const state = await transitionCall(String(parameters.callId || ''), actor.username, 'accept');
+			const existing =
+				typeof parameters.callId === 'string' ? await getCall(parameters.callId) : null;
+			if (!existing) return failure(CommonStatus.NOT_FOUND);
+			if (!(await authorizeChatRoom(actor.id, existing.room, existing.type)))
+				return failure(CommonStatus.UNAUTHORIZED);
+			const state = await transitionCall(existing.id, actor.username, 'accept');
 			if (!state || state.status === 'ended') return failure(CommonStatus.NOT_FOUND);
 			if (!(await authorizeChatRoom(actor.id, state.room, state.type))) {
 				await transitionCall(state.id, actor.username, 'leave');
@@ -140,5 +190,5 @@ export const createRtcApplication = (dependencies: {
 			return failure(CommonStatus.UNAUTHORIZED);
 		}
 	};
-	return { createJoinToken, invite, acceptCall, endCall };
+	return { createJoinToken, invite, acceptCall, endCall, currentCall };
 };

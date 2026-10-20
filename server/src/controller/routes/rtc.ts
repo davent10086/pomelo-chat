@@ -5,6 +5,7 @@ import { authenticateToken } from '../../modules/identity/middleware';
 const router = Router();
 
 export default () => {
+	router.get('/current', authenticateToken, rtc.currentCall);
 	router.post('/join-token', authenticateToken, rtc.createJoinToken);
 	router.post('/invite', authenticateToken, rtc.invite);
 	router.post('/accept', authenticateToken, rtc.acceptCall);

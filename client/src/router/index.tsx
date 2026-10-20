@@ -1,5 +1,5 @@
 import { Spin } from 'antd';
-import { Suspense, useMemo } from 'react';
+import { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { IRouter, router } from './config';
@@ -47,9 +47,7 @@ const RouteRender = () => {
 	};
 
 	// 使用 useMemo 来记忆化 router 映射的结果，避免每次渲染都重新计算
-	const routes = useMemo(() => {
-		return routeRender(router);
-	}, [router]);
+	const routes = routeRender(router);
 
 	return <Routes>{routes}</Routes>;
 };

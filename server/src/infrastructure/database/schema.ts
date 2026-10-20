@@ -45,7 +45,7 @@ const messageTableSQL = () => `
   CREATE TABLE IF NOT EXISTS message (
     id int(11) NOT NULL AUTO_INCREMENT,
     conversation_id int(11) NULL,
-    client_msg_id VARCHAR(64) NULL,
+    client_msg_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
     room_seq BIGINT NOT NULL DEFAULT 0,
     sender_id int(11) NOT NULL,
     receiver_id int(11) NOT NULL,
@@ -62,6 +62,7 @@ const messageTableSQL = () => `
     INDEX idx_message_room_created (room, created_at),
     INDEX idx_message_receiver_status (receiver_id, status, room),
     INDEX idx_message_conversation_seq (conversation_id, room_seq),
+    INDEX idx_message_room_type_seq (room, type, room_seq),
     FOREIGN KEY (sender_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE
   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 `;
@@ -230,7 +231,7 @@ const messageAttachmentTableSQL = () => `CREATE TABLE IF NOT EXISTS message_atta
 		) ENGINE=InnoDB`;
 const messageOutboxTableSQL = () => `CREATE TABLE IF NOT EXISTS message_outbox (
 		 message_id INT NOT NULL PRIMARY KEY, conversation_id INT NOT NULL, attempts INT NOT NULL DEFAULT 0,
-		 next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at DATETIME NULL,
+		 next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at DATETIME NULL, failed_at DATETIME NULL,
 		 INDEX idx_outbox_pending(delivered_at, next_attempt_at),
 		 INDEX idx_outbox_room_pending(conversation_id, delivered_at, message_id),
 		 FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE

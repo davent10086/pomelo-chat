@@ -1,7 +1,9 @@
 import type { Request, Response } from 'express';
 import { respond } from '../../infrastructure/http-outcome';
 import type { Actor } from '../../shared/actor';
+import { prepareMediaAccess } from './media-access';
 export const createHttpHandlers = (application: typeof import('./application')) => ({
+	mediaAccess: async (req: Request, res: Response): Promise<void> => { respond(res, await prepareMediaAccess(req.user as Actor, req.body?.path, req.headers.authorization)); },
 	verifyFile: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.verifyFile(req.user as Actor, req.body || {}));
 	},

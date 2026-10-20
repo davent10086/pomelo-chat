@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { boundedInteger } from '../shared/validation';
+import { DATABASE_TIME_ZONE } from '../shared/time';
 
 /**
  * 1、读取 MySQL 数据库配置
@@ -8,12 +10,14 @@ import * as path from 'path';
  * L4: 配置读取加 try/catch 保护
  */
 let host = process.env.DB_HOST || '127.0.0.1';
-let port = parseInt(process.env.DB_PORT || '3306', 10);
+let port = boundedInteger('DB_PORT', 3306, 1, 65535);
 let user = process.env.DB_USER || 'root';
 let password = process.env.DB_PASSWORD || '';
 let database = process.env.DB_NAME || 'pomelo-chat';
 const testDatabaseUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;
 const connectionUrl = testDatabaseUrl || process.env.DATABASE_URL;
+let ssl: { rejectUnauthorized: boolean } | undefined;
+let connectionLimit = 10;
 
 /** Test databases must be unmistakably named so an accidental test run cannot write production data. */
 export const assertTestDatabaseTarget = (databaseName: string): void => {
@@ -28,8 +32,16 @@ if (connectionUrl) {
 	try {
 		const parsed = new URL(connectionUrl);
 		if (parsed.protocol !== 'mysql:') throw new Error('Expected mysql URL');
-		if (parsed.search || parsed.hash || parsed.pathname.length < 2)
-			throw new Error('Only basic MySQL URLs with a database name are supported');
+		if (parsed.hash || parsed.pathname.length < 2) throw new Error('Expected a database name');
+		for (const key of parsed.searchParams.keys()) if (!['ssl-mode', 'connection_limit'].includes(key)) throw new Error('Unsupported URL option');
+		const sslMode = parsed.searchParams.get('ssl-mode');
+		if (sslMode && !['REQUIRED', 'VERIFY_IDENTITY'].includes(sslMode)) throw new Error('Unsupported TLS mode');
+		if (sslMode) ssl = { rejectUnauthorized: true };
+		const limit = parsed.searchParams.get('connection_limit');
+		if (limit !== null) {
+			if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100) throw new Error('Invalid connection_limit');
+			connectionLimit = Number(limit);
+		}
 		host = parsed.hostname;
 		port = Number(parsed.port || 3306);
 		user = decodeURIComponent(parsed.username);
@@ -37,7 +49,7 @@ if (connectionUrl) {
 		database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
 	} catch {
 		throw new Error(
-			'Database URL must be a mysql URL with a database name and no query/fragment options'
+			'Database URL must be mysql:// with a database name; supported options: ssl-mode=REQUIRED|VERIFY_IDENTITY, connection_limit=1..100'
 		);
 	}
 }
@@ -63,7 +75,10 @@ if (configPath) {
 	}
 }
 
-export const databaseSettings = { host, port, user, password, database };
+if (!Number.isSafeInteger(port) || port < 1 || port > 65535 || !host || !user || !database) throw new Error('Invalid database configuration');
+if (process.env.NODE_ENV === 'production' && !connectionUrl && (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_NAME || process.env.DB_PASSWORD === undefined))
+	throw new Error('Production requires DATABASE_URL or explicit DB_HOST/DB_USER/DB_PASSWORD/DB_NAME');
+export const databaseSettings = { host, port, user, password, database, ssl, connectionLimit, timezone: DATABASE_TIME_ZONE };
 export const databaseUrl = (() => {
 	const url = new URL('mysql://localhost');
 	url.hostname = host;

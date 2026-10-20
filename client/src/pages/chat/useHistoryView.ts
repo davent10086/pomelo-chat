@@ -20,6 +20,7 @@ export const useHistoryView = (
 	const [loading, setLoading] = useState(false);
 	const controller = useRef<AbortController>();
 	const revision = useRef(0);
+	const invalidate = useCallback(() => { revision.current++; controller.current?.abort(); }, []);
 	const reset = useCallback(() => {
 		revision.current++;
 		controller.current?.abort();
@@ -28,11 +29,8 @@ export const useHistoryView = (
 	}, []);
 	useEffect(() => {
 		reset();
-		return () => {
-			revision.current++;
-			controller.current?.abort();
-		};
-	}, [room, type, reset]);
+		return invalidate;
+	}, [room, type, reset, invalidate]);
 	const locate = useCallback(
 		async (messageId: number) => {
 			if (!room) return;

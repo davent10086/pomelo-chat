@@ -100,6 +100,7 @@ export const initializeDatabase = async (
 			['message_original_file_name', 'ALTER TABLE message ADD COLUMN file_name VARCHAR(255) NULL'],
 			['outbox_claim_token', 'ALTER TABLE message_outbox ADD COLUMN claim_token VARCHAR(36) NULL'],
 			['outbox_lease_until', 'ALTER TABLE message_outbox ADD COLUMN lease_until DATETIME NULL'],
+			['outbox_failed_at', 'ALTER TABLE message_outbox ADD COLUMN failed_at DATETIME NULL'],
 			[
 				'message_add_conversation_id',
 				'ALTER TABLE message ADD COLUMN conversation_id INT(11) NULL AFTER id'
@@ -117,6 +118,7 @@ export const initializeDatabase = async (
 				'ALTER TABLE message ADD INDEX idx_message_room_type_id (room, type, id)'
 			],
 			['message_idx_room_id', 'ALTER TABLE message ADD INDEX idx_message_room_id (room, id)'],
+			['message_idx_room_type_seq', 'ALTER TABLE message ADD INDEX idx_message_room_type_seq (room, type, room_seq)'],
 			[
 				'message_idx_room_created',
 				'ALTER TABLE message ADD INDEX idx_message_room_created (room, created_at)'
@@ -133,6 +135,7 @@ export const initializeDatabase = async (
 				'message_uniq_client',
 				'ALTER TABLE message ADD UNIQUE KEY uniq_message_client (sender_id, client_msg_id)'
 			],
+			['message_client_id_binary_v1', 'ALTER TABLE message MODIFY COLUMN client_msg_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL'],
 			[
 				'message_statistics_dedupe_room',
 				'DELETE ms1 FROM message_statistics ms1 INNER JOIN message_statistics ms2 ON ms1.room = ms2.room AND ms1.id > ms2.id'

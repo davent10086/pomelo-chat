@@ -4,6 +4,9 @@ import type { Actor } from '../../shared/actor';
 export const createHttpHandlers = (
 	application: ReturnType<typeof import('./application').createRtcApplication>
 ) => ({
+	currentCall: async (req: Request, res: Response): Promise<void> => {
+		respond(res, await application.currentCall(req.user as Actor));
+	},
 	createJoinToken: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.createJoinToken(req.user as Actor, req.body || {}));
 	},

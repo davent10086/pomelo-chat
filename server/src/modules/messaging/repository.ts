@@ -1,5 +1,10 @@
 import { Query } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
+import { boundedInteger } from '../../shared/validation';
+const maxOutboxAttempts = boundedInteger('MESSAGE_OUTBOX_MAX_ATTEMPTS', 30, 1, 1000);
+export const requeueFailedOutbox = (id: number): Promise<{ affectedRows: number }> => Query('UPDATE message_outbox SET failed_at = NULL, attempts = 0, next_attempt_at = NOW(), claim_token = NULL, lease_until = NULL WHERE message_id = ? AND failed_at IS NOT NULL AND delivered_at IS NULL', [id]);
+export const pruneDeliveredOutbox = (days: number): Promise<unknown> => Query('DELETE FROM message_outbox WHERE delivered_at < DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1000', [days]);
+export const countFailedOutbox = (): Promise<Array<{ total: number }>> => Query('SELECT COUNT(*) AS total FROM message_outbox WHERE delivered_at IS NULL AND failed_at IS NOT NULL');
 export const claimOutboxRows = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
@@ -35,8 +40,10 @@ export const retryOutboxClaim = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		`UPDATE message_outbox SET attempts = attempts + 1,
+		`UPDATE message_outbox SET
 				 next_attempt_at = DATE_ADD(NOW(), INTERVAL LEAST(60, POW(2, LEAST(attempts, 6))) SECOND),
+				 attempts = attempts + 1,
+				 failed_at = CASE WHEN attempts >= ${maxOutboxAttempts} THEN NOW() ELSE NULL END,
 				 claim_token = NULL, lease_until = NULL WHERE message_id = ? AND claim_token = ?`,
 		bindings
 	);
@@ -186,7 +193,7 @@ export const lockAvailableOutboxHead = <T = unknown>(
 		// Drive from the pending range, never from the unbounded message history.
 		// The predecessor check includes leased/backing-off heads to preserve room order.
 		`SELECT o.message_id FROM message_outbox o FORCE INDEX (idx_outbox_pending)
-						 WHERE o.delivered_at IS NULL AND o.next_attempt_at <= NOW()
+						 WHERE o.delivered_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= NOW()
 						 AND (o.lease_until IS NULL OR o.lease_until <= NOW())
 						 AND NOT EXISTS (
 						   SELECT 1 FROM message_outbox previous FORCE INDEX (idx_outbox_room_pending)

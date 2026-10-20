@@ -1,7 +1,8 @@
 import * as repository from './repository';
 import { randomUUID } from 'crypto';
 import { withTransaction } from '../../infrastructure/database-query';
-import { countMessageMetric } from '../../infrastructure/message-metrics';
+import { countMessageMetric, setMessageGauge } from '../../infrastructure/message-metrics';
+import { boundedInteger } from '../../shared/validation';
 import type { OutboxDeliveryContext } from './contracts';
 
 const LEASE_SECONDS = 60;
@@ -29,6 +30,7 @@ export class MessageOutboxWorker {
 	private active = false;
 	private inFlight?: Promise<void>;
 	private requested = false;
+	private nextMaintenance = Date.now() + 60000;
 	private timer?: ReturnType<typeof setInterval>;
 	private readonly controllers = new Set<AbortController>();
 	private readonly deliveryTimeoutMs: number;
@@ -73,6 +75,13 @@ export class MessageOutboxWorker {
 	}
 
 	private async drain(): Promise<void> {
+		if (Date.now() >= this.nextMaintenance) {
+			this.nextMaintenance = Date.now() + 60000;
+			try {
+				await repository.pruneDeliveredOutbox(boundedInteger('MESSAGE_OUTBOX_RETENTION_DAYS', 7));
+				setMessageGauge('pomelo_outbox_failed', Number((await repository.countFailedOutbox())[0]?.total || 0));
+			} catch (error) { console.error('[message:outbox] maintenance:', error); }
+		}
 		await Promise.all(Array.from({ length: CONCURRENCY }, () => this.drainLane()));
 	}
 

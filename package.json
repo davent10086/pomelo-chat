@@ -9,6 +9,8 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
+    "test:full:server": "node server/scripts/run-isolated-tests.js all",
+    "test:full:browser": "node server/scripts/run-isolated-tests.js browser",
     "start": "pnpm --filter pomelo-chat-server start",
     "dev:client": "pnpm --filter pomelo-chat-client dev",
     "dev:server": "pnpm --filter pomelo-chat-server start",

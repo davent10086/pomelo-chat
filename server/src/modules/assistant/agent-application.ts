@@ -28,7 +28,7 @@ import { createPendingAction } from './actions';
 import { pomeloToolDefinitions, executePomeloTool } from './tools/pomelo-tools';
 import type { Actor } from '../../shared/actor';
 import { success, failure, type Outcome } from '../../shared/outcome';
-export const agentChat = async (actor: Actor, parameters: AgentChatInput): Promise<Outcome> => {
+export const agentChat = async (actor: Actor, parameters: AgentChatInput, signal?: AbortSignal): Promise<Outcome> => {
 	const { input, room, context } = parameters || {};
 	if (!input || typeof input !== 'string' || input.length > MAX_INPUT_LENGTH) {
 		return failure(
@@ -49,7 +49,7 @@ export const agentChat = async (actor: Actor, parameters: AgentChatInput): Promi
 			return failure(CommonStatus.TOKEN_ERR);
 		}
 		const request = normalizeAgentRequest(room, context);
-		const result = await runLangChainAgent(userId, input, request.room, request.context);
+		const result = await runLangChainAgent(userId, input, request.room, request.context, undefined, signal ?? AbortSignal.timeout(120000));
 		return success(result);
 	} catch (caught: unknown) {
 		const err = caught instanceof Error ? caught : new Error(String(caught));

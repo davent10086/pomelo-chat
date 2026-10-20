@@ -13,7 +13,7 @@ export const formatBytes = (bytes: number, decimals = 2): string => {
 // 时间转换
 export const formatDate = (timestamp: number | string | Date): string => {
 	const utcDate = new Date(timestamp);
-	return utcDate.toLocaleDateString('zh-CN', {
+	return utcDate.toLocaleString('zh-CN', {
 		timeZone: 'Asia/Shanghai',
 		dateStyle: 'full',
 		timeStyle: 'medium',

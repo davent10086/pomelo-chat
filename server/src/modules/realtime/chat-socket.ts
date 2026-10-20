@@ -58,13 +58,13 @@ const normalizeClientMsgId = (value: unknown): string | null => {
 	return /^[a-zA-Z0-9_-]{8,64}$/.test(text) ? text : null;
 };
 
-const getWsToken = (req: Request, params: URLSearchParams): string => {
+const getWsToken = (req: Request): string => {
 	const protocols = String(req.headers['sec-websocket-protocol'] || '')
 		.split(',')
 		.map(item => item.trim())
 		.filter(Boolean);
 	const protocolToken = protocols.find(item => item !== 'pomelo-token');
-	return protocolToken || params.get('token') || '';
+	return protocolToken || '';
 };
 
 export const connectChat = async (ws: WebSocket, req: Request): Promise<void> => {
@@ -86,7 +86,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 	const room = params.get('room') || '';
 	const id = params.get('id') || '';
 	const type = params.get('type') || '';
-	const token = getWsToken(req, params);
+	const token = getWsToken(req);
 	const decoded = await verifyTokenWithSession(token);
 	if (!decoded || String(decoded.id) !== String(id)) {
 		sendFrame(ws, { name: 'error', message: 'unauthorized' });
@@ -105,6 +105,7 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 			ws.close(4003, 'forbidden');
 			return;
 		}
+		if (ws.readyState !== 1) return;
 		ChatRooms[room] ||= {};
 		const socketKey = `${id}:${Math.random().toString(36).slice(2)}`;
 		ChatRooms[room][socketKey] = { ws, userId: decoded.id as UserId, type };
@@ -131,6 +132,10 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 				}
 				const mediaType = isMediaType(message.type) ? message.type : 'text';
 				const clientMsgId = normalizeClientMsgId(message.clientMsgId);
+				if (message.clientMsgId !== undefined && message.clientMsgId !== null && !clientMsgId) {
+					sendFrame(ws, { name: 'error', client_msg_id: message.clientMsgId, message: '无效的消息标识，已停止重试' });
+					return;
+				}
 				const fileName = mediaType === 'text' ? null : normalizeFileName(message.fileName);
 				const outbound = await enqueueRoomWrite(room, async () => {
 					if (

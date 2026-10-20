@@ -95,9 +95,7 @@ export const writeAndSend = async (
 		id: saved.row.id,
 		client_msg_id: saved.row.client_msg_id,
 		room_seq: Number(saved.row.room_seq || saved.row.id),
-		created_at: new Date(saved.row.created_at).toLocaleString('zh-CN', {
-			timeZone: 'Asia/Shanghai'
-		}),
+		created_at: formatTimestamp(saved.row.created_at),
 		file_size: formatBytes(saved.row.file_size)
 	};
 
@@ -151,3 +149,4 @@ export const sendConfirmedTextMessage = async (
 		);
 	});
 };
+import { formatTimestamp } from '../../shared/time';

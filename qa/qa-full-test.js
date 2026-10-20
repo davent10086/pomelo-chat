@@ -96,10 +96,10 @@ const makeUser = async suffix => {
 const flattenFriends = groups => (groups || []).flatMap(group => group.friend || []);
 
 const wsConnect = async ({ room, userId, type, token, expectOpen = true, timeoutMs = 8000 }) => {
-  const url = `${WS_BASE}/message/connect_chat?room=${encodeURIComponent(room)}&id=${encodeURIComponent(userId)}&type=${encodeURIComponent(type)}&token=${encodeURIComponent(token)}`;
+  const url = `${WS_BASE}/message/connect_chat?room=${encodeURIComponent(room)}&id=${encodeURIComponent(userId)}&type=${encodeURIComponent(type)}`;
   const messages = [];
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, ['pomelo-token', token]);
     ws.setMaxListeners(0);
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
@@ -258,7 +258,7 @@ const percentile = (arr, p) => {
   record('group create validates members array', invalidGroupCreate.body?.code === 1003 ? 'pass' : 'fail', { body: invalidGroupCreate.body });
 
   const missingGroupInfo = await get('/group/group_info?group_id=99999999', users.new_a.token);
-  record('missing group lookup avoids 500', [1002, 1007].includes(missingGroupInfo.body?.code) ? 'pass' : 'fail', { body: missingGroupInfo.body });
+  record('missing group lookup preserves the login session', [1006, 1007].includes(missingGroupInfo.body?.code) ? 'pass' : 'fail', { body: missingGroupInfo.body });
 
   if (group?.id) {
     const invitation = {

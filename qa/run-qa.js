@@ -25,6 +25,10 @@ const env = {
   QA_RUN_ID: runId,
   QA_RESULTS_DIR: artifactDir,
   PORT: '3100',
+  MESSAGE_ROOM_QUEUE_MAX: '128',
+  API_RATE_LIMIT_MAX: '10000',
+  AUTH_IP_RATE_LIMIT_MAX: '10000',
+  AUTH_ACCOUNT_RATE_LIMIT_MAX: '10000',
   QA_API_BASE: 'http://127.0.0.1:3100/api/chat/v1',
   QA_WS_BASE: 'ws://127.0.0.1:3100/api/chat/v1'
 };

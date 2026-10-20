@@ -15,9 +15,8 @@ interface RateLimitOptions {
 const defaultKey = (req: Request): string => {
 	const userId = req.user?.id;
 	if (userId !== undefined && userId !== null) return `user:${userId}`;
-	const forwarded = req.headers['x-forwarded-for'];
-	const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
-	return `ip:${forwardedIp || req.socket.remoteAddress || 'unknown'}`;
+	// Express resolves req.ip using the explicit trust-proxy configuration only.
+	return `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`;
 };
 
 export const createRateLimiter = (options: RateLimitOptions): RequestHandler => {

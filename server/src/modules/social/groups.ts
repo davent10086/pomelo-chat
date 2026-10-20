@@ -33,6 +33,7 @@ import { CommonStatus, GroupStatus } from '../../shared/status';
 import { withTransaction } from '../../infrastructure/database-query';
 import { parseSearchPage, escapeSearchTerm } from '../../shared/search-page';
 import { assertOwnedAvatar } from '../files/public';
+import { positiveId } from '../../shared/validation';
 export const createGroupApplication = (dependencies: SocialEffects) => {
 	const { notifyUser: NotificationUser, initializeGroupMessage: persistMessage } = dependencies;
 	interface GroupMemberRow {
@@ -154,6 +155,8 @@ export const createGroupApplication = (dependencies: SocialEffects) => {
 		if (
 			typeof groupInfo.name !== 'string' ||
 			!groupInfo.name.trim() ||
+			groupInfo.name.length > 50 ||
+			(groupInfo.announcement !== null && groupInfo.announcement !== undefined && (typeof groupInfo.announcement !== 'string' || groupInfo.announcement.length > 5000)) ||
 			!Array.isArray(groupInfo.members)
 		) {
 			return failure(CommonStatus.PARAM_ERR);
@@ -245,13 +248,13 @@ export const createGroupApplication = (dependencies: SocialEffects) => {
 		actor: Actor,
 		parameters: GetGroupChatInfoInput
 	): Promise<Outcome> => {
-		const group_id = typeof parameters.group_id === 'string' ? parameters.group_id : undefined;
+		const group_id = positiveId(parameters.group_id);
 		if (!group_id) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {
 			if (!(await canAccessGroup(actor.id, group_id))) {
-				return failure(CommonStatus.TOKEN_ERR);
+				return failure(CommonStatus.UNAUTHORIZED);
 			}
 
 			const results_group = await readModel.findGroupWithCreator<GroupInfoRow[]>([group_id]);
@@ -285,12 +288,12 @@ export const createGroupApplication = (dependencies: SocialEffects) => {
 		parameters: InviteFriendToGroupChatInput
 	): Promise<Outcome> => {
 		const { groupId, invitationList } = parameters || {};
-		if (!(groupId && Array.isArray(invitationList) && invitationList.length)) {
+		if (!(positiveId(groupId) && Array.isArray(invitationList) && invitationList.length)) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {
 			if (!(await canAccessGroup(actor.id, groupId as number | string))) {
-				return failure(CommonStatus.TOKEN_ERR);
+				return failure(CommonStatus.UNAUTHORIZED);
 			}
 			const invitations = await validateInvitees(actor.id, invitationList);
 			if (!invitations) return failure(CommonStatus.PARAM_ERR);
@@ -383,14 +386,14 @@ export const createGroupApplication = (dependencies: SocialEffects) => {
 		actor: Actor,
 		parameters: GetGroupMemberListInput
 	): Promise<Outcome> => {
-		const group_id = typeof parameters.group_id === 'string' ? parameters.group_id : undefined;
+		const group_id = positiveId(parameters.group_id);
 		const room = typeof parameters.room === 'string' ? parameters.room : undefined;
 		if (!(group_id && room)) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {
 			if (!(await canAccessGroup(actor.id, group_id))) {
-				return failure(CommonStatus.TOKEN_ERR);
+				return failure(CommonStatus.UNAUTHORIZED);
 			}
 			const group = await repository.findGroupRoom<GroupRoomRow[]>([group_id]);
 			if (!group.length || group[0].room !== room) {

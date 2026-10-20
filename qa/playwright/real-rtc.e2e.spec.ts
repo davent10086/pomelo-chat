@@ -56,6 +56,8 @@ for (const mode of ['audio', 'video'] as const) {
       await page.getByRole('button', { name: mode === 'audio' ? '语音聊天' : '视频聊天', exact: true }).click();
       expect((await invited).ok()).toBeTruthy();
       await expect(peer.getByAltText('接听')).toBeVisible();
+      await peer.reload();
+      await expect(peer.getByAltText('接听')).toBeVisible();
       const accepted = peer.waitForResponse(response => response.url().endsWith('/rtc/accept'));
       await peer.getByAltText('接听').click();
       expect((await accepted).ok()).toBeTruthy();

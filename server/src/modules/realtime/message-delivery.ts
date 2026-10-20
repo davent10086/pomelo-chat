@@ -1,8 +1,8 @@
 import * as readModel from '../../read-models/realtime';
 import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
-import { validateSessionSocket } from './session-sockets';
-import { authorizeChatRoom } from '../social/public';
+import { validateSessionSocket, validateSessionSockets } from './session-sockets';
+import { authorizeChatRoom, authorizedGroupMembers } from '../social/public';
 import { NotificationUser } from './notification';
 import { sendSocketFrame } from './socket-send';
 import { fanoutPublisher, publishFanout } from './fanout-publisher';
@@ -47,17 +47,29 @@ export const sendLocalRoom = async (
 	persistedAt?: number,
 	checkActive: () => void = () => undefined
 ): Promise<void> => {
+	const subscriptions = Object.entries(ChatRooms[room] || {});
+	let members: Set<string> | undefined, sessions: Set<WebSocket> | undefined;
+	if (subscriptions.length >= 16 && subscriptions.every(([, item]) => item.type === 'group')) {
+		try {
+			checkActive();
+			[members, sessions] = await Promise.all([authorizedGroupMembers(room, subscriptions.map(([, item]) => item.userId)), validateSessionSockets(subscriptions.map(([, item]) => item.ws))]);
+			checkActive();
+		} catch {
+			for (const [, { ws }] of subscriptions) if (ws.readyState < 2) ws.close(1013, 'room authorization unavailable');
+			return;
+		}
+	}
 	await forEachConcurrent(
-		Object.entries(ChatRooms[room] || {}),
+		subscriptions,
 		16,
 		async ([key, subscription]) => {
 			const { ws, userId, type } = subscription;
 			try {
 				checkActive();
-				if (!(await validateSessionSocket(ws))) return;
+				if (sessions ? !sessions.has(ws) : !(await validateSessionSocket(ws))) return;
 				checkActive();
 				if ('name' in message && type !== 'private') return;
-				if (!(await authorizeChatRoom(userId, room, type))) {
+				if (members ? !members.has(String(userId)) : !(await authorizeChatRoom(userId, room, type))) {
 					if (ChatRooms[room]?.[key] === subscription) {
 						delete ChatRooms[room][key];
 						if (!Object.keys(ChatRooms[room]).length) delete ChatRooms[room];
@@ -68,7 +80,13 @@ export const sendLocalRoom = async (
 				checkActive();
 				if (ws.readyState !== 1) return;
 				const sequence = !('name' in message) ? message.room_seq : undefined;
-				if (sequence !== undefined && sequence <= (lastDeliveredSequence.get(ws) || 0)) return;
+				const previous = lastDeliveredSequence.get(ws);
+				if (sequence !== undefined && previous !== undefined && sequence <= previous) {
+					if (sequence < previous) sendFrame(ws, { name: 'resync', fromSeq: Math.max(0, sequence - 1) });
+					return;
+				}
+				if (sequence !== undefined && previous !== undefined && sequence > previous + 1)
+					sendFrame(ws, { name: 'resync', fromSeq: previous });
 				const receipt =
 					!('name' in message) && message.id && String(message.sender_id) !== String(userId)
 						? trackDelivery(ws, persistedAt)
@@ -148,7 +166,7 @@ export const startMessageDelivery = async () => {
 		const outbound = formatHistoryMessages(rows)[0];
 		const persistedAt = new Date(row.created_at).getTime();
 		await context.assertLease();
-		if (!(await publishRoomMessage(row.room, outbound, persistedAt))) return;
+		if (!(await publishRoomMessage(row.room, outbound, persistedAt))) throw new Error('Fanout sequence rejected; message remains pending');
 		await context.assertLease();
 		await sendLocalRoom(row.room, outbound, persistedAt, context.checkActive);
 		await context.assertLease();

@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const expressWs = require('express-ws');
 
-process.env.POMELO_SKIP_AUTO_DB_INIT = 'true';
 const appModule = require('../src/controller/app');
 const { better_chat } = require('../src/infrastructure/redis');
 

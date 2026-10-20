@@ -177,6 +177,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 							messages?: IMessageItem[];
 							hasMore?: boolean;
 							nextBeforeId?: number;
+							fromSeq?: number;
 							client_msg_id?: string;
 							id?: number;
 							room_seq?: number;
@@ -248,7 +249,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 								/* Reconnect history will restore the persisted cursor. */
 							}
 						}
-						await catchUp(recoveryCursor ?? lastSequence.current);
+						await catchUp(Number.isSafeInteger(message.fromSeq) && Number(message.fromSeq) >= 0 ? Math.min(Number(message.fromSeq), lastSequence.current) : recoveryCursor ?? lastSequence.current);
 						return;
 					}
 					if (message.name === 'ack' && message.client_msg_id) {
@@ -325,7 +326,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 			window.removeEventListener('pomelo-token-changed', handler);
 			window.removeEventListener('pomelo-logout', closeSocket);
 		};
-	}, [connect]);
+	}, [connect, closeSocket]);
 	const send = useCallback(async (message: ISendMessage) => {
 		if (!queue.current) throw new Error('消息连接尚未初始化');
 		return queue.current.enqueue(message);

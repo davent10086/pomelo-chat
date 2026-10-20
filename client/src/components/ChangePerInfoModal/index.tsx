@@ -66,7 +66,7 @@ const ChangePerInfoModal = (props: IChangePerInfoModalProps) => {
 			phone: user.phone,
 			signature: user.signature && user.signature !== '' ? user.signature : '暂无个性签名'
 		});
-	}, []);
+	}, [changePerInfoFormInstance, user.avatar, user.name, user.phone, user.signature]);
 
 	return (
 		<>

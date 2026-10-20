@@ -12,8 +12,9 @@ const db = mysql.createPool({
 	...databaseSettings,
 	multipleStatements: false, // 关闭：防止 SQL 注入时堆叠执行破坏性语句
 	charset: 'utf8mb4',
-	connectionLimit: 10
+	connectionLimit: databaseSettings.connectionLimit
 });
+db.on('connection', connection => { connection.query("SET time_zone = '+08:00'"); });
 
 export const initDatabase = (): Promise<void> =>
 	initializeDatabase(db, assertSafeTestDatabaseConfiguration);

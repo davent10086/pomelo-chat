@@ -10,6 +10,7 @@ const router = Router();
  * @returns 配置好的router对象
  */
 export default () => {
+	router.post('/media_access', authenticateToken, file.mediaAccess);
 	// 验证文件路由：验证文件是否存在或完整性
 	router.post('/verify_file', authenticateToken, file.verifyFile);
 

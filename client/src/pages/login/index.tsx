@@ -138,7 +138,7 @@ const Login = () => {
 				setIsRemember(false);
 			}
 		});
-	}, []);
+	}, [loginFormInstance]);
 
 	// 控制修改密码的弹窗显隐
 	const handleForgetModal = (visible: boolean) => {

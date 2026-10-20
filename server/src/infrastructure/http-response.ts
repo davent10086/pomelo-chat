@@ -14,7 +14,7 @@ const respHttp = (res: Response, respCode: number, data?: unknown): void => {
 		message: 'success'
 	};
 	resp.code = respCode;
-	resp.data = data || '';
+	resp.data = data ?? '';
 	resp.message = StatusMap[respCode] || 'success';
 	const httpStatus =
 		respCode === SUCCESS_CODE || respCode === 6001 || respCode === 6002
@@ -27,7 +27,7 @@ const respHttp = (res: Response, respCode: number, data?: unknown): void => {
 						? 403
 						: respCode === 1007
 							? 404
-							: respCode === 1001
+								: respCode === 8004 ? 504 : respCode === 1008 ? 503 : respCode === 6003 ? 413 : respCode === 1001
 								? 500
 								: 400;
 	res.status(httpStatus).json(resp);

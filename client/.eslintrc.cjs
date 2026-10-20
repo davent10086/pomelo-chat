@@ -18,6 +18,8 @@ module.exports = {
 	},
 	plugins: ['react', 'react-hooks', '@typescript-eslint', 'import'],
 	rules: {
+		'react-hooks/rules-of-hooks': 'error',
+		'react-hooks/exhaustive-deps': 'error',
 		'@typescript-eslint/no-unused-vars': 'off',
 		'@typescript-eslint/no-non-null-assertion': 'off',
 		'no-console': 'off',

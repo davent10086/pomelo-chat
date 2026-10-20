@@ -74,7 +74,7 @@ response.flushHeaders = () => {};
 response.write = chunk => { chunks.push(chunk); return true; };
 response.end = () => { response.writableEnded = true; };
 
-agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnabled: false } } }, response)
+agentStream({ user: { id: 1 }, body: { input: '准备消息草稿并打招呼', context: { memoryEnabled: false } } }, response)
 	.then(async () => {
 		const output = chunks.join('');
 		assert.match(output, /event: delta\ndata: \{"delta":"你好","reset":false\}/);
@@ -121,6 +121,10 @@ agentStream({ user: { id: 1 }, body: { input: '打招呼', context: { memoryEnab
         const longReply = await agentChat({ id: 1 }, { input: 'x'.repeat(1000), context: { memoryEnabled: true } });
         assert.equal(longReply.code, 200);
         assert.equal(memoryQueries.at(-1).length, 120, 'preload must respect the memory query contract');
+        const plain = new EventEmitter(); plain.setHeader = () => {}; plain.flushHeaders = () => {}; plain.write = () => {}; plain.end = () => { plain.writableEnded = true; };
+        await agentStream({ user: { id: 1 }, body: { input: '你好', context: { memoryEnabled: false } } }, plain);
+        assert.equal(metadataExtractions, 1, 'ordinary conversation must not issue a second metadata model request');
+        assert.equal(modelOptions[0].maxTokens, 4096, 'every model invocation has an output budget');
         console.log('[agent-stream-test] all assertions passed');
 		process.exit(0);
 	})

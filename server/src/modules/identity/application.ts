@@ -29,6 +29,10 @@ import { success, failure, type Outcome } from '../../shared/outcome';
 import type { Actor } from '../../shared/actor';
 import { withTransaction } from '../../infrastructure/database-query';
 import { assertOwnedAvatar } from '../files/public';
+import { formatTimestamp } from '../../shared/time';
+import { consumeRateLimit } from '../../infrastructure/rate-counter';
+import { boundedInteger } from '../../shared/validation';
+import { AssistantStatus } from '../../shared/status';
 export const createIdentityApplication = (dependencies: {
 	releaseUserCall: (username: string) => Promise<void>;
 	notifySessionChanged: (username: string, token?: string) => Promise<void>;
@@ -74,9 +78,7 @@ export const createIdentityApplication = (dependencies: {
 		username: user.username,
 		name: user.name,
 		phone: user.phone,
-		created_at: new Date(user.created_at ?? 0)
-			.toLocaleString('zh-CN', { hour12: false })
-			.replace(/\//g, '-'),
+		created_at: formatTimestamp(user.created_at ?? 0),
 		signature: user.signature
 	});
 	const {
@@ -101,6 +103,7 @@ export const createIdentityApplication = (dependencies: {
 		if (
 			typeof username !== 'string' ||
 			!username.trim() ||
+			username.length > 50 ||
 			typeof password !== 'string' ||
 			!password ||
 			Buffer.byteLength(password) > 72
@@ -113,6 +116,9 @@ export const createIdentityApplication = (dependencies: {
 				return failure(AuthStatus.USER_OR_PASS_ERR);
 			}
 			const user: UserRow = results[0];
+			// MySQL collation aliases must share a bucket based on the stored account ID.
+			if (!(await consumeRateLimit(`auth:account:${user.id}`, boundedInteger('AUTH_ACCOUNT_RATE_LIMIT_MAX', 10), 300, 'reject')))
+				return failure(AssistantStatus.RATE_LIMIT_ERR);
 			// 校验密码：兼容 bcrypt 与旧 MD5
 			let passwordOk = false;
 			let needUpgrade = false;
@@ -258,7 +264,9 @@ export const createIdentityApplication = (dependencies: {
 	const updateInfo = async (actor: Actor, parameters: UpdateInfoInput): Promise<Outcome> => {
 		const { avatar, name, phone, signature } = parameters || {};
 		const username = actor?.username;
-		if (!username || !phone) {
+		if (!username || typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone) ||
+			(name !== undefined && (typeof name !== 'string' || name.length > 255)) ||
+			(signature !== undefined && (typeof signature !== 'string' || signature.length > 5000))) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {

@@ -1,5 +1,7 @@
 import { Query } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
+export const pruneExpiredActions = (): Promise<unknown> => Query("DELETE FROM assistant_action WHERE expires_at < DATE_SUB(NOW(), INTERVAL 30 DAY) AND status <> 'executing' LIMIT 1000");
+export const pruneAuditLogs = (): Promise<unknown> => Query('DELETE FROM mcp_audit_log WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 1000');
 export const findOwnedAction = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
@@ -90,7 +92,7 @@ export const completeAction = <T = unknown>(
 	executor: SqlQuery = Query
 ): Promise<T> => {
 	return executor<T>(
-		`UPDATE assistant_action SET status = 'completed', result = ?, lease_until = NULL WHERE id = ? AND user_id = ?`,
+		`UPDATE assistant_action SET status = 'completed', result = ?, lease_until = NULL WHERE id = ? AND user_id = ? AND status = 'executing'`,
 		bindings
 	);
 };

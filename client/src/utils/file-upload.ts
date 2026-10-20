@@ -10,7 +10,7 @@ interface IUploadFileRes {
 
 // 文件分片上传接口请求参数
 interface IUploadChunkParams {
-	chunk: ArrayBuffer;
+	chunk: Blob;
 	chunkIndex: number;
 	fileHash: string;
 	extname: string;
@@ -29,15 +29,17 @@ async function runWithConcurrency<T>(
 ): Promise<T[]> {
 	const results: T[] = [];
 	let index = 0;
+	let stopped = false;
+	let failure: unknown;
 	const workers: Promise<void>[] = [];
 	const runNext = async (): Promise<void> => {
-		while (index < tasks.length) {
+		while (!stopped && index < tasks.length) {
 			const currentIndex = index++;
 			try {
 				results[currentIndex] = await tasks[currentIndex]();
 			} catch (err) {
-				// 抛出让外层捕获
-				throw err;
+				stopped = true;
+				failure = err;
 			}
 		}
 	};
@@ -45,6 +47,7 @@ async function runWithConcurrency<T>(
 		workers.push(runNext());
 	}
 	await Promise.all(workers);
+	if (stopped) throw failure;
 	return results;
 }
 
@@ -59,10 +62,12 @@ export async function uploadFile(
 	retryDelay?: number,
 	progress_cb?: (progress: number) => void
 ): Promise<IUploadFileRes> {
-	if (file.size <= 0 || file.size > 100 * 1024 * 1024) throw new Error('文件大小需在 1B 到 100MB 之间');
-	if (!Number.isFinite(baseChunkSize) || baseChunkSize < 1 || baseChunkSize > 10) throw new Error('分片大小无效');
+	if (file.size <= 0 || file.size > 100 * 1024 * 1024)
+		throw new Error('文件大小需在 1B 到 100MB 之间');
+	if (!Number.isFinite(baseChunkSize) || baseChunkSize < 1 || baseChunkSize > 10)
+		throw new Error('分片大小无效');
+	const chunkSize = Math.floor(baseChunkSize * 1024 * 1024);
 	return new Promise((resolve, reject) => {
-		const chunkList: ArrayBuffer[] = [];
 		let fileHash = '';
 		// 创建文件分片Worker
 		const sliceFileWorker = new Worker(new URL('./slice-md5-worker.ts', import.meta.url), {
@@ -81,12 +86,13 @@ export async function uploadFile(
 		sliceFileWorker.onmessage = async e => {
 			switch (e.data.messageType) {
 				case 'success':
-					chunkList.push(...e.data.chunks);
 					fileHash = e.data.fileHash;
 					try {
 						const result = await handleFile(
 							file,
-							chunkList,
+							Array.from({ length: Math.ceil(file.size / chunkSize) }, (_, index) =>
+								file.slice(index * chunkSize, (index + 1) * chunkSize)
+							),
 							fileHash,
 							maxRetries,
 							retryDelay,
@@ -100,9 +106,6 @@ export async function uploadFile(
 						const err = error as { message?: string };
 						finalize(() => reject({ success: false, message: err.message || '上传失败' }));
 					}
-					break;
-				case 'progress':
-					chunkList.push(...e.data.chunks);
 					break;
 				case 'fail':
 					finalize(() => reject({ success: false, message: '文件分片处理出错' }));
@@ -127,7 +130,7 @@ const getExtname = (filename: string): string => {
 
 async function handleFile(
 	file: File,
-	chunkList: ArrayBuffer[],
+	chunkList: Blob[],
 	fileHash: string,
 	maxRetries?: number,
 	retryDelay?: number,
@@ -153,15 +156,19 @@ async function handleFile(
 			try {
 				const mergeRes = await mergeFile(mergeParams);
 				if (mergeRes.code === HttpStatus.SUCCESS) {
-					return { success: true, filePath: mergeRes.data.filePath, message: mergeRes.data.message || '' };
+					return {
+						success: true,
+						filePath: mergeRes.data.filePath,
+						message: mergeRes.data.message || ''
+					};
 				}
 				throw new Error('文件合并失败');
 			} catch {
 				throw new Error('文件合并失败');
 			}
 		} else if (res.code === HttpStatus.SUCCESS) {
-		const { neededFileList, message } = res.data;
-		if (!responseUploadToken) throw new Error('上传会话无效');
+			const { neededFileList, message } = res.data;
+			if (!responseUploadToken) throw new Error('上传会话无效');
 			uploadToken = responseUploadToken;
 			if (!neededFileList.length) {
 				return { success: true, filePath: res.data.filePath, message: message || '' };
@@ -181,7 +188,7 @@ async function handleFile(
 	}
 
 	// M9: 使用并发池限制分片上传并发数
-	const tasks: (() => Promise<void>)[] = allChunkList.map((chunk: ArrayBuffer, index: number) => {
+	const tasks: (() => Promise<void>)[] = allChunkList.map((chunk: Blob, index: number) => {
 		return async () => {
 			if (neededChunkList.includes(index + 1)) {
 				const params = { chunk, chunkIndex: index + 1, fileHash, extname, uploadToken };
@@ -203,7 +210,11 @@ async function handleFile(
 		const params = { fileHash, extname, uploadToken };
 		const mergeRes = await mergeFile(params);
 		if (mergeRes.code === HttpStatus.SUCCESS) {
-			return { success: true, filePath: mergeRes.data.filePath, message: mergeRes.data.message || '' };
+			return {
+				success: true,
+				filePath: mergeRes.data.filePath,
+				message: mergeRes.data.message || ''
+			};
 		}
 		throw new Error('文件合并失败');
 	} catch (error: unknown) {
@@ -226,7 +237,9 @@ const uploadChunkWithRetry = async (
 				return res;
 			}
 			throw new Error('分片上传失败');
-		} catch {
+		} catch (error) {
+			const status = (error as { status?: number }).status;
+			if (status && status >= 400 && status < 500 && status !== 429) throw error;
 			retries++;
 			if (retries >= maxRetries) {
 				throw new Error('分片上传失败');

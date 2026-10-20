@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Select } from 'antd';
 import request from '@/utils/request';
 import styles from './index.module.less';
@@ -46,6 +46,7 @@ export default function MessageSearch({
 		senderId,
 		mediaType
 	});
+	const invalidate = useCallback(() => { revision.current++; abort.current?.abort(); }, []);
 	useEffect(() => {
 		revision.current++;
 		abort.current?.abort();
@@ -53,11 +54,8 @@ export default function MessageSearch({
 		setHasMore(false);
 		setError('');
 		setLoading(false);
-		return () => {
-			revision.current++;
-			abort.current?.abort();
-		};
-	}, [filters]);
+		return invalidate;
+	}, [filters, invalidate]);
 	const search = async (more = false) => {
 		abort.current?.abort();
 		abort.current = new AbortController();

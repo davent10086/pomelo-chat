@@ -5,6 +5,7 @@ interface ViteEnv {
 	VITE_WS_BASE?: string;
 	VITE_SERVER_URL?: string;
 	VITE_SERVER_PORT?: string;
+	VITE_SAME_ORIGIN?: string;
 }
 
 // 获取 Vite 环境变量，兼容不同环境下的访问方式
@@ -27,13 +28,13 @@ const proto = isBrowser ? window.location.protocol : 'http:';
 const host = isBrowser ? window.location.hostname : '127.0.0.1';
 
 // 确定 WebSocket 协议类型，HTTPS 对应 WSS，HTTP 对应 WS
-const wsProto = proto === 'https:' ? 'wss:' : 'ws:';
+const origin = viteEnv.VITE_SAME_ORIGIN === 'true' && isBrowser ? window.location.origin : `${proto}//${host}:${DEFAULT_PORT}`;
 
 // 服务端接口的 baseURL
-export const apiBaseURL = desktopServer ? `${desktopServer}/api/chat/v1` : ENV_API || `${proto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
+export const apiBaseURL = desktopServer ? `${desktopServer}/api/chat/v1` : ENV_API || `${origin}/api/chat/v1`;
 
 // 建立 websocket 的 baseURL
-export const wsBaseURL = desktopServer ? `${desktopServer.replace(/^http/, 'ws')}/api/chat/v1` : ENV_WS || `${wsProto}//${host}:${DEFAULT_PORT}/api/chat/v1`;
+export const wsBaseURL = desktopServer ? `${desktopServer.replace(/^http/, 'ws')}/api/chat/v1` : ENV_WS || `${origin.replace(/^http/, 'ws')}/api/chat/v1`;
 
 // 服务器的地址 URL
-export const serverURL = desktopServer || ENV_SERVER || `${proto}//${host}:${DEFAULT_PORT}`;
+export const serverURL = desktopServer || ENV_SERVER || origin;

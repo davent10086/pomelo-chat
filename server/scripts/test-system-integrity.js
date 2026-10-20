@@ -103,13 +103,13 @@ const send = async (
 	await initDatabase();
 	const initialEndListeners = better_chat.listenerCount('end');
 	await Promise.all([startBackgroundServices(), startBackgroundServices()]);
-	assert.equal(activeTimers.size, 5, 'exactly one session, call, outbox, pressure and receipt timer');
+	assert.equal(activeTimers.size, 7, 'exactly one session, call, outbox, pressure, receipt, upload and retention timer');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners + 3);
 	await Promise.all([stopBackgroundServices(), stopBackgroundServices()]);
 	assert.equal(activeTimers.size, 0, 'shutdown removes every periodic worker');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners, 'shutdown removes subscription listeners');
 	await startBackgroundServices();
-	assert.equal(activeTimers.size, 5, 'runtime can restart without duplicate workers');
+	assert.equal(activeTimers.size, 7, 'runtime can restart without duplicate workers');
 	server.listen(0, '127.0.0.1');
 	await once(server, 'listening');
 	base = `http://127.0.0.1:${server.address().port}`;
@@ -414,10 +414,10 @@ const send = async (
 		50
 	);
 	const na = await frameSocket(
-		`${wsBase}/auth/user_channel?username=${a.username}&token=${encodeURIComponent(a.token)}`
+		`${wsBase}/auth/user_channel?username=${a.username}`, a.token
 	);
 	const nb = await frameSocket(
-		`${wsBase}/auth/user_channel?username=${b.username}&token=${encodeURIComponent(b.token)}`
+		`${wsBase}/auth/user_channel?username=${b.username}`, b.token
 	);
 	await eventually(() => better_chat.get(`presence:${b.username}`));
 	const invited = await request(
@@ -520,7 +520,7 @@ const send = async (
 	await send(ownerSocket, 'private secret after revocation');
 	await eventually(() => removedSocket.ws.readyState === WebSocket.CLOSED);
 	assert.equal(removedSocket.frames.some(frame => frame.content === 'private secret after revocation'), false);
-	assert.equal((await request(`/message/history?room=${privateRoom}&type=private`, undefined, removed.token)).status, 401);
+	assert.equal((await request(`/message/history?room=${privateRoom}&type=private`, undefined, removed.token)).status, 403);
 	assert.equal(await better_chat.get(`token:${removed.username}`), removed.token, 'room revocation leaves login valid');
 	await request('/group/create_group', { name: 'revocation group', members: [{ user_id: removed.id, username: removed.username }] }, roomOwner.token);
 	const revokedGroup = (await Query('SELECT * FROM group_chat WHERE creator_id = ?', [roomOwner.id]))[0];
@@ -597,7 +597,7 @@ async function verifyServerShutdown(user) {
 	const deadline = setTimeout(() => child.kill(), 20000);
 	try {
 		const [ready] = await Promise.race([once(child, 'message'), exited.then(() => { throw new Error(`Server exited before startup: ${errorLog}`); })]);
-		const notification = await frameSocket(`ws://127.0.0.1:${ready.port}/api/chat/v1/auth/user_channel?username=${encodeURIComponent(user.username)}&token=${encodeURIComponent(user.token)}`);
+		const notification = await frameSocket(`ws://127.0.0.1:${ready.port}/api/chat/v1/auth/user_channel?username=${encodeURIComponent(user.username)}`, user.token);
 		await eventually(() => better_chat.get(`presence:${user.username}`));
 		child.send('shutdown');
 		const [code, signal] = await exited;

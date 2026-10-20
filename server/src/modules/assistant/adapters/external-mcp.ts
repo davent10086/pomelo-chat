@@ -2,6 +2,7 @@ import * as repository from '../repository';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import {
 	StdioClientTransport,
+	getDefaultEnvironment,
 	type StdioServerParameters
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -210,6 +211,7 @@ const auditMcpTool = (
 		.then(() => undefined)
 		.catch(error => {
 			console.error(`[assistant-mcp] failed to persist audit log: ${errorMessage(error)}`);
+			throw new Error('MCP audit storage unavailable');
 		});
 };
 
@@ -264,8 +266,8 @@ class ExternalMcpManager {
 					command: config.command!,
 					args: config.args,
 					env: config.env
-						? ({ ...process.env, ...config.env } as Record<string, string>)
-						: undefined,
+						? { ...getDefaultEnvironment(), ...config.env }
+						: getDefaultEnvironment(),
 					cwd: config.cwd,
 					stderr: 'pipe'
 				};
@@ -399,9 +401,13 @@ class ExternalMcpManager {
 			.map(remote =>
 				tool(
 					async args => {
+						await auditMcpTool('mcp_tool_call', { tool: remote.definition.name, server: remote.serverName, userId, requiresConfirmation: false, confirmed: false, status: 'started' });
 						try {
-							return JSON.stringify(await remote.invoke(args as Record<string, unknown>));
+							const result = await remote.invoke(args as Record<string, unknown>);
+							await auditMcpTool('mcp_tool_call', { tool: remote.definition.name, server: remote.serverName, userId, requiresConfirmation: false, confirmed: false, status: 'success' });
+							return JSON.stringify(result);
 						} catch (error) {
+							await auditMcpTool('mcp_tool_call', { tool: remote.definition.name, server: remote.serverName, userId, requiresConfirmation: false, confirmed: false, status: 'error' });
 							return JSON.stringify(toolErrorResult(error));
 						}
 					},

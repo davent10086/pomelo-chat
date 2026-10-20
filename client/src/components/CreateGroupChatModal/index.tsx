@@ -1,5 +1,5 @@
 import { Button, Modal, Tree, Form, Input } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getFriendList, createGroup, inviteFriend } from './api';
 import styles from './index.module.less';
@@ -35,7 +35,7 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 	const step1Ref = useRef<HTMLDivElement | null>(null);
 
 	// 好友列表
-	const treeData = friendList.map(group => {
+	const treeData = useMemo(() => friendList.map(group => {
 		return {
 			title: <span>{group.name}</span>,
 			key: group.name,
@@ -53,10 +53,10 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 				selectable: false
 			}))
 		};
-	});
+	}), [friendList]);
 
 	// 刷新好友列表
-	const refreshFriendList = async () => {
+	const refreshFriendList = useCallback(async () => {
 		try {
 			const res = await getFriendList();
 			if (res.code === HttpStatus.SUCCESS && res.data) {
@@ -67,7 +67,7 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 		} catch {
 			showMessage('error', '好友数据获取失败');
 		}
-	};
+	}, [showMessage]);
 
 	// 关闭弹窗
 	const handleCancel = () => {
@@ -198,7 +198,7 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 
 	useEffect(() => {
 		refreshFriendList();
-	}, []);
+	}, [refreshFriendList]);
 
 	// 用 useMemo 包裹，避免每次都重新渲染导致展开的好友列表收起
 	const FriendTree = useMemo(() => {
@@ -214,7 +214,7 @@ const CreateGroupModal = (props: ICreateGroupModal) => {
 				/>
 			</div>
 		);
-	}, [friendList]);
+	}, [treeData]);
 
 	return (
 		<>

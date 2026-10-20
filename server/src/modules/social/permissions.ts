@@ -8,6 +8,8 @@ interface GroupMembershipRow {
 interface FriendMembershipRow {
 	user_id: number;
 }
+export const authorizedGroupMembers = async (room: string, users: UserId[]): Promise<Set<string>> =>
+	new Set((await repository.findAccessibleGroupMembers(room, users)).map(row => String(row.user_id)));
 export const authorizeChatRoom = async (userId: UserId, room: string, type: ChatType) => {
 	if (type === 'group') {
 		const rows = await repository.findAccessibleGroupRoom<GroupMembershipRow[]>([userId, room]);

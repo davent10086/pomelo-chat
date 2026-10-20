@@ -52,12 +52,13 @@ export const getHistory = async (actor: Actor, parameters: GetHistoryInput): Pro
 		return failure(CommonStatus.PARAM_ERR);
 	try {
 		const result = await fetchHistoryMessages(actor.id, room, type, beforeId, limit, afterSeq);
-		if (!result) return failure(CommonStatus.TOKEN_ERR);
+		if (!result) return failure(CommonStatus.UNAUTHORIZED);
 		return success({
 			messages: result.messages,
 			peerReadSeq: result.peerReadSeq,
 			hasMore: result.hasMore,
 			nextBeforeId: result.nextBeforeId
+			, nextAfterSeq: result.nextAfterSeq
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -75,7 +76,7 @@ export const markRead = async (actor: Actor, parameters: MarkReadInput): Promise
 		return failure(CommonStatus.PARAM_ERR);
 	try {
 		const authorized = await authorizeChatRoom(actor.id, room, type);
-		if (!authorized) return failure(CommonStatus.TOKEN_ERR);
+		if (!authorized) return failure(CommonStatus.UNAUTHORIZED);
 		const actualSeq = await markRoomRead(actor.id, room, type, roomSeq);
 		return success({ room, read: true, roomSeq: actualSeq });
 	} catch (err: unknown) {

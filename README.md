@@ -170,3 +170,30 @@ Prisma 模型位于 `server/prisma/schema.prisma`，安装依赖时自动生成�
 ## License
 
 ISC
+
+## 缺陷回归与完整测试
+
+测试范围、隔离约定和失败诊断见 [自动化测试计划](docs/TEST_PLAN.md)。
+
+```powershell
+pnpm test:full:server
+pnpm test:full:browser
+pnpm --filter pomelo-chat-server test:prisma
+pnpm test:desktop
+pnpm test:desktop:smoke
+pnpm test:desktop:production
+```
+
+前两个入口自动创建并清理独立测试数据库、Redis 前缀和附件目录。服务端入口会实际启动 `server/dist/index.js`，结果写入 `test-results/full-server.json`。没有运行的外部模型或 LiveKit 测试不会计为已通过。生产登录的默认限制为每 IP 每分钟 30 次、每账号每 5 分钟 10 次；功能测试另设专用额度，独立安全回归仍验证默认限制。
+
+## 生产启动与反向代理
+
+构建后使用 `pnpm --filter pomelo-chat-server serve`。启动要求至少 16 字符的 `JWT_SECRET`；生产环境还需 `DATABASE_URL` 或完整的 `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`。MySQL URL 支持 `ssl-mode=REQUIRED|VERIFY_IDENTITY`（校验证书）与 `connection_limit=1..100`。数据库会话和应用日历统一为 Asia/Shanghai，不依赖主机或容器默认时区；已有 DATETIME 数据按原有北京时间语义保留，不重写历史值。
+
+多实例滚动上线可先执行 `node server/dist/model/migrate.js`，再设置 `DB_AUTO_MIGRATE=false` 启动各实例；迁移器本身持有 MySQL 锁。`/api/chat/v1/health` 表示进程存活，`/api/chat/v1/ready` 实际检查 MySQL 与 Redis。多副本必须共享 `UPLOAD_ROOT`，或改接对象存储。
+
+仓库提供 `Dockerfile`、`docker-compose.yml` 和 `deploy/nginx.conf`。在仓库根 `.env` 设置 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`JWT_SECRET` 后，可运行 `docker compose up --build -d`；网页入口为 `http://localhost:8080`。前端镜像以同源方式访问 API/WS/附件。互联网部署需在入口设置 TLS，并将 `CORS_ORIGINS` 改为实际来源；反代配置已包含 WebSocket upgrade、SSE 禁止缓冲和附件转发。只在服务位于可信代理后时配置 `TRUST_PROXY`。
+
+上传在写入每片前原子记账，默认单文件 100 MiB、每用户未完成上传 500 MiB、20 个活跃上传会话；每分钟回收失效分片。附件 URL 使用 5 分钟、单文件范围的访问凭证，每次读取仍检查当前登录和文件权限；登录 token 不进入媒体或通知 WebSocket URL。原有 AES 本地存储方案保留。
+
+Outbox 默认重试 30 次后记录 `failed_at`，暂停该房间后续投递以维持顺序。监控 `pomelo_outbox_failed` 并修复失败原因后，通过 `pnpm --filter pomelo-chat-server outbox:retry <message_id>` 恢复；不会自动丢弃消息。已投递 Outbox 保留 7 天后分批删除，消息历史保持不变。过期确认记录保留 30 天、MCP 审计保留 90 天。

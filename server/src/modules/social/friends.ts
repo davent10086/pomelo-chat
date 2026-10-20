@@ -27,6 +27,8 @@ import { randomUUID } from 'crypto';
 import { CommonStatus, FriendStatus } from '../../shared/status';
 import { withTransaction } from '../../infrastructure/database-query';
 import { parseSearchPage, escapeSearchTerm } from '../../shared/search-page';
+import { positiveId } from '../../shared/validation';
+import { onlineUsernames } from './presence';
 export const createFriendApplication = (dependencies: SocialEffects) => {
 	const { notifyUser: NotificationUser, isOnline } = dependencies;
 	interface FriendRow {
@@ -109,10 +111,10 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 	const addFriend = async (actor: Actor, parameters: AddFriendInput): Promise<Outcome> => {
 		const sender = actor;
 		const { id, username } = parameters || {};
-		const targetId = Number(id);
+		const targetId = positiveId(id);
 		if (
 			!sender ||
-			!Number.isInteger(targetId) ||
+			targetId === null ||
 			targetId <= 0 ||
 			typeof username !== 'string' ||
 			!username.trim() ||
@@ -193,7 +195,9 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 				? await repository.listFriendsByOwner<FriendRow[]>([sender.id])
 				: [];
 			const byGroup = new Map<string, FriendRow[]>();
+			const online = await onlineUsernames(friends.map(friend => friend.username));
 			for (const friend of friends) {
+				friend.online_status = online.has(friend.username) ? 'online' : 'offline';
 				const key = String(friend.group_id);
 				const bucket = byGroup.get(key) || [];
 				bucket.push(friend);
@@ -215,13 +219,14 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 		}
 	};
 	const getFriendById = async (actor: Actor, parameters: GetFriendByIdInput): Promise<Outcome> => {
-		const { id } = parameters || {};
+		const id = positiveId(parameters?.id);
 		if (!id) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {
 			const results = await readModel.findFriendProfile<FriendDetailRow[]>([id, actor.id]);
 			if (results.length !== 0) {
+				results[0].online_status = (await onlineUsernames([results[0].username])).has(results[0].username) ? 'online' : 'offline';
 				return success(results[0]);
 			} else {
 				return failure(CommonStatus.NOT_FOUND);
@@ -251,7 +256,7 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 		parameters: CreateFriendGroupInput
 	): Promise<Outcome> => {
 		const name = parameters.name;
-		if (typeof name !== 'string' || !name.trim()) {
+		if (typeof name !== 'string' || !name.trim() || name.length > 50) {
 			return failure(CommonStatus.PARAM_ERR);
 		}
 		try {

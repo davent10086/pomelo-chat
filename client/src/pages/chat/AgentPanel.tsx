@@ -122,10 +122,11 @@ const AgentPanel = ({
 									: '草稿发送'}
 						：{actionStatusLabels[action.status || 'pending']}
 					</div>
-					{action.type === 'save_memory' && <p>{String(action.payload.content || '')}</p>}
+					{action.type === 'save_memory' && <><p>以下内容由助手从对话中提取。请检查准确性，保存后将用于后续回答。</p><blockquote>{String(action.payload.content || '')}</blockquote></>}
 					<ActionControls
 						status={action.status || 'pending'}
 						busy={pendingActionId === action.confirmationId}
+						retryable={action.retryable}
 						confirmLabel={
 							action.type === 'create_tasks'
 								? '确认创建'

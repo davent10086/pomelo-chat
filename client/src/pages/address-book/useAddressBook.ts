@@ -73,6 +73,7 @@ export function useAddressBook(user: IUserInfo) {
 		[run]
 	);
 	useEffect(() => {
+		const currentRequests = requests.current;
 		active.current = true;
 		setFriendList([]);
 		setGroupList([]);
@@ -82,8 +83,8 @@ export function useAddressBook(user: IUserInfo) {
 		void Promise.all([refreshFriendList(), refreshFriendGroups(), refreshGroupChatList()]);
 		return () => {
 			active.current = false;
-			for (const controller of requests.current.values()) controller.abort();
-			requests.current.clear();
+			for (const controller of currentRequests.values()) controller.abort();
+			currentRequests.clear();
 		};
 	}, [user.id, refreshFriendList, refreshFriendGroups, refreshGroupChatList]);
 	const selectFriend = (id: number) =>

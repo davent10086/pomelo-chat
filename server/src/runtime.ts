@@ -1,4 +1,5 @@
 import { better_chat } from './infrastructure/redis';
+import { startUploadCleanup, stopUploadCleanup } from './modules/files/public';
 import { startMessagePressure, stopMessagePressure } from './modules/messaging/public';
 import { startSessionSubscription, stopSessionSubscription } from './modules/realtime/public';
 import { startNotificationDelivery, stopNotificationDelivery } from './modules/realtime/public';
@@ -8,6 +9,7 @@ import { rtcCalls } from './composition';
 const { startCallTimeouts, stopCallTimeouts } = rtcCalls;
 import { startMessageDelivery, stopMessageDelivery } from './modules/realtime/message-delivery';
 import { externalMcpManager } from './modules/assistant/public';
+import { startAssistantMaintenance, stopAssistantMaintenance } from './modules/assistant/public';
 
 let starting: Promise<void> | undefined;
 let stopping: Promise<void> | undefined;
@@ -26,6 +28,8 @@ export const startBackgroundServices = async () => {
 			await startMessagePressure();
 			await startNotificationDelivery();
 			startSessionChecks();
+			startUploadCleanup();
+			startAssistantMaintenance();
 			startCallTimeouts();
 			await startMessageDelivery();
 			running = true;
@@ -41,6 +45,8 @@ export const startBackgroundServices = async () => {
 	}
 };
 const dispose = async () => {
+	await stopUploadCleanup();
+	await stopAssistantMaintenance();
 	await stopMessagePressure();
 	const workers = await Promise.allSettled([stopCallTimeouts(), stopMessageDelivery()]);
 	const sockets = await Promise.allSettled([stopNotificationConnections(), stopSessionChecks()]);

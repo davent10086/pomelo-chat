@@ -6,8 +6,11 @@ import app, { registerAppRoutes } from './controller/app';
 import { startBackgroundServices, stopBackgroundServices } from './runtime';
 import { better_chat } from './infrastructure/redis';
 import { assertDatabaseConnection, initDatabase, closeDatabase } from './infrastructure/database';
+import { secretKey } from './modules/identity/session';
+import { boundedInteger } from './shared/validation';
 
-const port = Number(process.env.PORT || 3000);
+const port = boundedInteger('PORT', 3000, 0, 65535);
+if (!secretKey || secretKey.length < 16) throw new Error('JWT_SECRET is required and must contain at least 16 characters');
 let stopping = false;
 
 // 创建单一 HTTP server，WebSocket 与 HTTP 共用
@@ -21,7 +24,7 @@ const startServer = async (): Promise<void> => {
 	await assertDatabaseConnection();
 	// eslint-disable-next-line no-console
 	console.log('MySQL 连接成功');
-	await initDatabase();
+	if (process.env.DB_AUTO_MIGRATE !== 'false') await initDatabase();
 	if (stopping) return;
 	await startBackgroundServices();
 	if (stopping) return;

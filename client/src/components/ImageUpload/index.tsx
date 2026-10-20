@@ -56,7 +56,7 @@ export const ImageUpload = (props: IImageUploadProps) => {
 		if (initialImageUrl) {
 			setImageUrl(initialImageUrl);
 		}
-	}, []);
+	}, [initialImageUrl]);
 
 	return (
 		<>

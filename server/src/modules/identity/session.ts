@@ -51,3 +51,16 @@ export const verifyTokenWithSession = async (token?: string): Promise<JwtPayload
 		return null;
 	}
 };
+
+/** One Redis round trip for a fanout batch, while validating every JWT independently. */
+export const verifyTokensWithSessions = async (tokens: string[]): Promise<boolean[]> => {
+	const decoded = tokens.map(token => verifyToken(token));
+	const valid = decoded.map((value, index) => value ? index : -1).filter(index => index >= 0);
+	if (!valid.length) return tokens.map(() => false);
+	try {
+		const stored = await better_chat.mget(...valid.map(index => `token:${decoded[index]!.username}`));
+		const results = tokens.map(() => false);
+		valid.forEach((index, offset) => { results[index] = stored[offset] === extractToken(tokens[index]); });
+		return results;
+	} catch { return tokens.map(() => false); }
+};

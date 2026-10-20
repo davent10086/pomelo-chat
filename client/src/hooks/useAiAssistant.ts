@@ -21,6 +21,7 @@ export interface AgentAction {
 	confirmationId?: string;
 	expiresAt?: string;
 	status?: ActionStatus['status'];
+	retryable?: boolean;
 }
 
 export interface TaskCandidate {
@@ -169,7 +170,7 @@ export const useAiAssistant = (user: IUserInfo) => {
 				return { content: errorText, text: errorText, actions: [] };
 			}
 		},
-		[user]
+		[]
 	);
 
 	const appendAiHistory = useCallback((msg: IMessageItem) => {

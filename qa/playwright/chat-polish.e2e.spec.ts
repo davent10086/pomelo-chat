@@ -15,6 +15,7 @@ test('attachment names survive reload, file library supports downloads and navig
 		await page.locator('input[type=file]').last().setInputFiles({ name: filename, mimeType: 'text/plain', buffer: bytes });
 		const filePath = (await (await stored).json()).data.filePath as string;
 		await expect(page.getByRole('button', { name: `下载文件 ${filename}`, exact: true })).toBeVisible();
+		await expect(page.locator('[data-message-index]').filter({ hasText: filename }).getByRole('status', { name: '已发送', exact: true })).toBeVisible();
 		await page.reload();
 		await page.locator(`[id="chatList_${room}"]`).click();
 		await expect(page.getByRole('button', { name: `下载文件 ${filename}`, exact: true })).toBeVisible();

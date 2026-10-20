@@ -28,10 +28,14 @@ export const agentStream = async (req: Request, res: Response): Promise<void> =>
 	res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
 	res.setHeader('Cache-Control', 'no-cache');
 	res.setHeader('Connection', 'keep-alive');
+	res.setHeader('X-Accel-Buffering', 'no');
 	res.flushHeaders();
 	const controller = new AbortController();
 	const onClientClose = () => controller.abort();
 	res.once('close', onClientClose);
+	const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': heartbeat\n\n'); }, 15000);
+	heartbeat.unref();
+	const deadline = setTimeout(() => controller.abort(new Error('Agent total timeout')), 120000);
 	try {
 		const userId = Number(req.user!.id);
 		if (!Number.isFinite(userId)) {
@@ -65,6 +69,9 @@ export const agentStream = async (req: Request, res: Response): Promise<void> =>
 			res.end();
 		}
 	} finally {
+		clearInterval(heartbeat);
+		clearTimeout(deadline);
+		if (!res.writableEnded) res.end();
 		res.removeListener('close', onClientClose);
 	}
 };
