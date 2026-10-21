@@ -72,17 +72,17 @@ export const createRtcApplication = (dependencies: {
 		try {
 			if (!(await authorizeChatRoom(actor.id, room, type)))
 				return failure(CommonStatus.UNAUTHORIZED);
-			const state = typeof callId === 'string' ? await getCall(callId) : null;
-			if (
-				!state ||
-				state.room !== room ||
-				state.type !== type ||
-				state.status === 'ended' ||
-				state.expiresAt <= Date.now() ||
-				state.members[actor.username] !== 'joined'
-			)
-				return failure(CommonStatus.UNAUTHORIZED);
-			return success(await issueJoinToken(actor, room, type, state.id));
+			if (typeof callId !== 'string' || !callId) return failure(CommonStatus.PARAM_ERR);
+			return await dependencies.calls.withCallLease(callId, async () => {
+				const state = await getCall(callId);
+				if (
+					!state || state.room !== room || state.type !== type ||
+					state.status === 'ended' || state.expiresAt <= Date.now() ||
+					state.members[actor.username] !== 'joined'
+				)
+					return failure(CommonStatus.UNAUTHORIZED);
+				return success(await issueJoinToken(actor, room, type, state.id, state.mediaGeneration));
+			});
 		} catch (error) {
 			console.error('[rtc] create join token failed:', error);
 			return failure(CommonStatus.SERVER_ERR);
@@ -187,7 +187,7 @@ export const createRtcApplication = (dependencies: {
 			return success({ ended: true, status: state?.status || 'ended' });
 		} catch (err) {
 			console.error('[rtc] end:', err);
-			return failure(CommonStatus.UNAUTHORIZED);
+			return failure(err instanceof Error && err.message === 'Call access denied' ? CommonStatus.UNAUTHORIZED : CommonStatus.SERVER_ERR);
 		}
 	};
 	return { createJoinToken, invite, acceptCall, endCall, currentCall };

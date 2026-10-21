@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { uploadRoot } from '../../infrastructure/file-storage';
+import { releaseUnfinishedStorage } from './repository';
 
 export const maxUploadBytes = boundedInteger('MAX_UPLOAD_SIZE_BYTES', 100 * 1024 * 1024, 1);
 const userBudget = boundedInteger('MAX_USER_UPLOAD_BYTES', 500 * 1024 * 1024, maxUploadBytes);
@@ -72,6 +73,13 @@ export const collectExpiredUploads = async () => {
 				if (await better_chat.exists(key)) continue;
 				await withUploadLease(key, async assertLease => {
 					if (await better_chat.exists(key)) return;
+					await assertLease();
+					const finalPath = join(uploadRoot, user, suffix, `${match[1]}.${metadata.ext}`);
+					const exists = await fs.stat(finalPath).then(() => true).catch(error => {
+						if (error.code === 'ENOENT') return false;
+						throw error;
+					});
+					if (!exists) await releaseUnfinishedStorage(user, match[1], metadata.ext);
 					await assertLease();
 					await fs.rm(dir, { recursive: true, force: true });
 					await assertLease();

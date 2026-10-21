@@ -20,6 +20,9 @@ export const useCallController = (
 	const disposed = useRef(false);
 	const accepted = useRef(status === CallStatus.CALLING);
 	const endedIds = useRef(new Set<string>());
+	const mediaGeneration = useRef(0);
+	const reconnecting = useRef(false);
+	const needsReconnect = useRef(false);
 	const [callStatus, setCallStatus] = useState(status);
 	const [duration, setDuration] = useState(0);
 
@@ -37,6 +40,21 @@ export const useCallController = (
 		close.current(false);
 		await release();
 	}, [release]);
+	const reconnectMedia = useCallback(async () => {
+		needsReconnect.current = true;
+		if (reconnecting.current || disposed.current) return;
+		reconnecting.current = true;
+		try {
+			while (needsReconnect.current && !disposed.current) {
+				needsReconnect.current = false;
+				await leave();
+				if (!disposed.current && callId.current) await join(callId.current);
+			}
+		} catch {
+			if (!disposed.current) showMessage('error', '通话连接已结束，请重新发起');
+			await hangup();
+		} finally { reconnecting.current = false; }
+	}, [hangup, join, leave, showMessage]);
 	const start = useCallback(async () => {
 		if (pending.current || disposed.current || accepted.current) return;
 		pending.current = true;
@@ -67,18 +85,24 @@ export const useCallController = (
 	useEffect(() => {
 		const onState = (event: Event) => {
 			const state = (
-				event as CustomEvent<{ callId: string; status: string; memberStatus?: string }>
+				event as CustomEvent<{ callId: string; status: string; memberStatus?: string; mediaGeneration?: number }>
 			).detail;
 			if (state.callId !== callId.current || disposed.current) return;
 			if (state.status === 'ended' || state.memberStatus === 'left') void hangup();
 			else if (state.status === 'active' && state.memberStatus === 'joined') {
 				accepted.current = true;
 				setCallStatus(CallStatus.CALLING);
+				if ((state.mediaGeneration || 0) > mediaGeneration.current) {
+					mediaGeneration.current = state.mediaGeneration || 0;
+					void reconnectMedia();
+				}
 			}
 		};
 		const onDisconnected = (event: Event) => {
-			if ((event as CustomEvent<{ callId: string }>).detail.callId === callId.current)
-				void hangup();
+			if ((event as CustomEvent<{ callId: string }>).detail.callId === callId.current) {
+				if (session.type === 'group') void reconnectMedia();
+				else void hangup();
+			}
 		};
 		window.addEventListener('pomelo-call-state', onState);
 		window.addEventListener('pomelo-call-disconnected', onDisconnected);
@@ -93,7 +117,7 @@ export const useCallController = (
 			window.removeEventListener('pomelo-call-disconnected', onDisconnected);
 			void release();
 		};
-	}, [session.status, start, hangup, release]);
+	}, [session.status, session.type, start, hangup, release, reconnectMedia]);
 	useEffect(() => {
 		if (callStatus !== CallStatus.CALLING) return;
 		const timer = setInterval(() => setDuration(value => value + 1), 1000);

@@ -3,8 +3,10 @@ const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const TEST_RUN_ID = `test_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}_${crypto.randomUUID().slice(0, 8)}`;
-const TEMP_ROOT = path.join(process.cwd(), 'tmp', 'tests', TEST_RUN_ID);
+const { runId, assertOwnedPath } = require('./environment.cjs');
+const { repoRoot } = require('./paths.cjs');
+const TEST_RUN_ID = process.env.TEST_RUN_ID || runId();
+const TEMP_ROOT = process.env.TEST_TMPDIR || path.join(repoRoot, 'tmp', 'tests', TEST_RUN_ID);
 
 const assertSafeTestEnvironment = () => {
 	assert.notEqual(process.env.NODE_ENV, 'production', 'tests must never run with NODE_ENV=production');
@@ -21,7 +23,7 @@ const createTestTempDirectory = async () => {
 };
 
 const cleanupTestArtifacts = async () => {
-	await fs.rm(TEMP_ROOT, { recursive: true, force: true });
+	await fs.rm(assertOwnedPath(TEMP_ROOT), { recursive: true, force: true });
 };
 
 module.exports = { TEST_RUN_ID, TEMP_ROOT, assertSafeTestEnvironment, createTestTempDirectory, cleanupTestArtifacts };

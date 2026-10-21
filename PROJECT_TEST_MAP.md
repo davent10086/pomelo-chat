@@ -1,13 +1,14 @@
 # Pomelo Chat Project Test Map
 
-Generated: 2026-07-21
+Updated: 2026-10-21
 
 ## 1. Project Structure
 
 - `client/`: React + Vite single page app for login, contacts, chat, media upload, audio/video call UI, and built-in AI assistant entry.
 - `server/`: Express + TypeScript backend for auth, friends, groups, messages, files, RTC signaling, assistant proxy, LangChain Agent, and Pomelo MCP stdio server.
 - `docs/`: static project notes.
-- `qa/`: QA harness, Postman collection, Playwright spec, and test result artifacts generated for this audit.
+- `qa/`: QA compatibility entrypoints, protocol harness and manual benchmark experiments.
+- `tests/`: canonical unit, integration, browser E2E, special suites, fixtures and common runner.
 
 ## 2. Frontend Stack
 
@@ -199,27 +200,29 @@ AI SSE:
 
 ## P0/P1 integrated regressions
 
-- `qa/playwright/address-book.e2e.spec.ts`: real friend editing/group creation, contact filtering, group details and invitation entry, plus a delayed friend-detail response that must not replace the current selection. Data requests are owned by `useAddressBook`; tree, editor and group details own their presentation.
+Canonical test layers live under `tests/unit`, `tests/integration`, and `tests/e2e`. Real media lives under `tests/special/rtc`. Legacy script paths are compatibility aliases. Online models, desktop and performance suites have explicit separate entrypoints.
+
+- `tests/e2e/address-book.e2e.spec.ts`: real friend editing/group creation, contact filtering, group details and invitation entry, plus a delayed friend-detail response that must not replace the current selection. Data requests are owned by `useAddressBook`; tree, editor and group details own their presentation.
 - The isolated Playwright backend uses a larger API request budget because all functional fixtures share one IP. This does not change production rate limits or establish capacity evidence.
-- `server/scripts/test-db-migrations.js`: concurrent initialization on two pooled connections, then repeated migration; validates the MySQL lock and idempotent execution after splitting schema and migration ownership.
-- `server/scripts/test-agent-stream.js`: normal streaming retains metadata extraction; read-only streaming performs no extra metadata request and creates no confirmation proposals.
+- `tests/integration/database/migrations.test.cjs`: concurrent initialization on two pooled connections, then repeated migration; validates the MySQL lock and idempotent execution after splitting schema and migration ownership.
+- `tests/unit/assistant/agent-stream.test.cjs`: normal streaming retains metadata extraction; read-only streaming performs no extra metadata request and creates no confirmation proposals.
 
 - Reply suggestions share `client/src/hooks/useReplySuggestions.ts`: bounded context, local fallback, debounce, cancellation and stale-result suppression. Keyboard selection inserts the selected reply into the existing draft.
 - Assistant session delegates task cards, memory management and confirm/query/cancel operations to dedicated hooks. Uncertain writes query the server without automatic resubmission; retry remains an explicit user operation, and task selection is preserved on the server.
-- `qa/playwright/assistant-interactions.e2e.spec.ts` covers delayed suggestions after typing or cancellation, selected-task confirmation, duplicate UI operations, lost write responses, explicit retry, Agent action confirmation and memory deletion confirmation/cancellation.
+- `tests/e2e/assistant-interactions.e2e.spec.ts` covers delayed suggestions after typing or cancellation, selected-task confirmation, duplicate UI operations, lost write responses, explicit retry, Agent action confirmation and memory deletion confirmation/cancellation.
 
-- `server/scripts/test-system-integrity.js`: real isolated MySQL/Redis, registration races, duplicate contacts, transactional message sequence and ACK, outbox retry after Redis failure, attachment authorization and metadata recovery, paged history, read cursor monotonicity, legacy migration replay, session replacement/revocation, and RTC cancellation/timeout state.
-- `qa/playwright/system-regressions.e2e.spec.ts`: real login, private chat delivery, AI suggestion insertion, room switching, deterministic streaming updates, and password change.
-- `server/scripts/run-isolated-tests.js system|migrations|browser`: local runner creates and removes only its own test database; credentials come from `server/.env` without accessing business tables.
+- `tests/integration/messaging/system-integrity.test.cjs`: real isolated MySQL/Redis, registration races, duplicate contacts, transactional message sequence and ACK, outbox retry after Redis failure, attachment authorization and metadata recovery, paged history, read cursor monotonicity, legacy migration replay, session replacement/revocation, and RTC cancellation/timeout state.
+- `tests/e2e/system-regressions.e2e.spec.ts`: real login, private chat delivery, AI suggestion insertion, room switching, deterministic streaming updates, and password change.
+- `pnpm test:ci`: canonical checks/build/unit/integration/e2e runner; creates and removes only owned databases, Redis prefixes and temporary uploads. Configuration and filters: `tests/README.md`. The old isolated runner forwards to this implementation.
 - CI runs migration, system, browser, existing regression suites, and both production builds. LiveKit media/device behavior and real LLM provider availability remain outside these deterministic regressions.
 
 ### 工具契约回归
 
-`server/scripts/test-tool-contracts.js`（`test:tool-contracts`，纳入 `test:integration`）：Zod/JSON Schema 一致性、输入与输出校验、错误脱敏、不可访问目标与空结果区分、外部 MCP 分页及游标循环、原名和截断重名、远端嵌套参数契约、Redis 共享限流及故障拒绝执行。分页与远端调用使用模拟服务；限流使用真实 Redis 隔离键。
+`tests/integration/assistant/tool-contracts.test.cjs`（`test:tool-contracts`，纳入 `test:integration`）：Zod/JSON Schema 一致性、输入与输出校验、错误脱敏、不可访问目标与空结果区分、外部 MCP 分页及游标循环、原名和截断重名、远端嵌套参数契约、Redis 共享限流及故障拒绝执行。分页与远端调用使用模拟服务；限流使用真实 Redis 隔离键。
 
 ### 共享通话与聊天准备逻辑
 
-`qa/playwright/helpers/chat.ts` 统一注册、登录、好友关系和房间准备；系统回归、恢复回归和真实聊天/通话测试复用它。`real-rtc.e2e.spec.ts` 使用真实 LiveKit 与浏览器虚拟摄像头/麦克风验证双向音视频、挂断后的连接释放、每端单次挂断请求，以及取消后迟到邀请的清理。相关测试通过 `pnpm test:real-rtc` 启用，需独立 LiveKit 服务。
+`tests/e2e/helpers/chat.ts` 统一注册、登录、好友关系和房间准备；系统回归、恢复回归和真实聊天/通话测试复用它。`real-rtc.e2e.spec.ts` 使用真实 LiveKit 与浏览器虚拟摄像头/麦克风验证双向音视频、挂断后的连接释放、每端单次挂断请求，以及取消后迟到邀请的清理。相关测试通过 `pnpm test:real-rtc` 启用，需独立 LiveKit 服务。
 
 ### 共享基础逻辑与请求内记忆复用
 

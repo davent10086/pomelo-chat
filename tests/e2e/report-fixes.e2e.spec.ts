@@ -1,3 +1,4 @@
+// @tags security regression
 import { test, expect } from '@playwright/test';
 import { setup, login } from './helpers/chat';
 
@@ -61,4 +62,49 @@ test('a forbidden room response preserves the browser login session', async ({ p
     await expect(page).not.toHaveURL(/\/login/);
     await expect(page.getByLabel('消息输入框')).toBeVisible();
   } finally { await api.dispose(); }
+});
+
+test('editing a profile rebuilds notifications with the new token and receives calls', async ({ page, browser }) => {
+  const { api, a, b, room, create } = await setup();
+  const peerContext = await browser.newContext();
+  const peer = await peerContext.newPage();
+  const notices: string[] = [];
+  let channels = 0;
+  page.on('websocket', ws => {
+    if (!ws.url().includes('/auth/user_channel')) return;
+    channels++;
+    ws.on('framereceived', frame => { try { notices.push(JSON.parse(String(frame.payload)).name); } catch {} });
+  });
+  try {
+    await login(peer, b, room);
+    await login(page, a, room);
+    await expect.poll(() => channels).toBe(1);
+    const oldToken = await page.evaluate(() => sessionStorage.getItem('pomelo-chat.authToken'));
+    await page.locator('[class*="leftContainer"] [class*="avatar"]').first().hover();
+    await page.getByRole('button', { name: '修改信息', exact: true }).click();
+    await page.getByPlaceholder('请输入昵称').fill('updated-profile');
+    const updated = page.waitForResponse(response => response.url().endsWith('/auth/update_info'));
+    await page.getByRole('dialog').getByRole('button', { name: /^确\s*认$/ }).click();
+    expect((await updated).ok()).toBeTruthy();
+    await expect.poll(() => channels).toBe(2);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const token = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pomelo-chat.authToken') || '""'));
+    expect(JSON.stringify(token)).not.toBe(oldToken);
+    const c = await create(3);
+    notices.length = 0;
+    expect((await api.post('friend/add_friend', {
+      headers: { Authorization: `Bearer ${token}` }, data: { id: c.info.id, username: c.username },
+    })).ok()).toBeTruthy();
+    await expect.poll(() => notices.includes('friendList')).toBe(true);
+    const invited = await peer.evaluate(async room => {
+      const { default: request } = await import('/src/utils/request.ts');
+      return (await request.post('/rtc/invite', { room, type: 'private', mode: 'private_audio' })).data;
+    }, room);
+    expect(invited.code).toBe(200);
+    await expect.poll(() => notices.includes('create_room')).toBe(true);
+    await expect(page.getByAltText('接听')).toBeVisible();
+    await page.getByAltText('拒绝').click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page).not.toHaveURL(/\/login/);
+  } finally { await peerContext.close(); await api.dispose(); }
 });

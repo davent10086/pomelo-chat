@@ -1,3 +1,4 @@
+if (!process.env.TEST_TMPDIR || !process.env.TEST_ARTIFACT_DIR) throw new Error('Run desktop checks through the root test entrypoint');
 // Real Electron windows + isolated HTTP mocks. No database or model credentials needed.
 const { _electron: electron, expect } = require('@playwright/test');
 const { spawn } = require('node:child_process');
@@ -9,8 +10,8 @@ const url = 'http://127.0.0.1:5188';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const user = id => ({ id, username: `desktop-test-${id}`, name: '原型测试', avatar: '/ai-assistant.svg', phone: '', signature: '', created_at: '' });
 let app, vite;
-fs.mkdirSync(path.join(root, 'tmp/tests'), { recursive: true });
-const profile = fs.mkdtempSync(path.join(root, 'tmp/tests/desktop-smoke-'));
+fs.mkdirSync(process.env.TEST_TMPDIR, { recursive: true });
+const profile = fs.mkdtempSync(path.join(process.env.TEST_TMPDIR, 'desktop-smoke-'));
 
 async function login(main, id = 1) {
   await main.evaluate(({ id, user }) => {
@@ -50,7 +51,7 @@ async function run() {
   await expect(assistant.getByRole('button', { name: '展开 AI 助手' })).toBeVisible();
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('/desktop-assistant')).isVisible())).toBe(true);
   await assistant.bringToFront();
-  const artifacts = path.join(root, 'test-results/desktop'); fs.mkdirSync(artifacts, { recursive: true });
+  const artifacts = process.env.TEST_ARTIFACT_DIR; fs.mkdirSync(artifacts, { recursive: true });
   await assistant.screenshot({ path: path.join(artifacts, 'assistant-ball.png') });
   await assistant.getByRole('button', { name: '展开 AI 助手' }).click({ force: true });
   await expect(assistant.locator('.assistant-root')).toHaveAttribute('data-phase', 'expanded');
@@ -254,6 +255,6 @@ run().catch(error => { console.error(error); process.exitCode = 1; }).finally(as
     const exited = new Promise(resolve => vite.once('exit', resolve));
     vite.kill(); await Promise.race([exited, pause(3000)]);
   }
-  if (path.dirname(profile) !== path.join(root, 'tmp/tests') || !path.basename(profile).startsWith('desktop-smoke-')) throw new Error('Unsafe smoke cleanup');
+  if (path.dirname(profile) !== process.env.TEST_TMPDIR || !path.basename(profile).startsWith('desktop-smoke-')) throw new Error('Unsafe smoke cleanup');
   fs.rmSync(profile, { recursive: true, force: true });
 });

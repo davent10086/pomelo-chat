@@ -7,6 +7,7 @@ import { fetchHistoryMessages } from '../messaging/public';
 import { writeAndSend } from '../messaging/public';
 import { ChatRooms, sendFrame } from './message-delivery';
 import { acknowledgeDelivery } from './delivery-observation';
+import { admitChatSocket } from './chat-admission';
 import { MessageOverloadError } from '../../shared/overload';
 import {
 	isRecord,
@@ -99,6 +100,10 @@ export const connectChat = async (ws: WebSocket, req: Request): Promise<void> =>
 		return;
 	}
 	try {
+		if (!(await admitChatSocket(ws, String(decoded.id), room))) {
+			ws.close(4004, 'chat connection limit reached');
+			return;
+		}
 		const authorized = await authorizeChatRoom(decoded.id as UserId, room, type);
 		if (!authorized) {
 			sendFrame(ws, { name: 'error', message: 'forbidden' });

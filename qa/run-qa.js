@@ -1,74 +1,43 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
-const { spawn } = require('node:child_process');
-const { mkdirSync, rmSync } = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
+const fs = require('node:fs');
+const { spawn } = require('node:child_process');
+const { main, allocatePort } = require('../tests/run.cjs');
+const { stopTree, runProcess } = require('../tests/helpers/process.cjs');
+const { repoRoot, serverRoot, serverRequire } = require('../tests/helpers/paths.cjs');
 
-const databaseUrl = process.env.DATABASE_URL_TEST || process.env.TEST_DATABASE_URL;
-const redisUrl = process.env.REDIS_URL_TEST;
-if (!databaseUrl || !redisUrl) throw new Error('DATABASE_URL_TEST and REDIS_URL_TEST are required');
-if (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production') throw new Error('QA cannot run in production');
-const database = decodeURIComponent(new URL(databaseUrl).pathname.slice(1));
-if (!/(^|[_-])test([_-]|$)|[_-]test$/i.test(database)) throw new Error(`Refusing non-test database: ${database}`);
-
-const runId = `qa_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}_${crypto.randomUUID().slice(0, 8)}`;
-const artifactDir = path.join(process.cwd(), 'tmp', 'qa', runId);
-mkdirSync(artifactDir, { recursive: true });
-const env = {
-  ...process.env,
-  NODE_ENV: 'test',
-  APP_ENV: 'test',
-  DATABASE_URL_TEST: databaseUrl,
-  REDIS_URL: redisUrl,
-  REDIS_KEY_PREFIX: `test:${runId}:`,
-  QA_RUN_ID: runId,
-  QA_RESULTS_DIR: artifactDir,
-  PORT: '3100',
-  MESSAGE_ROOM_QUEUE_MAX: '128',
-  API_RATE_LIMIT_MAX: '10000',
-  AUTH_IP_RATE_LIMIT_MAX: '10000',
-  AUTH_ACCOUNT_RATE_LIMIT_MAX: '10000',
-  QA_API_BASE: 'http://127.0.0.1:3100/api/chat/v1',
-  QA_WS_BASE: 'ws://127.0.0.1:3100/api/chat/v1'
-};
-// Bulk protocol fixtures; production admission defaults have a dedicated real-service test.
-if (process.env.QA_RUN_LIVE_AI !== 'true') {
-  env.AI_API_KEY = '';
-  env.DASHSCOPE_API_KEY = '';
-  env.DEEPSEEK_API_KEY = '';
-}
-for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST'])
-  env[name] = '10000';
-const run = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { cwd: process.cwd(), env, stdio: options.stdio || 'inherit' });
-  child.on('error', reject);
-  child.on('exit', code => code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)));
-  options.onChild?.(child);
-});
-const waitForServer = async () => {
-  const deadline = Date.now() + 30000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${env.QA_API_BASE}/assistant/agent/tools`);
-      if (response.status === 200 || response.status === 401) return;
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-  throw new Error('QA server did not become ready within 30 seconds');
-};
-
-(async () => {
-  let server;
+async function run() {
+  if (!process.env.TEST_RUN_ID) return main(['qa']);
+  const port = await allocatePort();
+  const artifacts = process.env.TEST_ARTIFACT_DIR;
+  const env = { ...process.env, PORT: String(port), QA_RUN_ID: process.env.TEST_RUN_ID,
+    QA_RESULTS_DIR: artifacts, QA_RUN_LIVE_AI: 'false',
+    QA_API_BASE: `http://127.0.0.1:${port}/api/chat/v1`, QA_WS_BASE: `ws://127.0.0.1:${port}/api/chat/v1`,
+    MESSAGE_ROOM_QUEUE_MAX: '128', API_RATE_LIMIT_MAX: '10000', AUTH_IP_RATE_LIMIT_MAX: '10000', AUTH_ACCOUNT_RATE_LIMIT_MAX: '10000' };
+  for (const name of ['MESSAGE_USER_RATE', 'MESSAGE_USER_BURST', 'MESSAGE_PRIVATE_RATE', 'MESSAGE_PRIVATE_BURST', 'MESSAGE_GROUP_RATE', 'MESSAGE_GROUP_BURST', 'MESSAGE_GLOBAL_RATE', 'MESSAGE_GLOBAL_BURST']) env[name] = '10000';
+  const log = fs.createWriteStream(path.join(artifacts, 'server.log'));
+  const server = spawn(process.execPath, ['-r', serverRequire.resolve('ts-node/register'), 'src/index.ts'],
+    { cwd: serverRoot, env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+  server.stdout.pipe(log); server.stderr.pipe(log);
+  let spawnError;
+  server.on('error', error => { spawnError = error; });
   try {
-    server = spawn(process.execPath, ['-r', require.resolve('../server/node_modules/ts-node/register'), 'src/index.ts'], { cwd: path.join(process.cwd(), 'server'), env: { ...env, TS_NODE_FILES: 'true' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    const log = require('node:fs').createWriteStream(path.join(artifactDir, 'server.log'));
-    server.stdout.pipe(log); server.stderr.pipe(log);
-    await waitForServer();
-    await run(process.execPath, ['qa/qa-full-test.js']);
+    const deadline = Date.now() + 30000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      if (spawnError) throw spawnError;
+      if (server.exitCode !== null) throw new Error('QA server exited before readiness; see server.log');
+      const response = await fetch(`${env.QA_API_BASE}/ready`, { signal: AbortSignal.timeout(1500) }).catch(() => null);
+      if (response?.ok) { ready = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (!ready) throw new Error('QA server readiness timed out');
+    const result = await runProcess(process.execPath, [path.join(repoRoot, 'qa/qa-full-test.js')],
+      { cwd: repoRoot, env, logPath: path.join(artifacts, 'cases.log') });
+    return result.status === 'passed' ? 0 : 1;
   } finally {
-    if (server && !server.killed) server.kill();
-    await run(process.execPath, ['qa/cleanup-qa-data.js']).catch(error => console.error('[qa-cleanup] failed:', error.message));
-    console.log(`[qa] artifacts: ${artifactDir}`);
+    await stopTree(server);
+    await new Promise(resolve => log.end(resolve));
   }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+}
+run().then(code => { process.exitCode = code; }).catch(error => { console.error(error); process.exitCode = 1; });

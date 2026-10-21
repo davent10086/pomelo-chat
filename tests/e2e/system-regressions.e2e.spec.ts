@@ -1,8 +1,9 @@
+import { testApiURL } from "./helpers/endpoints";
 import { test, expect, request } from "@playwright/test";
 import { setup, createUserFactory } from "./helpers/chat";
 
 test("contact search paginates, encodes keywords, and ignores superseded requests", async ({ page }) => {
-  const api = await request.newContext({ baseURL: "http://127.0.0.1:3199/api/chat/v1/" });
+  const api = await request.newContext({ baseURL: testApiURL });
   const { username, password } = await createUserFactory(api, 'search')(1);
   try {
     await page.goto("/login");
@@ -102,9 +103,11 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
   // sequence must trigger HTTP catchup and restore the missing message once.
   await page.evaluate(
     async ({ room, user, receiver }) => {
+      const { wsBaseURL: testWsBaseURL, apiBaseURL: testBrowserApiURL } = await import("/src/config/index.ts");
+
       await new Promise<void>((resolve, reject) => {
         const socket = new WebSocket(
-          `ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${user.info.id}&type=private`,
+          `${testWsBaseURL}/message/connect_chat?room=${encodeURIComponent(room)}&id=${user.info.id}&type=private`,
           ["pomelo-token", user.token],
         );
         const timer = setTimeout(() => {

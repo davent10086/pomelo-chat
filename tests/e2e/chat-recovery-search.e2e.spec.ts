@@ -141,9 +141,11 @@ test("lost ACK survives refresh, offline messages recover once, search locates o
   // Populate real history beyond the initial page through the peer's socket.
   await page.evaluate(
     async ({ room, user }) => {
+      const { wsBaseURL: testWsBaseURL, apiBaseURL: testBrowserApiURL } = await import("/src/config/index.ts");
+
       await new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(
-          `ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${user.info.id}&type=private`,
+          `${testWsBaseURL}/message/connect_chat?room=${encodeURIComponent(room)}&id=${user.info.id}&type=private`,
           ["pomelo-token", user.token],
         );
         let index = 0;
@@ -362,9 +364,11 @@ test("switching conversations isolates delayed history, assistant streams and ta
   await page.goto("/login");
   await page.evaluate(
     async ({ room, token, id }) => {
+      const { wsBaseURL: testWsBaseURL, apiBaseURL: testBrowserApiURL } = await import("/src/config/index.ts");
+
       await new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(
-          `ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${encodeURIComponent(room)}&id=${id}&type=private`,
+          `${testWsBaseURL}/message/connect_chat?room=${encodeURIComponent(room)}&id=${id}&type=private`,
           ["pomelo-token", token],
         );
         let index = 0;

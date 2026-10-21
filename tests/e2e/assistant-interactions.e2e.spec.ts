@@ -1,3 +1,4 @@
+// @tags regression assistant
 import { test, expect } from "@playwright/test";
 import { setup, login } from "./helpers/chat";
 

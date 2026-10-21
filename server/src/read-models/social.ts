@@ -41,7 +41,6 @@ export const findFriendProfile = <T = unknown>(
 				f.unread_msg_count,
 				u.username,
 				u.avatar,
-				u.phone,
 				u.name,
 				u.signature
 			FROM

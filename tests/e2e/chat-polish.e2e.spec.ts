@@ -39,10 +39,12 @@ test('attachment names survive reload, file library supports downloads and navig
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 		await page.screenshot({ path: 'test-results/chat-files-mobile.png' });
 		const replay = await page.evaluate(async ({ room, filePath, filename }) => {
+      const { wsBaseURL: testWsBaseURL, apiBaseURL: testBrowserApiURL } = await import("/src/config/index.ts");
+
 			const token = JSON.parse(sessionStorage.getItem('pomelo-chat.authToken')!);
 			const user = JSON.parse(sessionStorage.getItem('pomelo-chat.userInfo')!);
 			const result = await new Promise<{ id: number; repeatedId: number; conflict: string; clientMsgId: string }>((resolve, reject) => {
-				const socket = new WebSocket(`ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${room}&id=${user.id}&type=private`, ['pomelo-token', token]);
+				const socket = new WebSocket(`${testWsBaseURL}/message/connect_chat?room=${room}&id=${user.id}&type=private`, ['pomelo-token', token]);
 				const payload = { content: filePath, type: 'file', fileName: filename, clientMsgId: `name_${crypto.randomUUID()}` };
 				let original = 0, repeated = 0;
 				const timer = setTimeout(() => { socket.close(); reject(new Error('Attachment replay timeout')); }, 10000);
@@ -54,7 +56,7 @@ test('attachment names survive reload, file library supports downloads and navig
 					if (frame.name === 'error') { clearTimeout(timer); socket.close(); resolve({ id: original, repeatedId: repeated, conflict: frame.name, clientMsgId: payload.clientMsgId }); }
 				};
 			});
-			const response = await fetch(`http://127.0.0.1:3199/api/chat/v1/message/resolve`, {
+			const response = await fetch(`${testBrowserApiURL}/message/resolve`, {
 				method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
 				body: JSON.stringify({ room, type: 'private', clientMsgIds: [result.clientMsgId] })
 			});

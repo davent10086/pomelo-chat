@@ -9,7 +9,7 @@ import { initializeGroupMessage } from './modules/messaging/public';
 import * as messaging from './modules/messaging/application';
 import * as messageSearch from './modules/messaging/search-application';
 import * as files from './modules/files/application';
-import { createRtcCalls, createRtcApplication } from './modules/rtc/public';
+import { createRtcCalls, createRtcApplication, revokeCallMedia } from './modules/rtc/public';
 import {
 	NotificationUser,
 	getNotificationSocket,
@@ -26,7 +26,7 @@ import { createHttpHandlers as rtcHandlers } from './modules/rtc/http';
 import { createHttpHandlers as assistantHandlers } from './modules/assistant/http';
 import { createUploadAccessMiddleware } from './modules/files/access-http';
 import { verifyTokenWithSession, isAuthenticatedPayload } from './modules/identity/public';
-export const rtcCalls = createRtcCalls({ notifyUser: NotificationUser });
+export const rtcCalls = createRtcCalls({ notifyUser: NotificationUser, revokeMedia: revokeCallMedia });
 export const identity = createIdentityApplication({
 	releaseUserCall: rtcCalls.releaseUserCall,
 	notifySessionChanged,

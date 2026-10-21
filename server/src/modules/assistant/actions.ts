@@ -323,11 +323,8 @@ const executePendingAction = async (
 		return { type: 'save_memory', ...result };
 	}
 	if (action.type === 'forget_memory') {
-		const result = await executePomeloTool(
-			{ userId: action.userId, confirmationId: action.id },
-			{ name: 'forget_memory', args: action.payload }
-		);
-		return { type: 'forget_memory', ...result };
+		const { id } = memoryForgetSchema.parse(action.payload);
+		return repository.deleteMemoryAndCompleteAction(action.id, action.userId, id);
 	}
 	if (action.type === 'external_mcp') {
 		const name = typeof action.payload.name === 'string' ? action.payload.name : '';
@@ -446,7 +443,8 @@ export const confirmAction = async (
 			status: 'executing'
 		};
 		const result = await executePendingAction(action, selection);
-		await repository.completeAction([JSON.stringify(result), confirmationId, userId]);
+		if (action.type !== 'forget_memory')
+			await repository.completeAction([JSON.stringify(result), confirmationId, userId]);
 		try {
 			await saveActionResult(confirmationId, userId, result, action.expiresAt);
 		} catch (cacheError) {

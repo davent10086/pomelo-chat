@@ -124,7 +124,7 @@ const Container = () => {
 
 		ws.onMessage = e => {
 			// H11: safeParse 保护，非法 JSON 不致白屏
-			const message = safeParse<{ name: string; callId?: string; status?: string; memberStatus?: string; callReceiverList?: ICallReceiverInfo[]; room?: string; mode?: string }>(e.data, { name: '' });
+			const message = safeParse<{ name: string; callId?: string; status?: string; memberStatus?: string; mediaGeneration?: number; callReceiverList?: ICallReceiverInfo[]; room?: string; mode?: string }>(e.data, { name: '' });
 			switch (message.name) {
 				case 'friendList':
 					addressBookRef.current?.refreshFriendList();
@@ -197,7 +197,9 @@ const Container = () => {
 	// L1: 添加 cleanup，组件卸载时关闭 socket
 	useEffect(() => {
 		initSocket();
+		window.addEventListener('pomelo-token-changed', initSocket);
 		return () => {
+			window.removeEventListener('pomelo-token-changed', initSocket);
 			if (socket.current) {
 				socket.current.destroy();
 				socket.current = null;

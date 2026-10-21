@@ -1,3 +1,4 @@
+import { testApiOrigin, testApiURL, testWebOrigin } from "./helpers/endpoints";
 import { createUserFactory, connectFriends, login } from './helpers/chat';
 import { test, expect, request } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -5,7 +6,7 @@ import { createHash } from 'node:crypto';
 // No response stubs or WebSocket interception: both browsers use the running app.
 test('真实聊天：登录、通知、上传下载与断线恢复', async ({ page, browser }) => {
   test.setTimeout(90000);
-  const api = await request.newContext({ baseURL: 'http://127.0.0.1:3199/api/chat/v1/' });
+  const api = await request.newContext({ baseURL: testApiURL });
   const peerContext = await browser.newContext();
   const peer = await peerContext.newPage();
   const stamp = Date.now();
@@ -48,10 +49,10 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
       expect(response.ok()).toBeTruthy();
       return (await response.json()).data.messages.filter((message: { content: string }) => message.content === filePath).map((message: { file_name: string }) => message.file_name);
     }).toEqual(['real-chat.txt']);
-    const download = await api.get(`http://127.0.0.1:3199${filePath}`, { headers: { Authorization: `Bearer ${b.token}` } });
+    const download = await api.get(`${testApiOrigin}${filePath}`, { headers: { Authorization: `Bearer ${b.token}` } });
     expect(download.ok()).toBeTruthy();
     expect(createHash('sha256').update(await download.body()).digest('hex')).toBe(createHash('sha256').update(bytes).digest('hex'));
-    const forbidden = await api.get(`http://127.0.0.1:3199${filePath}`, { headers: { Authorization: `Bearer ${outsider.token}` } });
+    const forbidden = await api.get(`${testApiOrigin}${filePath}`, { headers: { Authorization: `Bearer ${outsider.token}` } });
     expect(forbidden.status()).toBe(404);
 
     // File drags use the same real upload path, without navigating away or replacing a text draft.
@@ -75,7 +76,7 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
     const allFiles = (await (await api.get('message/search', { headers: { Authorization: `Bearer ${b.token}` }, params: { room, type: 'private', mediaType: 'file' } })).json()).data.messages;
     for (const [text, index] of [['dragged-file-one', 0], ['dragged-file-two', 1]] as const) {
       const path = allFiles.filter((item: { content: string }) => item.content !== filePath).sort((a: { id: number }, b: { id: number }) => a.id - b.id)[index].content;
-      expect(await (await api.get(`http://127.0.0.1:3199${path}`, { headers: { Authorization: `Bearer ${b.token}` } })).text()).toBe(text);
+      expect(await (await api.get(`${testApiOrigin}${path}`, { headers: { Authorization: `Bearer ${b.token}` } })).text()).toBe(text);
     }
     await transfer.dispose();
 
@@ -98,7 +99,7 @@ test('真实聊天：登录、通知、上传下载与断线恢复', async ({ pa
       const response = await api.get('message/search', { headers: { Authorization: `Bearer ${a.token}` }, params: { room, type: 'private', query: `离线消息_${stamp}` } });
       return (await response.json()).data.messages.length;
     }).toBe(1);
-    await peer.goto('http://127.0.0.1:5199/');
+    await peer.goto(`${testWebOrigin}/`);
     await peer.locator(`[id="chatList_${room}"]`).click();
     await expect(peer.locator('[data-message-index]').getByText(`离线消息_${stamp}`, { exact: true })).toHaveCount(1);
     await expect(offlineMessage.getByRole('status', { name: '对方已读', exact: true })).toBeVisible();

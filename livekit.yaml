@@ -8,4 +8,6 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
 room:
-  auto_create: true
+  # Rooms are created only by the authorized token endpoint. Ended calls cannot
+  # recreate a deleted room using a cached roomJoin token.
+  auto_create: false

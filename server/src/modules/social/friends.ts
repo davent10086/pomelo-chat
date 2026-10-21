@@ -63,7 +63,6 @@ export const createFriendApplication = (dependencies: SocialEffects) => {
 		unread_msg_count: number;
 		username: string;
 		avatar: string | null;
-		phone: string;
 		name: string | null;
 		signature: string | null;
 	}

@@ -57,12 +57,9 @@ jobs:
           key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
           restore-keys: ${{ runner.os }}-pnpm-
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:full:server
-      - run: pnpm --filter pomelo-chat-server test:prisma
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:full:browser
-        if: ${{ !cancelled() }}
-      - run: node server/scripts/run-isolated-tests.js qa
+      - run: pnpm test:ci
+      - run: pnpm test:qa
         if: ${{ !cancelled() }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

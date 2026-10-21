@@ -1,3 +1,4 @@
+import { testApiURL, testWebOrigin } from "./endpoints";
 import { expect, request, type Page } from "@playwright/test";
 
 export const createUserFactory = (
@@ -54,7 +55,7 @@ export const connectFriends = async (
 
 export const setup = async () => {
   const api = await request.newContext({
-    baseURL: "http://127.0.0.1:3199/api/chat/v1/",
+    baseURL: testApiURL,
   });
   try {
     const create = createUserFactory(api);
@@ -72,7 +73,7 @@ export const login = async (
   user: { username: string; password: string },
   room?: string,
 ) => {
-  await page.goto("http://127.0.0.1:5199/login");
+  await page.goto(`${testWebOrigin}/login`);
   await page.getByPlaceholder("请输入用户名").fill(user.username);
   await page.getByPlaceholder("请输入密码").fill(user.password);
   await page.locator("button[type=submit]").click();

@@ -6,7 +6,7 @@
 
 - Node.js 20.19+ / 22.12+ / 24+、pnpm 10.19、MySQL 8+、Redis。
 - 在 server/.env 配置本机数据库管理连接；推荐另设 DATABASE_URL_TEST、REDIS_URL_TEST。
-- `run-isolated-tests.js` 为每次执行创建 `pomelo_<模式>_test_<时间戳>` 数据库、独立 Redis 前缀和附件目录。结束时只清理自己创建的资源，绝不 FLUSHDB。
+- 公共 `tests/run.cjs` 为集成文件和浏览器批次创建随机测试数据库、独立 Redis 前缀和附件目录。结束时只清理自己创建的资源，绝不 FLUSHDB。旧 `run-isolated-tests.js` 仅作兼容转发。
 - MySQL 测试账号需要创建和删除临时库的权限。不要把线上账号写入测试配置。
 - 功能测试的批量账号创建采用专用高限流额度；默认限流由独立真实 HTTP 用例验证。
 
@@ -14,6 +14,10 @@
 
 | 命令 | 覆盖范围 |
 | --- | --- |
+| `pnpm test:unit` | 纯规则、状态迁移、权限和运行器单元测试；强制禁止网络连接 |
+| `pnpm test:integration` | 真实数据库、Redis、HTTP、WebSocket、迁移、故障恢复 |
+| `pnpm test:e2e` | 当前浏览器 UI 的关键业务流程 |
+| `pnpm test:ci` | checks、构建、单元、集成、端到端；本地和 CI 相同入口 |
 | `pnpm test:full:server` | lint、前后端构建、单元、数据库护栏、HTTP、Agent 路由/流/读工具/确认、MCP 策略、安全、模块边界、Prisma schema、破坏性迁移恢复、后端可靠性、系统故障注入、消息过载、报告回归、编译产物启动 |
 | `pnpm test:full:browser` | 全部默认浏览器用例；真实登录、消息 ACK、文件上传下载、断线补齐、搜索、草稿、账号隔离、IndexedDB、AI 取消/确认/会话切换、403 不登出、快速 Enter 防重复 |
 | `pnpm --filter pomelo-chat-server test:prisma` | 独立临时数据库中的 ORM/raw SQL 事务、回滚、连接一致性、时间解释、并发主键 |
@@ -22,7 +26,7 @@
 | `pnpm test:desktop:production` | 构建后桌面客户端连真实独立服务的生产冒烟 |
 | `pnpm test:real-rtc` | 需要运行 LiveKit；两个浏览器的真实音视频和通话状态 |
 | `node server/scripts/run-isolated-tests.js qa` | 现有综合 QA 入口，独立数据库 |
-| `pnpm test:coverage` | Node 单元与数据库测试覆盖率，仅代表这些测试加载的源文件 |
+| `pnpm test:coverage` | Node 单元覆盖率，仅代表这些测试加载的源文件 |
 
 ## 必须保持的行为
 
@@ -47,7 +51,7 @@
 
 ## 输出与诊断
 
-- 服务端全套结果：`test-results/full-server.json`，任一命令失败则整个入口返回非零；后续套件仍继续执行以收集故障。
-- 浏览器失败轨迹与截图：`test-results/browser/<本次测试库名>/`；各次执行的产物隔离。浏览器套件固定使用 3199/5199 端口，普通浏览器与 RTC 套件请顺序运行。
+- 公共报告：`test-results/<runId>/report.json`；记录套件与用例计数、耗时、日志、资源和失败原因。任一命令失败则整个入口返回非零，后续套件仍继续执行以收集故障。
+- 浏览器失败轨迹与截图：公共报告的 artifacts 指向本次运行目录。API/Web 使用动态端口，测试等待 readiness，不复用开发服务。完整配置与筛选方式见 `tests/README.md`。
 - CI 独立运行依赖审计，审计失败不会阻止功能测试执行，也不会被隐藏为成功。
 - 音视频、容器构建及外部服务必须单独记录实测状态；没有运行的检查不能写成通过。

@@ -124,8 +124,8 @@ server/src/
   mcp/            本地 MCP stdio server
   composition.ts  模块依赖组装
   runtime.ts      后台资源生命周期
-qa/               浏览器回归、QA 与压测脚本
-tests/            单元测试和数据库边界测试
+qa/               兼容入口、综合 QA 与手动压测实验
+tests/            统一单元、集成、端到端、专项、公共运行器
 ```
 
 业务接口前缀为 `/api/chat/v1`：`/auth`、`/friend`、`/group`、`/message`、`/file`、`/rtc`、`/assistant`。AI 请求统一使用 `/assistant/agent` 与 `/assistant/agent/stream`。
@@ -146,7 +146,7 @@ node server/scripts/run-isolated-tests.js overload
 node server/scripts/run-isolated-tests.js browser
 ```
 
-`pnpm test:all` 需要预先配置独立测试数据库及 Redis；浏览器测试需安装 Playwright Chromium。普通回归使用确定性模型桩；真实音视频测试另需 LiveKit。
+常用入口为 `pnpm test:unit`、`pnpm test:integration`、`pnpm test:e2e`。`pnpm test:ci`（与 `test:all` 相同）依次执行静态检查、构建和三层测试，需要 MySQL 管理连接、Redis 与 Playwright Chromium；运行器自动创建并删除临时数据库。普通回归使用确定性替身；真实音视频测试另需 LiveKit。
 
 - [测试配置与命令](tests/README.md)
 - [后端模块与事务约束](server/ARCHITECTURE.md)
@@ -184,7 +184,7 @@ pnpm test:desktop:smoke
 pnpm test:desktop:production
 ```
 
-前两个入口自动创建并清理独立测试数据库、Redis 前缀和附件目录。服务端入口会实际启动 `server/dist/index.js`，结果写入 `test-results/full-server.json`。没有运行的外部模型或 LiveKit 测试不会计为已通过。生产登录的默认限制为每 IP 每分钟 30 次、每账号每 5 分钟 10 次；功能测试另设专用额度，独立安全回归仍验证默认限制。
+前两个入口自动创建并清理独立测试数据库、Redis 前缀和附件目录。服务端入口会实际启动 `server/dist/index.js`，统一结果写入 `test-results/<runId>/report.json`。没有运行的外部模型或 LiveKit 测试不会计为已通过。生产登录的默认限制为每 IP 每分钟 30 次、每账号每 5 分钟 10 次；功能测试另设专用额度，独立安全回归仍验证默认限制。
 
 ## 生产启动与反向代理
 
@@ -194,6 +194,10 @@ pnpm test:desktop:production
 
 仓库提供 `Dockerfile`、`docker-compose.yml` 和 `deploy/nginx.conf`。在仓库根 `.env` 设置 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`JWT_SECRET` 后，可运行 `docker compose up --build -d`；网页入口为 `http://localhost:8080`。前端镜像以同源方式访问 API/WS/附件。互联网部署需在入口设置 TLS，并将 `CORS_ORIGINS` 改为实际来源；反代配置已包含 WebSocket upgrade、SSE 禁止缓冲和附件转发。只在服务位于可信代理后时配置 `TRUST_PROXY`。
 
-上传在写入每片前原子记账，默认单文件 100 MiB、每用户未完成上传 500 MiB、20 个活跃上传会话；每分钟回收失效分片。附件 URL 使用 5 分钟、单文件范围的访问凭证，每次读取仍检查当前登录和文件权限；登录 token 不进入媒体或通知 WebSocket URL。原有 AES 本地存储方案保留。
+上传在写入每片前原子记账，默认单文件 100 MiB、每用户未完成上传 500 MiB、20 个活跃上传会话；每分钟回收失效分片。成品文件及提交预留另有每用户 500 MiB 的累计额度（`MAX_USER_STORAGE_BYTES`），在数据库中按用户串行计账，合并完成不会释放此额度；重试同一文件不会重复计费。附件 URL 使用 5 分钟、单文件范围的访问凭证，每次读取仍检查当前登录和文件权限；登录 token 不进入媒体或通知 WebSocket URL。原有 AES 本地存储方案保留。
+
+聊天 WebSocket 默认每账号最多 8 条、同账号同房间最多 3 条（`MAX_CHAT_CONNECTIONS_PER_USER`、`MAX_CHAT_CONNECTIONS_PER_ROOM`），通过 Redis 共享租约限制；超额连接不会查询消息历史。
+
+自托管 LiveKit 必须使用仓库 `livekit.yaml` 中的 `room.auto_create: false`；已有实例升级后需重新加载该配置。只有后端成员鉴权通过后才会创建媒体房间。群通话有已加入成员离开时，后端删除旧媒体房间并切换房间代次，剩余成员自动重连，避免退出者重放旧媒体 token；切换时媒体可能短暂停顿。私聊结束直接删除房间，SFU 清理失败会持久重试。升级时客户端与服务端需一同更新。
 
 Outbox 默认重试 30 次后记录 `failed_at`，暂停该房间后续投递以维持顺序。监控 `pomelo_outbox_failed` 并修复失败原因后，通过 `pnpm --filter pomelo-chat-server outbox:retry <message_id>` 恢复；不会自动丢弃消息。已投递 Outbox 保留 7 天后分批删除，消息历史保持不变。过期确认记录保留 30 天、MCP 审计保留 90 天。

@@ -1,4 +1,4 @@
-import { Query } from '../../infrastructure/database-query';
+import { Query, withTransaction } from '../../infrastructure/database-query';
 import type { SqlQuery } from '../../shared/actor';
 export const pruneExpiredActions = (): Promise<unknown> => Query("DELETE FROM assistant_action WHERE expires_at < DATE_SUB(NOW(), INTERVAL 30 DAY) AND status <> 'executing' LIMIT 1000");
 export const pruneAuditLogs = (): Promise<unknown> => Query('DELETE FROM mcp_audit_log WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 1000');
@@ -182,3 +182,18 @@ export const deleteOwnedMemory = <T = unknown>(
 ): Promise<T> => {
 	return executor<T>('DELETE FROM assistant_memory WHERE user_id = ? AND id = ?', bindings);
 };
+
+/** Deletion and its durable receipt commit together, including recovery of older interrupted actions. */
+export const deleteMemoryAndCompleteAction = async (
+	id: string, userId: number, memoryId: number
+): Promise<Record<string, unknown>> => withTransaction(async executor => {
+	const owned = await executor<Array<{ id: string }>>(
+		"SELECT id FROM assistant_action WHERE id = ? AND user_id = ? AND type = 'forget_memory' AND status = 'executing' FOR UPDATE",
+		[id, userId]
+	);
+	if (!owned.length) throw new Error('Memory action is no longer executing');
+	const removed = await deleteOwnedMemory<{ affectedRows: number }>([userId, memoryId], executor);
+	const result = { type: 'forget_memory', deleted: removed.affectedRows, alreadyDeleted: removed.affectedRows === 0 };
+	await completeAction([JSON.stringify(result), id, userId], executor);
+	return result;
+});

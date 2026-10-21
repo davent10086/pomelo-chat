@@ -1,8 +1,9 @@
+import { testApiURL } from "./helpers/endpoints";
 import { test, expect, request } from '@playwright/test';
 import { createUserFactory, connectFriends, login } from './helpers/chat';
 
 test('an empty conversation compensates from zero when the first live frame has a gap', async ({ page }) => {
-  const api = await request.newContext({ baseURL: 'http://127.0.0.1:3199/api/chat/v1/' });
+  const api = await request.newContext({ baseURL: testApiURL });
   const create = createUserFactory(api, 'firstgap');
   try {
     const sender = await create(1), receiver = await create(2);
@@ -22,8 +23,10 @@ test('an empty conversation compensates from zero when the first live frame has 
     await expect(page.getByLabel('消息输入框')).toBeEnabled();
     // Send using another real client; only the first incoming content frame is withheld.
     await page.evaluate(async ({ sender, room }) => {
+      const { wsBaseURL: testWsBaseURL, apiBaseURL: testBrowserApiURL } = await import("/src/config/index.ts");
+
       await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(`ws://127.0.0.1:3199/api/chat/v1/message/connect_chat?room=${room}&id=${sender.info.id}&type=private`, ['pomelo-token', sender.token]);
+        const ws = new WebSocket(`${testWsBaseURL}/message/connect_chat?room=${room}&id=${sender.info.id}&type=private`, ['pomelo-token', sender.token]);
         const timer = setTimeout(() => { ws.close(); reject(Error('Sender ACK timeout')); }, 10000);
         let index = 0;
         ws.onmessage = event => {

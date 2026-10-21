@@ -1,3 +1,4 @@
+import { testApiOrigin } from "./helpers/endpoints";
 import { test, expect } from '@playwright/test';
 import { setup, login } from './helpers/chat';
 
@@ -23,7 +24,7 @@ test('overload keeps the pending message, retries the same ID and reports real c
     });
   });
   const receiptCount = async () => {
-    const res = await api.get('http://127.0.0.1:3199/internal/metrics', {
+    const res = await api.get(`${testApiOrigin}/internal/metrics`, {
       headers: { Authorization: 'Bearer browser-metrics-test' }
     });
     expect(res.status()).toBe(200);

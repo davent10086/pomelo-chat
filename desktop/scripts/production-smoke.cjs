@@ -1,3 +1,4 @@
+if (!process.env.TEST_TMPDIR || !process.env.TEST_ARTIFACT_DIR) throw new Error('Run desktop checks through the root test entrypoint');
 // Runs the packaged executable against isolated real MySQL/Redis and the real backend.
 const { _electron: electron, expect } = require('@playwright/test');
 const { spawn } = require('node:child_process');
@@ -11,8 +12,8 @@ if (!process.env.DATABASE_URL_TEST || !process.env.REDIS_URL_TEST || !process.en
   throw new Error('Use pnpm test:desktop:production to create isolated service targets');
 const executable = path.join(root, 'release/win-unpacked/Pomelo Chat.exe');
 if (!fs.existsSync(executable)) throw new Error('Build the Windows app first: pnpm build:desktop');
-const profileRoot = fs.mkdtempSync(path.join(root, 'tmp/tests/desktop-profile-'));
-const artifacts = path.join(root, 'test-results/desktop-production');
+const profileRoot = fs.mkdtempSync(path.join(process.env.TEST_TMPDIR, 'desktop-profile-'));
+const artifacts = process.env.TEST_ARTIFACT_DIR;
 fs.mkdirSync(artifacts, { recursive: true });
 const apps = new Set();
 let backend, backendLog = '';
@@ -202,7 +203,7 @@ run().catch(error => { console.error(error); process.exitCode = 1; }).finally(as
     const stopped = once(backend, 'exit'); backend.kill(); await Promise.race([stopped, pause(5000)]);
   }
   fs.writeFileSync(path.join(artifacts, 'backend.log'), backendLog);
-  const expectedParent = path.join(root, 'tmp/tests');
+  const expectedParent = process.env.TEST_TMPDIR;
   if (path.dirname(profileRoot) !== expectedParent || !path.basename(profileRoot).startsWith('desktop-profile-')) throw new Error('Unsafe profile cleanup');
   fs.rmSync(profileRoot, { recursive: true, force: true });
 });

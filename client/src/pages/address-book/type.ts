@@ -16,7 +16,6 @@ export interface IFriendInfo {
 	unread_msg_count: number;
 	username: string;
 	avatar: string;
-	phone: string;
 	name: string;
 	signature: string | null;
 }

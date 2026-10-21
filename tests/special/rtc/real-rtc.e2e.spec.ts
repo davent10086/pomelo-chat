@@ -1,10 +1,119 @@
-import { createUserFactory, connectFriends, login, setup } from './helpers/chat';
+// @tags security regression rtc
+import { testApiURL, testLiveKitHttp, testLiveKitKey, testLiveKitSecret } from "../../e2e/helpers/endpoints";
+import { createUserFactory, connectFriends, login, setup } from '../../e2e/helpers/chat';
 import { test, expect, request, type Page } from '@playwright/test';
+
+test('server end disconnects real media without client hangup and cached tokens cannot recreate the room', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  const { api, a, b, room } = await setup();
+  const peerContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
+  const peer = await peerContext.newPage();
+  let credentials: { token: string; roomName: string; serverUrl: string } | undefined;
+  // Ignore business notifications so only an SFU kick can terminate the peer's media.
+  for (const target of [page, peer]) await target.addInitScript(() => {
+    window.addEventListener('pomelo-call-state', event => event.stopImmediatePropagation());
+  });
+  page.on('response', async response => {
+    if (response.url().endsWith('/rtc/join-token') && response.ok()) credentials = (await response.json()).data;
+  });
+  try {
+    await login(page, a, room); await login(peer, b, room);
+    const invitation = page.waitForResponse(response => response.url().endsWith('/rtc/invite'));
+    await page.getByRole('button', { name: '语音聊天', exact: true }).click();
+    const callId = (await (await invitation).json()).data.callId;
+    await peer.getByAltText('接听').click();
+    await expect.poll(() => credentials).toBeTruthy();
+    await expect(page.getByAltText('挂断')).toBeVisible();
+    await expect(peer.getByAltText('挂断')).toBeVisible();
+    const { RoomServiceClient } = require('../../../server/node_modules/livekit-server-sdk');
+    const service = new RoomServiceClient(testLiveKitHttp, testLiveKitKey, testLiveKitSecret);
+    await expect.poll(async () => (await service.listParticipants(credentials!.roomName)).length).toBe(2);
+    const token = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pomelo-chat.authToken') || '""'));
+    expect((await api.post('rtc/end', { headers: { Authorization: `Bearer ${token}` }, data: { callId } })).ok()).toBeTruthy();
+    await expect.poll(async () => (await service.listRooms([credentials!.roomName])).length).toBe(0);
+    for (const target of [page, peer]) await expect(target.getByRole('dialog')).toHaveCount(0);
+    expect((await api.post('rtc/join-token', {
+      headers: { Authorization: `Bearer ${token}` }, data: { callId, room, type: 'private' },
+    })).status()).toBe(403);
+    const rejoined = await page.evaluate(async credentials => {
+      const { Room } = await import('/node_modules/.vite/deps/livekit-client.js');
+      const attempt = new Room();
+      try { await attempt.connect(credentials.serverUrl, credentials.token); return true; }
+      catch { return false; }
+      finally { await attempt.disconnect(); }
+    }, credentials!);
+    expect(rejoined).toBe(false);
+  } finally { await peerContext.close(); await api.dispose(); }
+});
+
+test('leaving a group call retires cached tokens while remaining participants reconnect', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  const { api, a, b } = await setup();
+  const headers = { Authorization: `Bearer ${a.token}` };
+  const name = 'rtc-group-' + Date.now();
+  expect((await api.post('group/create_group', { headers, data: {
+    name, avatar: '', members: [{ user_id: b.info.id, username: b.username }],
+  } })).ok()).toBeTruthy();
+  const groups = (await (await api.get('group/group_list', { headers })).json()).data;
+  const room = groups.find((group: { name: string }) => group.name === name).room;
+  const peerContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
+  const peer = await peerContext.newPage();
+  let mediaRoom = '';
+  let peerMediaRoom = '';
+  let cachedCredentials: { token: string; serverUrl: string } | undefined;
+  page.on('response', async response => {
+    if (response.url().endsWith('/rtc/join-token') && response.ok()) {
+      const data = (await response.json()).data;
+      mediaRoom = data.roomName; cachedCredentials = data;
+    }
+  });
+  peer.on('response', async response => {
+    if (response.url().endsWith('/rtc/join-token') && response.ok()) peerMediaRoom = (await response.json()).data.roomName;
+  });
+  await page.addInitScript(() => window.addEventListener('pomelo-call-state', event => event.stopImmediatePropagation()));
+  try {
+    await login(page, a, room); await login(peer, b, room);
+    const invitation = page.waitForResponse(response => response.url().endsWith('/rtc/invite'));
+    await page.getByRole('button', { name: '语音聊天', exact: true }).click();
+    const callId = (await (await invitation).json()).data.callId;
+    await peer.getByAltText('接听').click();
+    const { RoomServiceClient } = require('../../../server/node_modules/livekit-server-sdk');
+    const service = new RoomServiceClient(testLiveKitHttp, testLiveKitKey, testLiveKitSecret);
+    await expect.poll(async () => mediaRoom ? (await service.listParticipants(mediaRoom)).length : 0).toBe(2);
+    const token = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pomelo-chat.authToken') || '""'));
+    const ended = await api.post('rtc/end', { headers: { Authorization: `Bearer ${token}` }, data: { callId } });
+    expect(ended.ok()).toBeTruthy(); expect((await ended.json()).data.status).toBe('active');
+    await expect.poll(async () => (await service.listRooms([mediaRoom])).length).toBe(0);
+    await expect.poll(() => peerMediaRoom).toContain('-g1');
+    await expect.poll(async () => (await service.listParticipants(peerMediaRoom)).map((participant: { identity: string }) => participant.identity)).toEqual([b.username]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(peer.getByAltText('挂断')).toBeVisible();
+    expect((await api.post('rtc/join-token', {
+      headers: { Authorization: `Bearer ${token}` }, data: { callId, room, type: 'group' },
+    })).status()).toBe(403);
+    const rejoined = await page.evaluate(async credentials => {
+      const { Room } = await import('/node_modules/.vite/deps/livekit-client.js');
+      const attempt = new Room();
+      try { await attempt.connect(credentials.serverUrl, credentials.token); return true; }
+      catch { return false; }
+      finally { await attempt.disconnect(); }
+    }, cachedCredentials!);
+    expect(rejoined).toBe(false);
+    // A deliberate rejoin obtains credentials for the current room generation.
+    await page.getByRole('button', { name: '语音聊天', exact: true }).click();
+    await expect.poll(async () => (await service.listParticipants(peerMediaRoom)).length).toBe(2);
+    await page.getByAltText('挂断').click();
+    await expect.poll(() => peerMediaRoom).toContain('-g2');
+    await expect.poll(async () => (await service.listParticipants(peerMediaRoom)).map((participant: { identity: string }) => participant.identity)).toEqual([b.username]);
+    await peer.getByAltText('挂断').click();
+    await expect.poll(async () => (await service.listRooms([peerMediaRoom])).length).toBe(0);
+  } finally { await peerContext.close(); await api.dispose(); }
+});
 
 for (const mode of ['audio', 'video'] as const) {
   test(`真实 LiveKit ${mode}：邀请、接听、双向媒体与挂断`, async ({ page, browser }, testInfo) => {
     test.setTimeout(90000);
-    const api = await request.newContext({ baseURL: 'http://127.0.0.1:3199/api/chat/v1/' });
+    const api = await request.newContext({ baseURL: testApiURL });
     const peerContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
     const peer = await peerContext.newPage();
     let completed = false;

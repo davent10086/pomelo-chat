@@ -81,9 +81,11 @@ export const useLiveKitCall = (roomId: string, type: CallType, mediaMode: MediaM
 				syncParticipants();
 				setConnectionState('connected');
 			} catch (error) {
-				await ownedRoom?.disconnect();
 				if (roomRef.current === ownedRoom) roomRef.current = null;
-				if (epoch === generation.current) setConnectionState('failed');
+				await ownedRoom?.disconnect();
+				// A newer room generation intentionally cancelled this attempt.
+				if (epoch !== generation.current) return;
+				setConnectionState('failed');
 				throw error;
 			} finally {
 				if (epoch === generation.current) joining.current = false;

@@ -102,6 +102,7 @@ const registerFile = async (
 			paths.fileHash
 	)
 		throw new Error('Invalid stored upload');
+	await repository.reserveFileStorage([userId, paths.fileHash, paths.ext, paths.suffix, paths.fileDBPath, stat.size, null]);
 	await repository.upsertReadyFile([
 		userId,
 		paths.fileHash,
@@ -148,6 +149,7 @@ const verifyFileUnlocked = async (actor: Actor, parameters: VerifyFileInput, ass
 			neededFileList.length ? undefined : FileStatus.ALL_CHUNK_UPLOAD
 		);
 	} catch (err) {
+		if (err instanceof repository.StorageQuotaExceeded) return failure(FileStatus.FILE_TOO_LARGE);
 		console.error('[file] verify failed:', err);
 		return failure(CommonStatus.SERVER_ERR);
 	}
@@ -240,23 +242,23 @@ const mergeFileUnlocked = async (actor: Actor, parameters: MergeFileInput, asser
 	if (!session) return failure(CommonStatus.PARAM_ERR);
 	const { dirPath, filePath, fileDBPath } = paths;
 
-	try {
-		// 检查文件是否已存在
-		await fs.promises.access(filePath);
-		await registerFile(actor.id, paths);
-		const data = { message: '文件已存在', filePath: fileDBPath };
-		return success(data);
-	} catch {
-		// 文件不存在，继续执行
+	// The canonical Redis lease already serializes all writers and recovers after a crash.
+	// Older releases may have left an unowned filesystem lock behind.
+	await assertLease();
+	await fs.promises.rm(`${filePath}.merge.lock`, { force: true });
+	const exists = await fs.promises.stat(filePath).then(stat => stat.isFile()).catch(() => false);
+	if (exists) {
+		try { await registerFile(actor.id, paths); }
+		catch (err) { return failure(err instanceof repository.StorageQuotaExceeded ? FileStatus.FILE_TOO_LARGE : CommonStatus.SERVER_ERR); }
+		await assertLease();
+		await removeDir(dirPath);
+		await releaseUploadQuota(String(actor.id), `${paths.fileHash}:${paths.ext}`);
+		await better_chat.del(uploadSessionKey(actor.id, paths.fileHash, paths.ext));
+		return success({ message: '文件已存在', filePath: fileDBPath });
 	}
 
-	const lockPath = `${filePath}.merge.lock`;
 	const tempPath = `${filePath}.part-${randomUUID()}`;
-	let lockAcquired = false;
 	try {
-		const lock = await fs.promises.open(lockPath, 'wx');
-		await lock.close();
-		lockAcquired = true;
 		const files = (await fs.promises.readdir(dirPath)).filter(name => /^chunk-\d+$/.test(name));
 		if (
 			files.length !== session.totalCount ||
@@ -280,12 +282,13 @@ const mergeFileUnlocked = async (actor: Actor, parameters: MergeFileInput, asser
 		if ((await hashFile(tempPath, algorithm)) !== paths.fileHash)
 			throw new Error('upload checksum mismatch');
 		await assertLease();
+		await repository.reserveFileStorage([actor.id, paths.fileHash, paths.ext, paths.suffix, fileDBPath, stat.size, null]);
+		await assertLease();
 		await fs.promises.rename(tempPath, filePath);
-	} catch {
+	} catch (err) {
 		await fs.promises.rm(tempPath, { force: true }).catch(() => undefined);
+		if (err instanceof repository.StorageQuotaExceeded) return failure(FileStatus.FILE_TOO_LARGE);
 		return failure(CommonStatus.SERVER_ERR);
-	} finally {
-		if (lockAcquired) await fs.promises.rm(lockPath, { force: true }).catch(() => undefined);
 	}
 
 	try {
