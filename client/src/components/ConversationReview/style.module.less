@@ -1,0 +1,32 @@
+.trigger {
+  height: 28px;
+  border-radius: 6px;
+  background: #e8f3ff;
+  color: #2875bf;
+  font-size: 12px;
+}
+.drawer { :global(.ant-drawer-body) { padding: 20px; } }
+.meta { font-size: 12px; line-height: 1.7; color: var(--text-secondary, #64748b); }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.controls label, .batch { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.controls select, .controls input, .batch select, .section textarea {
+  padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px;
+  color: inherit; background: var(--bg-primary, #fff);
+}
+.batch { margin: 14px 0; }
+.coverage { margin: 16px 0; padding: 12px; background: var(--bg-secondary, #f3f7fc); border-radius: 8px; font-size: 12px; }
+.coverage p { margin: 6px 0 0; }
+.progress { display: flex; gap: 8px; align-items: center; margin: 16px 0; font-size: 13px; }
+.section { margin: 22px 0; }
+.section h3 { font-size: 15px; }
+.section ul { list-style: none; padding: 0; }
+.item { padding: 12px 0; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
+.item p { white-space: pre-wrap; margin: 0 0 8px; line-height: 1.7; }
+.sources { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.sources button {
+  text-align: left; padding: 8px; border: 1px solid #dbeafe; border-radius: 6px;
+  background: var(--bg-secondary, #f3f7fc); color: #2875bf; cursor: pointer; font-size: 12px;
+}
+.sources button span { display: block; color: var(--text-secondary, #64748b); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 3px; }
+.answer { margin: 14px 0; font-size: 13px; }
+.section textarea { width: 100%; box-sizing: border-box; margin-bottom: 8px; resize: vertical; }

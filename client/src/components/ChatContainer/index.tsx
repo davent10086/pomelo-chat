@@ -9,6 +9,7 @@ import MessageShow from '@/components/MessageShow';
 import { IMessageItem } from '@/components/MessageShow/type';
 
 import { mergeMessages } from '@/utils/message-merge';
+import { buildHeightOffsets, findHeightIndex } from '@/utils/virtual-layout';
 
 // M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
 const ESTIMATE_ITEM_HEIGHT = 60; // 初始估算高度
@@ -51,8 +52,15 @@ const ChatContainer = (props: IChatContainerProps) => {
 	const measuredHeights = useRef<Map<string, number>>(new Map());
 
 	const allMessages = useMemo(() => {
-		return mergeMessages(historyMsg || [], newMsg || []);
-	}, [historyMsg, newMsg]);
+		return props.messages || mergeMessages(historyMsg || [], newMsg || []);
+	}, [props.messages, historyMsg, newMsg]);
+	const messageKeys = useMemo(() => allMessages.map(getMessageKey), [allMessages]);
+	const offsets = useMemo(() => {
+		// The ref is updated by ResizeObserver; its version invalidates this index.
+		void layoutVersion;
+		return buildHeightOffsets(allMessages.length, index =>
+			measuredHeights.current.get(messageKeys[index]) || ESTIMATE_ITEM_HEIGHT);
+	}, [allMessages.length, messageKeys, layoutVersion]);
 
 	useEffect(() => {
 		onAtBottomChange?.(isAtBottom);
@@ -60,9 +68,10 @@ const ChatContainer = (props: IChatContainerProps) => {
 	useEffect(() => {
 		const wrapper = messagesWrapRef.current;
 		if (!wrapper) return;
-		const observer = new ResizeObserver(() => {
+		const observer = new ResizeObserver(entries => {
 			let changed = false;
-			wrapper.querySelectorAll<HTMLElement>('[data-message-index]').forEach(el => {
+			entries.forEach(entry => {
+				const el = entry.target as HTMLElement;
 				const index = Number(el.dataset.messageIndex);
 				const height = el.offsetHeight;
 				if (
@@ -78,15 +87,9 @@ const ChatContainer = (props: IChatContainerProps) => {
 		wrapper.querySelectorAll('[data-message-index]').forEach(el => observer.observe(el));
 		return () => observer.disconnect();
 	}, [allMessages, visibleRange]);
-	// M6: 累计高度计算（基于测量值或估算值）
-	const getCumulativeHeight = useCallback((index: number) => {
-		let total = 0;
-		for (let i = 0; i < Math.min(index, allMessages.length); i++) {
-			total +=
-				measuredHeights.current.get(getMessageKey(allMessages[i], i)) || ESTIMATE_ITEM_HEIGHT;
-		}
-		return total;
-	}, [allMessages]);
+	// Prefix sums rebuild only for message/measurement changes, not for scrolling.
+	const getCumulativeHeight = useCallback((index: number) =>
+		offsets[Math.max(0, Math.min(index, offsets.length - 1))], [offsets]);
 
 	const getTotalHeight = () => {
 		return getCumulativeHeight(allMessages.length);
@@ -137,13 +140,21 @@ const ChatContainer = (props: IChatContainerProps) => {
 		const container = chatContainerRef.current;
 		if (!container || !allMessages.length || (focusMessageId && focusPinned.current)) return;
 		if (!initialScroll.current) {
-			initialScroll.current = true;
 			const end = allMessages.length;
-			setVisibleRange({ start: Math.max(0, end - 30), end });
+			const start = Math.max(0, end - 30);
+			setVisibleRange(previous => previous.start === start && previous.end === end
+				? previous : { start, end });
 			const frame = requestAnimationFrame(() => {
 				container.scrollTop = container.scrollHeight;
+				initialScroll.current = true;
+				isAtBottomRef.current = true;
+				setIsAtBottom(true);
 			});
 			return () => cancelAnimationFrame(frame);
+		}
+		if (isAtBottomRef.current && followNew) {
+			container.scrollTop = container.scrollHeight;
+			return;
 		}
 		if (!isAtBottomRef.current && anchor.current) {
 			const index = allMessages.findIndex(
@@ -155,64 +166,49 @@ const ChatContainer = (props: IChatContainerProps) => {
 					getCumulativeHeight(index) +
 					anchor.current.offset;
 		}
-	}, [allMessages, focusMessageId, getCumulativeHeight]);
+	}, [allMessages, focusMessageId, followNew, getCumulativeHeight]);
 
 	// 计算可见范围（M6: 动态高度）
 	useEffect(() => {
 		if (!chatContainerRef.current) return;
 		const container = chatContainerRef.current;
-		const handleScroll = () => {
+		let frame = 0;
+		const updateRange = () => {
+			frame = 0;
 			const distanceToBottom =
 				container.scrollHeight - container.scrollTop - container.clientHeight;
 			const dynamicBuffer = distanceToBottom <= 100 ? BUFFER_SIZE * 4 : BUFFER_SIZE;
 			const listOffsetTop = messagesWrapRef.current ? messagesWrapRef.current.offsetTop : 0;
 			const relativeScrollTop = Math.max(0, container.scrollTop - listOffsetTop);
 
-			// M6: 动态高度计算 start
-			let anchorIndex = 0;
-			let start = 0;
-			let accHeight = 0;
-			for (let i = 0; i < allMessages.length; i++) {
-				const h =
-					measuredHeights.current.get(getMessageKey(allMessages[i], i)) || ESTIMATE_ITEM_HEIGHT;
-				if (accHeight + h >= relativeScrollTop) {
-					anchorIndex = i;
-					start = Math.max(0, i - dynamicBuffer);
-					break;
-				}
-				accHeight += h;
-			}
-			// 计算 end
-			let end = start;
-			let visibleHeight = 0;
-			while (
-				end < allMessages.length &&
-				visibleHeight < container.clientHeight + dynamicBuffer * ESTIMATE_ITEM_HEIGHT
-			) {
-				visibleHeight +=
-					measuredHeights.current.get(getMessageKey(allMessages[end], end)) || ESTIMATE_ITEM_HEIGHT;
-				end++;
-			}
-			end = Math.min(allMessages.length, end + dynamicBuffer);
+			const anchorIndex = findHeightIndex(offsets, relativeScrollTop);
+			const start = Math.max(0, anchorIndex - dynamicBuffer);
+			const bottom = relativeScrollTop + container.clientHeight + dynamicBuffer * ESTIMATE_ITEM_HEIGHT;
+			const end = Math.min(allMessages.length, findHeightIndex(offsets, bottom) + 1 + dynamicBuffer);
 
-			setVisibleRange({ start, end });
+			setVisibleRange(previous => previous.start === start && previous.end === end
+				? previous : { start, end });
 			if (allMessages[anchorIndex])
 				anchor.current = {
 					key: getMessageKey(allMessages[anchorIndex], anchorIndex),
-					offset: relativeScrollTop - accHeight
+					offset: relativeScrollTop - offsets[anchorIndex]
 				};
 
 			// L2: 同步更新 ref 与 state
 			isAtBottomRef.current = distanceToBottom <= 20;
 			setIsAtBottom(distanceToBottom <= 20);
 		};
+		const handleScroll = () => {
+			if (!frame) frame = requestAnimationFrame(updateRange);
+		};
 
-		container.addEventListener('scroll', handleScroll);
-		handleScroll();
+		container.addEventListener('scroll', handleScroll, { passive: true });
+		updateRange();
 		return () => {
+			if (frame) cancelAnimationFrame(frame);
 			container.removeEventListener('scroll', handleScroll);
 		};
-	}, [allMessages, layoutVersion]);
+	}, [allMessages, offsets]);
 
 	// M5: 消息列表变更时清理缓存，避免跨会话污染与内存泄漏
 	useEffect(() => {
@@ -271,26 +267,12 @@ const ChatContainer = (props: IChatContainerProps) => {
 		const curTime = message.created_at ? new Date(message.created_at).getTime() : 0;
 		const showTime = index === 0 || (index > 0 && curTime - prevTime > 5 * 60 * 1000);
 
-		// M6: 测量元素实际高度的 ref 回调
-		const measureRef = (el: HTMLDivElement | null) => {
-			if (el) {
-				const height = el.offsetHeight;
-				if (
-					height > 0 &&
-					measuredHeights.current.get(getMessageKey(allMessages[index], index)) !== height
-				) {
-					measuredHeights.current.set(getMessageKey(message, index), height);
-				}
-			}
-		};
-
 		const element = (
 			<div
 				key={cacheKey}
 				data-message-index={index}
 				data-message-id={message.id}
 				className={styles.chat_item}
-				ref={measureRef}
 				style={Number(message.id) === focusMessageId ? { outline: '2px solid #f0a94a' } : undefined}
 			>
 				<MessageShow

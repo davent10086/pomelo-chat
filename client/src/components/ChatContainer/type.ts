@@ -5,6 +5,7 @@ import { IMessageItem } from '@/components/MessageShow/type';
  */
 // 给聊天框组件传递的参数类型
 export interface IChatContainerProps {
+	messages?: IMessageItem[];
 	summarySlot?: HTMLElement | null;
 	onAtBottomChange?: (atBottom: boolean) => void;
 	onCancelRetry?: (message: IMessageItem) => void;

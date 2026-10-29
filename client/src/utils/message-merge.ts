@@ -5,16 +5,40 @@ export const mergeMessages = (
 	incoming: IMessageItem[]
 ): IMessageItem[] => {
 	const result = [...previous];
+	// Index both identities: an ACK can attach a server ID to a pending message.
+	const byId = new Map<IMessageItem['id'], Set<number>>();
+	const byClientId = new Map<string, Set<number>>();
+	const clientKey = (item: IMessageItem) => {
+		const id = item.client_msg_id || item.clientMsgId;
+		return id ? JSON.stringify([String(item.sender_id), id]) : undefined;
+	};
+	const indexItem = (item: IMessageItem, index: number, remove = false) => {
+		const update = <K,>(map: Map<K, Set<number>>, key: K) => {
+			if (remove) {
+				const positions = map.get(key);
+				positions?.delete(index);
+				if (!positions?.size) map.delete(key);
+			} else {
+				let positions = map.get(key);
+				if (!positions) map.set(key, positions = new Set());
+				positions.add(index);
+			}
+		};
+		if (item.id !== undefined && item.id !== null) update(byId, item.id);
+		const key = clientKey(item);
+		if (key !== undefined) update(byClientId, key);
+	};
+	result.forEach((item, index) => indexItem(item, index));
 	for (const item of incoming) {
 		const clientId = item.client_msg_id || item.clientMsgId;
-		const index = result.findIndex(
-			old =>
-				(item.id !== undefined && item.id !== null && old.id === item.id) ||
-				(clientId &&
-					String(old.sender_id) === String(item.sender_id) &&
-					(old.client_msg_id || old.clientMsgId) === clientId)
-		);
-		if (index < 0) result.push(item);
+		let index = Infinity;
+		const key = clientKey(item);
+		for (const positions of [byId.get(item.id), key === undefined ? undefined : byClientId.get(key)])
+			positions?.forEach(position => { index = Math.min(index, position); });
+		if (index === Infinity) {
+			indexItem(item, result.length);
+			result.push(item);
+		}
 		else {
 			const old = result[index];
 			const merged = { ...old, ...item, clientMsgId: clientId || old.clientMsgId };
@@ -22,7 +46,9 @@ export const mergeMessages = (
 				merged.status = 'sent';
 				merged.failureReason = undefined;
 			}
+			indexItem(old, index, true);
 			result[index] = merged;
+			indexItem(merged, index);
 		}
 	}
 	return result.sort((a, b) => {

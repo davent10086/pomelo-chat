@@ -3,7 +3,7 @@ import type { WebSocket } from 'ws';
 import { better_chat } from '../../infrastructure/redis';
 import { validateSessionSocket, validateSessionSockets } from './session-sockets';
 import { authorizeChatRoom, authorizedGroupMembers } from '../social/public';
-import { NotificationUser } from './notification';
+import { NotificationUser, notifyChatListUsers } from './notification';
 import { sendSocketFrame } from './socket-send';
 import { fanoutPublisher, publishFanout } from './fanout-publisher';
 import {
@@ -175,9 +175,7 @@ export const startMessageDelivery = async () => {
 				row.receiver_id,
 				row.sender_id
 			]);
-			await forEachConcurrent(members, 16, m =>
-				NotificationUser({ receiver_username: m.username, name: 'chatList' }, context.checkActive)
-			);
+			await notifyChatListUsers(members.map(member => member.username), context.checkActive);
 		} else
 			await NotificationUser(
 				{ receiver_id: row.receiver_id, name: 'chatList' },

@@ -4,6 +4,14 @@ import type { Actor } from '../../shared/actor';
 export const createHttpHandlers = (
 	application: typeof import('./actions') & typeof import('./agent-application')
 ) => ({
+	conversationReview: async (req: Request, res: Response): Promise<void> => {
+		const controller = new AbortController();
+		const close = () => controller.abort();
+		const deadline = setTimeout(() => controller.abort(), 120000);
+		res.once('close', close);
+		try { respond(res, await application.conversationReview(req.user as Actor, req.body || {}, controller.signal)); }
+		finally { clearTimeout(deadline); res.removeListener('close', close); }
+	},
 	prepareMessage: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.prepareMessage(req.user as Actor, req.body || {}));
 	},

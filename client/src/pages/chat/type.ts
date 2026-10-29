@@ -21,6 +21,7 @@ export interface IChatListProps {
 // M4: Chat 组件通过 forwardRef 暴露给父组件的句柄类型
 export interface IChatRef {
 	refreshChatList: () => Promise<void> | void;
+	scheduleChatListRefresh: () => void;
 }
 
 export interface AssistantMemoryItem {

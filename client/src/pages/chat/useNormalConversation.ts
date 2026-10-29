@@ -78,6 +78,10 @@ export function useNormalConversation(
 			),
 		[view, session.newMessage, room, userId, peerReadSeq]
 	);
+	const displayMessages = useMemo(
+		() => withReadState(view?.messages || messages, room, userId, peerReadSeq),
+		[view, messages, room, userId, peerReadSeq]
+	);
 	const leave = useCallback(() => {
 		leaveConversation();
 		resetHistory();
@@ -86,6 +90,7 @@ export function useNormalConversation(
 	}, [leaveConversation, resetHistory]);
 	return {
 		messages,
+		displayMessages,
 		historyMsg: displayHistory,
 		newMessage: displayNew,
 		locating: !!view,

@@ -120,22 +120,37 @@ export const insertMessageOutbox = <T = unknown>(
 	);
 };
 
-export const lockReadCursorConversation = <T = unknown>(
+export const findReadCursorConversation = <T = unknown>(
 	bindings: unknown,
 	executor: SqlQuery = Query
 ): Promise<T> => {
-	return executor<T>('SELECT id, last_seq FROM conversation WHERE room = ? FOR UPDATE', bindings);
+	return executor<T>('SELECT id, last_seq FROM conversation WHERE room = ?', bindings);
 };
 
-export const advanceReadCursor = <T = unknown>(
-	bindings: unknown,
+export const advanceReadCursor = async (
+	bindings: [number, number | string, number],
 	executor: SqlQuery = Query
-): Promise<T> => {
-	return executor<T>(
+): Promise<void> => {
+	const [conversationId, userId, sequence] = bindings;
+	// Avoid FK parent locks on the hot path: an upsert can take a shared lock
+	// on conversation even when the cursor already exists.
+	const updated = await executor<{ affectedRows: number }>(
+		'UPDATE conversation_read SET last_read_seq = GREATEST(last_read_seq, ?), updated_at = CURRENT_TIMESTAMP WHERE conversation_id = ? AND user_id = ?',
+		[sequence, conversationId, userId]
+	);
+	if (updated.affectedRows) return;
+	await executor(
 		'INSERT INTO conversation_read (conversation_id, user_id, last_read_seq) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_read_seq = GREATEST(last_read_seq, VALUES(last_read_seq)), updated_at = CURRENT_TIMESTAMP',
 		bindings
 	);
 };
+
+export const loadCurrentReadCursor = <T = unknown>(
+	bindings: unknown, executor: SqlQuery = Query
+): Promise<T> => executor<T>(
+	'SELECT last_read_seq FROM conversation_read WHERE conversation_id = ? AND user_id = ? FOR UPDATE',
+	bindings
+);
 
 export const markPrivateMessagesRead = <T = unknown>(
 	bindings: unknown,

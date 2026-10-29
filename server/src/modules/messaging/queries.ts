@@ -90,17 +90,20 @@ export const markRoomRead = async (
 	if (!Number.isSafeInteger(roomSeq) || Number(roomSeq) < 0)
 		throw new Error('Invalid read sequence');
 	return withTransaction(async query => {
-		const rows = await repository.lockReadCursorConversation<
+		// A consistent snapshot caps the reported sequence; only the per-user cursor
+		// needs an exclusive lock. Readers must not serialize the whole room.
+		const rows = await repository.findReadCursorConversation<
 			Array<{ id: number; last_seq: number }>
 		>([room], query);
 		if (!rows.length) return 0;
 		const seq = Math.min(Number(roomSeq), Number(rows[0].last_seq));
 		await repository.advanceReadCursor([rows[0].id, userId, seq], query);
-		await repository.markPrivateMessagesRead([userId, room, type, seq], query);
-		const cursor = await readModel.loadReadCursor<Array<{ last_read_seq: number }>>(
-			[room, userId],
+		if (type === 'private')
+			await repository.markPrivateMessagesRead([userId, room, type, seq], query);
+		const cursor = await repository.loadCurrentReadCursor<Array<{ last_read_seq: number }>>(
+			[rows[0].id, userId],
 			query
 		);
 		return Number(cursor[0]?.last_read_seq || 0);
-	});
+	}, { maxAttempts: 3 });
 };

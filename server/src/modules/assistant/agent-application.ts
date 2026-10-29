@@ -1,5 +1,25 @@
 import { ToolExecutionError, toolErrorResult } from './tools/tool-runtime';
 import { TaskCandidatesSchema, validateTaskCandidateSources } from './agent-response';
+import { normalizeReviewInput, runConversationReview, ReviewError } from './conversation-review';
+
+export const conversationReview = async (actor: Actor, parameters: unknown, signal?: AbortSignal): Promise<Outcome> => {
+	try {
+		const scope = normalizeReviewInput(parameters);
+		const userId = Number(actor.id);
+		if (!Number.isSafeInteger(userId) || userId < 1) return failure(CommonStatus.TOKEN_ERR);
+		if (!(await checkRateLimit(userId))) return failure(AssistantStatus.RATE_LIMIT_ERR);
+		if (!API_KEY) return failure(CommonStatus.SERVER_ERR);
+		return success(await runConversationReview(userId, scope, signal ?? AbortSignal.timeout(120000)));
+	} catch (error) {
+		if (error instanceof ReviewError) return failure(
+			error.code === 'INVALID_INPUT' ? CommonStatus.PARAM_ERR : CommonStatus.NOT_FOUND
+		);
+		if (signal?.aborted || (error instanceof Error && /AbortError|TimeoutError/.test(error.name)))
+			return failure(AssistantStatus.UPSTREAM_TIMEOUT);
+		console.error('[assistant-review] review failed:', error instanceof Error ? error.message : 'unknown error');
+		return failure(CommonStatus.SERVER_ERR);
+	}
+};
 export interface AgentChatInput {
 	input?: unknown;
 	room?: unknown;

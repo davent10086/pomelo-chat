@@ -59,4 +59,6 @@ pnpm test:integration --timeout 180000
 - `pnpm test:performance`：单用户会话列表 100 次请求、并发 4 的延迟基线；`TEST_PERF_P95_MS` 默认 2000。它不代表整机容量。多实例、过载和额度校准工具见 `qa/benchmarks/README.md`，作为手动性能实验保留独立生命周期。
 - `pnpm test:ai-live`：当前 UI 的真实在线模型冒烟，需要明确配置模型凭据，可能产生费用。默认三层会清空模型密钥，不发送在线请求。
 
+会话回顾的真实链路可单独运行 `pnpm test:ai-live --filter conversation-review`：浏览器经实际 WebSocket 写入测试消息，再验证在线模型回顾、原文跳转、带来源追问和草稿填入，确认草稿未自动发送。该用例不拦截 HTTP 或替换模型；结果与每步耗时写入浏览器产物中的 `live-review-results.json`，截图为 `live-draft.png`。测试只使用隔离账号和临时数据库，单个场景通过不代表总体准确率或容量。
+
 过时 UI 用例归档于 `tests/legacy`，替代关系见 `qa/playwright/README.md`。归档不参与自动发现。

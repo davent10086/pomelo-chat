@@ -52,6 +52,38 @@ test('large-group fanout batches permission reads and still rejects revoked user
   assert.equal(sockets[30].closeCode, 4001); assert.equal(sockets[31].closeCode, 4003);
 });
 
+test('group list notifications publish bounded batches and filter revoked local sessions', async t => {
+  cleanRooms(t);
+  const { notifyChatListUsers, startNotificationDelivery, stopNotificationDelivery } = require('../../server/src/modules/realtime/notification');
+  const { registerNotificationSocket, stopNotificationConnections } = require('../../server/src/modules/realtime/connections');
+  const publications = [];
+  patch(t, fanoutPublisher, { publish: async (_channel, raw) => { publications.push(JSON.parse(raw)); } });
+  const status = Object.getOwnPropertyDescriptor(fanoutPublisher, 'status');
+  Object.defineProperty(fanoutPublisher, 'status', { configurable: true, value: 'ready' });
+  t.after(async () => { if (status) Object.defineProperty(fanoutPublisher, 'status', status); else delete fanoutPublisher.status; stopNotificationDelivery(); await stopNotificationConnections(); });
+  const sockets = Array.from({ length: 50 }, (_, index) => {
+    const ws = socket('notification-batch', 'private', index + 1, index !== 49);
+    registerNotificationSocket(`batch-${index}`, ws, async () => {});
+    return ws;
+  });
+  const names = sockets.map((_, index) => `batch-${index}`);
+  await notifyChatListUsers([...names, names[0]], () => {});
+  assert.equal(publications.length, 1);
+  assert.equal(publications[0].usernames.length, 50);
+  assert.equal(sockets.filter(ws => ws.frames.length === 1).length, 49);
+  assert.equal(sockets[49].closeCode, 4001);
+
+  // The same batch format must reach sockets on another instance.
+  const subscriber = new EventEmitter(); subscriber.subscribe = async () => {}; subscriber.disconnect = () => {};
+  patch(t, better_chat, { duplicate: () => subscriber });
+  await startNotificationDelivery();
+  subscriber.emit('message', 'channel', JSON.stringify({ instance: 'foreign', usernames: names, data: { name: 'chatList' } }));
+  await tick();
+  assert.equal(sockets[0].frames.length, 2);
+  await notifyChatListUsers(Array.from({ length: 600 }, (_, index) => `offline-${index}`), () => {});
+  assert.deepEqual(publications.slice(1).map(event => event.usernames.length), [256, 256, 88]);
+});
+
 test('ordinary local/foreign fanout rechecks group and private membership, before receipts', async t => {
   cleanRooms(t);
   let allowed = true;
@@ -227,6 +259,26 @@ test('Outbox notifications use the non-queuing publisher and recheck cancellatio
   const rejected = assert.rejects(work, /cancelled/);
   await entered; controller.abort(Error('cancelled')); release(); await rejected;
   assert.equal(publishes, 1); assert.equal(ws.frames.length, 0);
+});
+
+test('batched notifications recheck cancellation after asynchronous session validation', async t => {
+  const { notifyChatListUsers } = require('../../server/src/modules/realtime/notification');
+  const { registerNotificationSocket, removeNotificationSocket } = require('../../server/src/modules/realtime/connections');
+  cleanRooms(t);
+  const ws = socket('batch-cancel', 'private');
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; });
+  const checking = new Promise(resolve => { entered = resolve; });
+  registerSessionSocket(ws, 'batch-cancel', 'token', async () => { entered(); await gate; return { id: 2 }; });
+  registerNotificationSocket('batch-cancel', ws, async () => {});
+  t.after(() => removeNotificationSocket('batch-cancel', ws));
+  patch(t, better_chat, { publish: async () => { throw Error('must use non-queuing publisher'); } });
+  patch(t, fanoutPublisher, { status: 'ready', publish: async () => 0 });
+  const controller = new AbortController();
+  const work = notifyChatListUsers(['batch-cancel'], () => controller.signal.throwIfAborted());
+  const rejected = assert.rejects(work, /cancelled/);
+  await checking; controller.abort(Error('cancelled')); release(); await rejected;
+  assert.equal(ws.frames.length, 0);
 });
 
 test('default and relative upload roots are independent of startup cwd', () => {

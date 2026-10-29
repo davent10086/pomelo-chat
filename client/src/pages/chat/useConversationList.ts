@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { IMessageListItem } from '@/components/ChatTool/type';
 import { AI_USERNAME } from '@/hooks/useAiAssistant';
 import { getChatList } from './api';
+import { CoalescedRefresh } from '@/utils/coalesced-refresh';
 
 export function useConversationList(
 	userId: number,
@@ -9,24 +10,13 @@ export function useConversationList(
 	onError: (message: string) => void
 ) {
 	const [chatList, setChatList] = useState<IMessageListItem[]>([]);
-	const controller = useRef<AbortController>();
-	const revision = useRef(0);
-	useEffect(
-		() => () => {
-			revision.current++;
-			controller.current?.abort();
-		},
-		[userId]
-	);
-	const refreshChatList = useCallback(async () => {
-		controller.current?.abort();
-		controller.current = new AbortController();
-		const version = ++revision.current;
-		try {
-			const response = await getChatList(controller.current.signal);
-			if (version !== revision.current) return;
+	const refresher = useMemo(() => new CoalescedRefresh(
+		async signal => {
+			const response = await getChatList(signal);
 			if (response.code !== 200) throw new Error('Unable to refresh chat list');
-			const items = response.data;
+			return response.data;
+		},
+		items => {
 			const assistant = items.find(
 				item => item.receiver_username === AI_USERNAME || item.room.startsWith('ai_')
 			) || {
@@ -41,11 +31,12 @@ export function useConversationList(
 				avatar
 			};
 			setChatList([assistant, ...items.filter(item => item.room !== assistant.room)]);
-			return items;
-		} catch {
-			if (version === revision.current) onError('Unable to refresh chat list');
-		}
-	}, [userId, avatar, onError]);
+		},
+		() => onError('Unable to refresh chat list')
+	), [userId, avatar, onError]);
+	useEffect(() => () => refresher.cancel(), [refresher]);
+	const refreshChatList = useCallback(() => refresher.refresh(), [refresher]);
+	const scheduleChatListRefresh = useCallback(() => refresher.invalidate(), [refresher]);
 	const ensureConversation = useCallback((item: IMessageListItem) => {
 		setChatList(previous =>
 			previous.some(current => current.room === item.room) ? previous : [item, ...previous]
@@ -60,5 +51,5 @@ export function useConversationList(
 			)
 		);
 	}, []);
-	return { chatList, ensureConversation, updatePreview, refreshChatList };
+	return { chatList, ensureConversation, updatePreview, refreshChatList, scheduleChatListRefresh };
 }

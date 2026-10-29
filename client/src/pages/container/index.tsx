@@ -133,7 +133,7 @@ const Container = () => {
 					addressBookRef.current?.refreshGroupChatList();
 					break;
 				case 'chatList':
-					chatRef.current?.refreshChatList();
+					chatRef.current?.scheduleChatListRefresh();
 					break;
 				case 'call_state':
 					window.dispatchEvent(new CustomEvent('pomelo-call-state', {detail: message}));

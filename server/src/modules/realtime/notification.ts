@@ -1,5 +1,5 @@
 import { getUsernameById } from '../identity/public';
-import { validateSessionSocket } from './session-sockets';
+import { validateSessionSocket, validateSessionSockets } from './session-sockets';
 import { better_chat } from '../../infrastructure/redis';
 import { getNotificationSocket } from './connections';
 import { sendSocketFrame } from './socket-send';
@@ -20,6 +20,38 @@ const sendLocal = async (
 		sendSocketFrame(ws, data);
 	}
 };
+const sendLocalBatch = async (
+	usernames: string[], data: NotificationData, checkActive?: () => void
+): Promise<void> => {
+	const sockets = usernames.flatMap(username => {
+		const ws = getNotificationSocket(username);
+		return ws && ws.readyState === 1 ? [ws] : [];
+	});
+	if (!sockets.length) return;
+	checkActive?.();
+	const allowed = await validateSessionSockets(sockets);
+	for (const ws of allowed) {
+		checkActive?.();
+		sendSocketFrame(ws, data);
+	}
+};
+
+/** One bounded Redis publication per recipient batch, including offline recipients
+ * whose notification socket may live on another instance. */
+export const notifyChatListUsers = async (
+	usernames: string[], checkActive: () => void
+): Promise<void> => {
+	const unique = [...new Set(usernames)];
+	const data = { name: 'chatList' };
+	for (let offset = 0; offset < unique.length; offset += 256) {
+		const batch = unique.slice(offset, offset + 256);
+		checkActive();
+		if (fanoutPublisher.status !== 'ready') throw new Error('Message publisher unavailable');
+		await fanoutPublisher.publish(channel, JSON.stringify({ instance, usernames: batch, data }));
+		checkActive();
+		await sendLocalBatch(batch, data, checkActive);
+	}
+};
 export const startNotificationDelivery = async () => {
 	if (subscriber) return;
 	const connection = better_chat.duplicate();
@@ -31,10 +63,13 @@ export const startNotificationDelivery = async () => {
 			const event = JSON.parse(raw) as {
 				instance: string;
 				username: string;
+				usernames?: string[];
 				data: NotificationData;
 			};
 			if (event.instance !== instance)
-				void sendLocal(event.username, event.data).catch(err =>
+				void (event.usernames
+					? sendLocalBatch(event.usernames, event.data)
+					: sendLocal(event.username, event.data)).catch(err =>
 					console.error('[notification] delivery:', err)
 				);
 		} catch {

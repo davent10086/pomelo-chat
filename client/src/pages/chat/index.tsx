@@ -12,6 +12,7 @@ import { mergeMessages } from '@/utils/message-merge';
 import AgentPanel from './AgentPanel';
 import styles from './index.module.less';
 import MemoryManager from './MemoryManager';
+import ConversationReview from '@/components/ConversationReview';
 import { IChatListProps, IChatRef } from './type';
 
 import ChatContainer from '@/components/ChatContainer';
@@ -65,7 +66,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		onChatError,
 		focusMessageId
 	);
-	const { chatList, ensureConversation, updatePreview, refreshChatList } = useConversationList(
+	const { chatList, ensureConversation, updatePreview, refreshChatList, scheduleChatListRefresh } = useConversationList(
 		Number(user.id),
 		getAiAvatar(),
 		onChatError
@@ -138,7 +139,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		else {
 			await normal.send(message);
 			onAccepted?.();
-			void refreshChatList();
+			scheduleChatListRefresh();
 		}
 	};
 	// Initial selection is a mount-time snapshot; later navigation uses chooseRoom.
@@ -177,6 +178,7 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	}, [initialConversation]);
 
 	useImperativeHandle(ref, () => ({
+		scheduleChatListRefresh,
 		refreshChatList: async () => {
 			await refreshChatList();
 		}
@@ -209,6 +211,9 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 									会话列表
 								</button>
 								<span className={styles.receiverName}>{curChatInfo.name}</span>
+								{normalRoom && <ConversationReview key={`${user.id}:${normalRoom}`}
+									room={normalRoom} name={curChatInfo.name} onLocate={id => { void normal.locate(id); }}
+									onInsertText={text => insertAgentText(text)} />}
 								<div className={styles.headerSummary} ref={setSummarySlot} />
 								{!isAssistantListItem(curChatInfo) && (
 									<button type="button" className={styles.searchToggle} aria-label="搜索聊天记录" title="搜索聊天记录" onClick={normal.toggleSearch}>
@@ -260,12 +265,13 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											</div>
 										)}
 										<ChatContainer
-											summarySlot={summarySlot}
+											summarySlot={assistantSelected ? summarySlot : null}
 											key={`${curChatInfo.room}:${normal.locating ? 'history' : 'live'}`}
 											onRetry={normal.retry}
 											onCancelRetry={normal.cancel}
 											onAtBottomChange={normal.onAtBottom}
 											historyMsg={historyMsg}
+											messages={assistantSelected ? assistant.messages : normal.displayMessages}
 											newMsg={newMessage}
 											hasMoreHistory={!assistantSelected && normal.hasMoreHistory}
 											historyLoading={normal.loading}

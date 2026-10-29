@@ -161,21 +161,25 @@ test("real login, message ACK, suggestions, room isolation, streaming and passwo
     .first()
     .click();
   await expect(input).toHaveValue(/已有草稿/);
-  await page.route("**/assistant/agent/stream", async route => {
+  await page.route("**/assistant/agent/review", async route => {
     const payload = route.request().postDataJSON();
-    expect(payload.context.readOnly).toBe(true);
-    expect(payload.context.recentMessagesText).toContain("browser-message");
+    expect(payload.room).toBe(room);
+    expect(payload.range.preset).toBe('today');
     await route.fulfill({
-      contentType: "text/event-stream",
-      body: 'event: delta\ndata: {"delta":"旧总结","reset":false}\n\nevent: delta\ndata: {"delta":"统一接口总结","reset":true}\n\ndata: {"content":"统一接口总结","actions":[]}\n\ndata: [DONE]\n\n',
+      json: { code: 200, data: { room, coverage: { since: '2026-10-24', until: '2026-10-24',
+        scannedMessages: 1, analyzedMessages: 1, skippedMedia: 0, hasEarlier: false,
+        contentTruncated: false, capturedAt: '2026-10-24T08:00:00Z' }, omittedItems: 0,
+        topics: [{ text: '统一接口总结', sources: [] }], decisions: [], questions: [], actions: [], answer: [] } },
     });
   });
-  await page.getByRole("button", { name: "总结聊天", exact: true }).click();
-  const summaryDialog = page.getByRole("dialog", { name: "聊天记录总结" });
+  await page.getByRole("button", { name: "帮我跟上", exact: true }).click();
+  const summaryDialog = page.getByRole("dialog", { name: /会话回顾/ });
+  await summaryDialog.getByRole('button', { name: '开始回顾' }).click();
   await expect(summaryDialog).toContainText("统一接口总结");
   await expect(summaryDialog).not.toContainText("旧总结");
-  await summaryDialog.getByRole("button", { name: /关\s*闭/ }).click();
-  await page.unroute("**/assistant/agent/stream");
+  await page.keyboard.press('Escape');
+  await expect(summaryDialog).not.toBeVisible();
+  await page.unroute("**/assistant/agent/review");
   await page.locator(`[id="chatList_ai_${a.info.id}"]`).click();
   await expect(input).toHaveValue("");
   await page.route("**/assistant/agent/stream", async (route) => {
