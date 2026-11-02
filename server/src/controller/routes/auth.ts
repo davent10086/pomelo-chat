@@ -9,7 +9,7 @@ import { boundedInteger } from '../../shared/validation';
 const router = Router();
 const authIpLimit = createRateLimiter({ name: 'auth-ip', windowSeconds: 60, max: boundedInteger('AUTH_IP_RATE_LIMIT_MAX', 30) });
 const authAccountLimit = createRateLimiter({ name: 'auth-account', windowSeconds: 300, max: boundedInteger('AUTH_ACCOUNT_RATE_LIMIT_MAX', 10),
-	key: req => createHash('sha256').update(String(req.body?.username || '').trim().toLowerCase()).digest('hex') });
+	key: req => createHash('sha256').update(String(req.body?.username || req.body?.phone || '').trim().toLowerCase()).digest('hex') });
 
 /**
  * 认证相关路由配置
@@ -25,6 +25,7 @@ export default () => {
 	router.post('/register', authIpLimit, authAccountLimit, auth.register);
 	// 忘记密码接口
 	router.post('/forget_password', authenticateToken, auth.forgetPassword);
+	router.post('/recover_password', authIpLimit, authAccountLimit, auth.recoverPassword);
 	// 更新用户信息接口，需要验证token后才能访问
 	router.post('/update_info', authenticateToken, auth.updateInfo);
 	// WebSocket用户通知频道，用于实时消息推送

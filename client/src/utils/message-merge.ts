@@ -42,6 +42,7 @@ export const mergeMessages = (
 		else {
 			const old = result[index];
 			const merged = { ...old, ...item, clientMsgId: clientId || old.clientMsgId };
+			if (old.recalled) Object.assign(merged, { recalled: true, content: old.content, type: 'text', file_name: null, fileName: undefined, file_size: null });
 			if (old.status === 'sent' || item.status === 'sent') {
 				merged.status = 'sent';
 				merged.failureReason = undefined;

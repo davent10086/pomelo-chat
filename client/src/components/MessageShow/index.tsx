@@ -24,6 +24,7 @@ import {
 } from '@/utils/File';
 import { getAuthorizedMediaURL, useAuthorizedMediaURL } from '@/utils/media-url';
 import { userStorage } from '@/utils/storage';
+import { readConversationPreferences, writeConversationPreferences } from '@/utils/conversation-preferences';
 import { formatChatContentTime } from '@/utils/time';
 
 const ChatContentPocket = () => (
@@ -152,7 +153,7 @@ const ChatContent = (props: IChatContentProps): JSX.Element | null => {
 };
 
 const MessageShow = (props: IMessageShowProps) => {
-	const { showTime, message, onRetry, onCancelRetry } = props;
+	const { showTime, message, onRetry, onCancelRetry, onQuote, onForward, onRecall } = props;
 	const user = userStorage.getItem();
 	const { sender_id, content, avatar, type, file_size, created_at, status } = message;
 	const [hidden, setHidden] = useState(false);
@@ -181,6 +182,13 @@ const MessageShow = (props: IMessageShowProps) => {
 	};
 
 	const actions = [
+		...(message.id && !message.recalled && isSelf && onRecall && Date.now() - new Date(created_at).getTime() < 120000 ? [
+			{ key: 'recall', label: '撤回消息', onClick: () => onRecall(message) }
+		] : []),
+		...(message.id && !message.recalled && status !== 'pending' && status !== 'failed' && type === 'text' ? [
+			...(onQuote ? [{ key: 'quote', label: '引用回复', onClick: () => onQuote(message) }] : []),
+			...(onForward ? [{ key: 'forward', label: '转发到会话', onClick: () => onForward(message) }] : [])
+		] : []),
 		{ key: 'copy', label: '复制', icon: <CopyOutlined aria-hidden="true" />, onClick: handleCopy },
 		...(isSelf && status === 'failed' && onRetry
 			? [
@@ -200,7 +208,13 @@ const MessageShow = (props: IMessageShowProps) => {
 			label: '本地隐藏',
 			icon: <DeleteOutlined aria-hidden="true" />,
 			danger: true,
-			onClick: () => setHidden(true)
+			onClick: () => {
+				if (message.id) {
+					const current = readConversationPreferences(message.room).hiddenMessageIds || [];
+					writeConversationPreferences(message.room, { hiddenMessageIds: [...new Set([...current, message.id])] });
+				}
+				setHidden(true);
+			}
 		}
 	];
 	const moreActions = (

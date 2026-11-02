@@ -8,6 +8,10 @@ datasource db {
   provider = "mysql"
 }
 
+model message_recall_outbox {
+  message_id Int @id
+}
+
 model assistant_action {
   id          String                  @id @db.VarChar(64)
   user_id     Int
@@ -187,6 +191,7 @@ model mcp_audit_log {
 }
 
 model message {
+	 recalled_at DateTime? @db.DateTime(0)
   id                 Int                  @id @default(autoincrement())
   conversation_id    Int?
   client_msg_id      String?              @db.VarChar(64)

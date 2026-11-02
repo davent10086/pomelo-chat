@@ -256,6 +256,7 @@ export const initializeDatabase = async (
 		await backfillCompatibilityData();
 		await repairSystemData();
 		await migrateOutboxRoomIndex();
+		await runMigrationSql('message_recalled_at', 'ALTER TABLE message ADD COLUMN recalled_at DATETIME NULL');
 		// eslint-disable-next-line no-console
 		console.log('MySQL 数据表初始化/迁移完成');
 	} catch (caught: unknown) {

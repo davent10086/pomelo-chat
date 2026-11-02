@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Tooltip } from 'antd';
-import { TeamOutlined } from '@ant-design/icons';
+import { useEffect, useState } from 'react';
+import { Dropdown, Tooltip } from 'antd';
+import { readConversationPreferences, writeConversationPreferences, subscribeConversationPreferences } from '@/utils/conversation-preferences';
+import { TeamOutlined, MoreOutlined } from '@ant-design/icons';
 import type { IMessageListItem } from '@/components/ChatTool/type';
 import ImageLoad from '@/components/ImageLoad';
 import SearchContainer from '@/components/SearchContainer';
@@ -10,20 +11,31 @@ import { AI_USERNAME } from '@/hooks/useAiAssistant';
 export default function ConversationList({
 	chatList,
 	curChatInfo,
-	chooseRoom
+	chooseRoom,
+	onMarkRead
 }: {
 	chatList: IMessageListItem[];
 	curChatInfo?: IMessageListItem;
 	chooseRoom: (item: IMessageListItem) => void;
+	onMarkRead: (item: IMessageListItem) => void;
 }) {
 	const [query, setQuery] = useState('');
+	const [, updatePreferences] = useState(0);
+	useEffect(() => subscribeConversationPreferences(() => updatePreferences(value => value + 1)), []);
 	const keyword = query.trim().toLocaleLowerCase();
 	const filteredChats = chatList.filter(item =>
 		[item.name, item.receiver_username].some(value => value?.toLocaleLowerCase().includes(keyword))
-	);
+	).sort((a, b) => Number(!!readConversationPreferences(b.room).pinned) - Number(!!readConversationPreferences(a.room).pinned));
 	const isAssistantListItem = (item: IMessageListItem) =>
 		item.receiver_username === AI_USERNAME || item.room.startsWith('ai_');
 	const isGroupChat = (item: IMessageListItem) => !item.receiver_username;
+	const menuItems = (item: IMessageListItem) => [
+		{ key: 'read', label: '标为已读', disabled: isAssistantListItem(item) || !item.unreadCount, onClick: () => onMarkRead(item) },
+		{ key: 'pin', label: readConversationPreferences(item.room).pinned ? '取消置顶' : '置顶会话', onClick: () => writeConversationPreferences(item.room, { pinned: !readConversationPreferences(item.room).pinned }) },
+		{ key: 'mute', label: readConversationPreferences(item.room).muted ? '取消免打扰' : '消息免打扰', onClick: () => writeConversationPreferences(item.room, { muted: !readConversationPreferences(item.room).muted }) },
+		{ key: 'restore', label: '恢复本地隐藏的消息', disabled: !readConversationPreferences(item.room).hiddenMessageIds?.length, onClick: () => writeConversationPreferences(item.room, { hiddenMessageIds: [] }) }
+	];
+
 	return (
 		<div className={styles.leftContainer}>
 			<div className={styles.search}>
@@ -36,10 +48,13 @@ export default function ConversationList({
 					</div>
 				) : (
 					filteredChats.map(item => (
+						<Dropdown key={item.room} trigger={['contextMenu']} menu={{ items: menuItems(item) }}>
+						<div className={styles.conversationRow}>
 						<button
 							type="button"
 							className={`${styles.chat_item} ${isAssistantListItem(item) ? styles.assistant_item : ''} ${curChatInfo?.room === item.room ? styles.selectedChat : ''}`}
 							aria-pressed={curChatInfo?.room === item.room}
+							title="右键打开会话管理菜单"
 							key={item.room}
 							id={`chatList_${item.room}`}
 							onClick={() => chooseRoom(item)}
@@ -50,6 +65,8 @@ export default function ConversationList({
 							<div className={styles.chat_info}>
 								<div className={styles.chat_name}>
 									<span>{item.name}</span>
+									{readConversationPreferences(item.room).pinned && <small aria-label="已置顶"> · 置顶</small>}
+									{readConversationPreferences(item.room).muted && <small aria-label="免打扰"> · 免打扰</small>}
 									{isGroupChat(item) && (
 										<TeamOutlined className={styles.group_icon} />
 									)}
@@ -87,6 +104,13 @@ export default function ConversationList({
 								)}
 							</div>
 						</button>
+						<Dropdown trigger={['click']} menu={{ items: menuItems(item) }}>
+							<button type="button" className={styles.conversationActions} aria-label={`管理会话 ${item.name}`} title="会话管理">
+								<MoreOutlined />
+							</button>
+						</Dropdown>
+						</div>
+						</Dropdown>
 					))
 				)}
 			</div>

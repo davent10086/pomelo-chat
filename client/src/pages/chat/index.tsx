@@ -1,4 +1,8 @@
 import ConversationList from './ConversationList';
+import { Modal, Select } from 'antd';
+import { setActiveNotificationRoom } from '@/utils/message-notifications';
+import type { IMessageItem } from '@/components/MessageShow/type';
+import Request from '@/utils/request';
 import { SearchOutlined, TeamOutlined } from '@ant-design/icons';
 import { useConversationList } from './useConversationList';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -36,6 +40,10 @@ const isAssistantListItem = (item: IMessageListItem | undefined) => !!item && (i
 const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 	const { initSelectedChat } = props;
 	const [summarySlot, setSummarySlot] = useState<HTMLDivElement | null>(null);
+	const [forwardMessage, setForwardMessage] = useState<IMessageItem>();
+	const [forwardRoom, setForwardRoom] = useState<string>();
+	const [forwardBusy, setForwardBusy] = useState(false);
+	const forwardKey = useRef('');
 	// H11: userStorage.getItem() 闂佽姘﹂～澶愭偤閺囩姳鐒婃い蹇撴瀹曟煡鏌熸潏鍓х暠闁绘劕锕弻锝夊箛椤掍讲鏋欓梺鎼炲€楁繛鈧柟?
 	const user = userStorage.getItem();
 	const showMessage = useShowMessage();
@@ -131,6 +139,26 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 		const item = chatList.find(chat => chat.room === selectedTaskRoom);
 		if (item) chooseRoom(item, id);
 	};
+	const openConversation = useRef(chooseRoom);
+	openConversation.current = chooseRoom;
+	useEffect(() => {
+		setActiveNotificationRoom(curChatInfo?.room);
+		return () => setActiveNotificationRoom(undefined);
+	}, [curChatInfo?.room]);
+	useEffect(() => {
+		const listener = (event: Event) => {
+			const room = (event as CustomEvent<string>).detail;
+			const item = chatList.find(chat => chat.room === room);
+			if (item) openConversation.current(item);
+		};
+		window.addEventListener('pomelo-open-conversation', listener);
+		const pending = sessionStorage.getItem('pomelo-open-room');
+		if (pending && chatList.some(chat => chat.room === pending)) {
+			sessionStorage.removeItem('pomelo-open-room');
+			listener(new CustomEvent('pomelo-open-conversation', { detail: pending }));
+		}
+		return () => window.removeEventListener('pomelo-open-conversation', listener);
+	}, [chatList]);
 
 	// 闂傚倷绀侀幉锟犳偡閿曞倸鍨傞柛褎顨呴悞鍨亜閹达絾纭堕柛鏂跨Ф缁辨帗寰勭仦钘夊箣濡?
 	const sendMessage = async (message: ISendMessage, onAccepted?: () => void) => {
@@ -186,8 +214,34 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 
 	return (
 		<>
+			<Modal title="转发文字消息" open={!!forwardMessage} confirmLoading={forwardBusy} okText="确认转发" cancelText="取消"
+				onCancel={() => { if (!forwardBusy) setForwardMessage(undefined); }} onOk={() => {
+					const target = chatList.find(item => item.room === forwardRoom);
+					if (!target || !forwardMessage) { showMessage('warning', '请选择接收会话'); return; }
+					setForwardBusy(true);
+					void Request.post('/message/forward', { sourceId: forwardMessage.id, room: target.room,
+						type: isGroupChat(target) ? 'group' : 'private', clientMsgId: forwardKey.current }).then(response => {
+						if (response.data.code !== 200) throw new Error(response.data.message || '转发失败');
+						showMessage('success', '已转发'); setForwardMessage(undefined); scheduleChatListRefresh();
+					}).catch(error => showMessage('error', error.message)).finally(() => setForwardBusy(false));
+				}}>
+				<Select aria-label="转发接收会话" placeholder="选择接收会话" style={{ width: '100%' }} value={forwardRoom}
+					disabled={forwardBusy} onChange={value => { setForwardRoom(value); forwardKey.current = crypto.randomUUID(); }}
+					options={chatList.filter(item => !isAssistantListItem(item)).map(item => ({ value: item.room, label: `${item.name} (${item.receiver_username || '群聊'})` }))} />
+				<p style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{forwardMessage?.content}</p>
+			</Modal>
 			<div className={`${styles.chatList} ${curChatInfo ? styles.activeConversation : ''}`}>
-				<ConversationList chatList={chatList} curChatInfo={curChatInfo} chooseRoom={chooseRoom} />
+				<ConversationList chatList={chatList} curChatInfo={curChatInfo} chooseRoom={chooseRoom} onMarkRead={item => {
+					void (async () => {
+						const type = isGroupChat(item) ? 'group' : 'private';
+						const response = await Request.get<{ messages: IMessageItem[] }>('/message/history', { params: { room: item.room, type, limit: 1 } });
+						if (response.data.code !== 200) throw new Error('获取最新消息失败');
+						const sequence = response.data.data.messages[0]?.room_seq || 0;
+						const result = await Request.post('/message/read', { room: item.room, type, roomSeq: sequence });
+						if (result.data.code !== 200) throw new Error('标记已读失败');
+						scheduleChatListRefresh();
+					})().catch(error => showMessage('error', error.message));
+				}} />
 				<div className={styles.rightContainer}>
 					{!curChatInfo ? (
 						<img
@@ -265,6 +319,16 @@ const Chat = forwardRef<IChatRef, IChatListProps>((props, ref) => {
 											</div>
 										)}
 										<ChatContainer
+											onRecall={assistantSelected ? undefined : message => {
+												Modal.confirm({ title: '撤回这条消息？', content: '可撤回发送后两分钟内的消息。', okText: '撤回', cancelText: '取消',
+													onOk: async () => {
+														const result = await Request.post('/message/recall', { messageId: message.id, room: message.room, type: normalType });
+														if (result.data.code !== 200) { showMessage('error', '撤回失败，可能已超过两分钟'); throw new Error('Recall failed'); }
+														scheduleChatListRefresh();
+													} });
+											}}
+											onQuote={assistantSelected ? undefined : message => insertAgentText(`「${message.sender_name || (message.sender_id === user.id ? '我' : curChatInfo.receiver_username ? curChatInfo.name : `用户 ${message.sender_id}`)}：${message.content.slice(0, 1000)}」\n`)}
+											onForward={assistantSelected ? undefined : message => { setForwardMessage(message); setForwardRoom(undefined); forwardKey.current = crypto.randomUUID(); }}
 											summarySlot={assistantSelected ? summarySlot : null}
 											key={`${curChatInfo.room}:${normal.locating ? 'history' : 'live'}`}
 											onRetry={normal.retry}

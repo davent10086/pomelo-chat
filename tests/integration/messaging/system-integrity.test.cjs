@@ -106,13 +106,13 @@ const send = async (
 	await initDatabase();
 	const initialEndListeners = better_chat.listenerCount('end');
 	await Promise.all([startBackgroundServices(), startBackgroundServices()]);
-	assert.equal(activeTimers.size, 7, 'exactly one session, call, outbox, pressure, receipt, upload and retention timer');
+	assert.equal(activeTimers.size, 8, 'exactly one session, call, outbox, recall, pressure, receipt, upload and retention timer');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners + 3);
 	await Promise.all([stopBackgroundServices(), stopBackgroundServices()]);
 	assert.equal(activeTimers.size, 0, 'shutdown removes every periodic worker');
 	assert.equal(better_chat.listenerCount('end'), initialEndListeners, 'shutdown removes subscription listeners');
 	await startBackgroundServices();
-	assert.equal(activeTimers.size, 7, 'runtime can restart without duplicate workers');
+	assert.equal(activeTimers.size, 8, 'runtime can restart without duplicate workers');
 	server.listen(0, '127.0.0.1');
 	await once(server, 'listening');
 	base = `http://127.0.0.1:${server.address().port}`;

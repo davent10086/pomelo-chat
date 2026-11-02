@@ -17,6 +17,43 @@ import { CommonStatus } from '../../shared/status';
 import { authorizeChatRoom } from './permissions';
 import { fetchHistoryMessages, markRoomRead } from './queries';
 import { HISTORY_PAGE_SIZE, isChatType, type ChatListItem } from './contracts';
+import { findForwardSource, lockRecallSource, retractMessage } from './repository';
+import { withTransaction } from '../../infrastructure/database-query';
+import { sendConfirmedTextMessage } from './writes';
+import { MessageOverloadError } from '../../shared/overload';
+
+export const forwardMessage = async (actor: Actor, input: Record<string, unknown>): Promise<Outcome> => {
+	const id = Number(input.sourceId), room = input.room, type = input.type, clientMsgId = input.clientMsgId;
+	if (typeof input.sourceId !== 'number' || !Number.isSafeInteger(id) || id < 1 || typeof room !== 'string' || !room || room.length > 128 ||
+		typeof type !== 'string' || !isChatType(type) || typeof clientMsgId !== 'string' || !/^[a-zA-Z0-9_-]{8,48}$/.test(clientMsgId)) return failure(CommonStatus.PARAM_ERR);
+	try {
+		const [source] = await findForwardSource(id);
+		if (!source || source.recalled_at || source.media_type !== 'text' || !await authorizeChatRoom(actor.id, source.room, source.type) ||
+			!await authorizeChatRoom(actor.id, room, type)) return failure(CommonStatus.UNAUTHORIZED);
+		await sendConfirmedTextMessage(Number(actor.id), room, type, source.content, `forward_${clientMsgId}`);
+		return success();
+	} catch (error) {
+		if (error instanceof MessageOverloadError) throw error;
+		console.error('[message] forward failed:', error);
+		return failure(CommonStatus.SERVER_ERR);
+	}
+};
+
+export const recallMessage = async (actor: Actor, input: Record<string, unknown>): Promise<Outcome> => {
+	const id = Number(input.messageId), room = input.room, type = input.type;
+	if (typeof input.messageId !== 'number' || !Number.isSafeInteger(id) || id < 1 || typeof room !== 'string' || !room || room.length > 128 || typeof type !== 'string' || !isChatType(type)) return failure(CommonStatus.PARAM_ERR);
+	try {
+		if (!await authorizeChatRoom(actor.id, room, type)) return failure(CommonStatus.UNAUTHORIZED);
+		return await withTransaction(async query => {
+			const [source] = await lockRecallSource(id, query);
+			if (!source || Number(source.sender_id) !== Number(actor.id) || source.room !== room || source.type !== type) return failure(CommonStatus.UNAUTHORIZED);
+			if (source.recalled_at) return success();
+			if (Number(source.eligible) !== 1) return failure(CommonStatus.PARAM_ERR);
+			await retractMessage(id, query);
+			return success();
+		});
+	} catch { return failure(CommonStatus.SERVER_ERR); }
+};
 export const getChatList = async (actor: Actor): Promise<Outcome> => {
 	try {
 		const data: ChatListItem[] = [];

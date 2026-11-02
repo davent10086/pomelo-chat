@@ -7,7 +7,7 @@ import styles from './index.module.less';
 import { ILoginForm } from './type';
 
 import { IUserInfo } from '@/components/ChangePerInfoModal/type';
-import ChangePwdModal from '@/components/ChangePwdModal';
+import AccountRecovery from '@/components/AccountRecovery';
 import useShowMessage from '@/hooks/useShowMessage';
 import { HttpStatus } from '@/utils/constant';
 import { encrypt, decryptLegacy } from '@/utils/encryption';
@@ -194,7 +194,7 @@ const Login = () => {
 				{
 					// 忘记密码弹窗
 					openForgetModal && (
-						<ChangePwdModal openmodal={openForgetModal} handleModal={handleForgetModal} />
+						<AccountRecovery open={openForgetModal} onClose={() => handleForgetModal(false)} />
 					)
 				}
 			</div>

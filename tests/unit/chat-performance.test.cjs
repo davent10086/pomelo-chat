@@ -18,6 +18,13 @@ const { buildHeightOffsets, findHeightIndex } = load('virtual-layout.ts');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
+test('a delayed original message cannot restore a recalled attachment', () => {
+  const recalled = { id: 17, sender_id: 1, room_seq: 3, status: 'sent', content: '该消息已撤回', type: 'text', recalled: true };
+  const delayed = { id: 17, sender_id: 1, room_seq: 3, content: '/uploads/original.png', type: 'image', status: 'sent', file_name: 'secret.png' };
+  const [merged] = mergeMessages([recalled], [delayed]);
+  assert.equal(merged.recalled, true); assert.equal(merged.type, 'text'); assert.equal(merged.content, '该消息已撤回'); assert.equal(merged.file_name, null);
+});
+
 test('message ACKs preserve sent status, sender-scoped identity and sequence order', () => {
   const pending = { sender_id: 1, clientMsgId: 'same', content: 'draft', status: 'pending' };
   const peer = { sender_id: 2, client_msg_id: 'same', id: 2, room_seq: 2, status: 'sent' };

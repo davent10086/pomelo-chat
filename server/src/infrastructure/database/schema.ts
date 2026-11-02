@@ -251,6 +251,9 @@ export const initialSchema = [
 	fileMetadataTableSQL(),
 	messageAttachmentTableSQL(),
 	messageOutboxTableSQL(),
+	`CREATE TABLE IF NOT EXISTS message_recall_outbox (
+	 message_id INT NOT NULL PRIMARY KEY, FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE
+	) ENGINE=InnoDB`,
 	assistantMemoryTableSQL(),
 	assistantTaskTableSQL(),
 	assistantActionTableSQL(),

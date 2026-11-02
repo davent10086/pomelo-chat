@@ -2,10 +2,24 @@ import type { Request, Response } from 'express';
 import { respond } from '../../infrastructure/http-outcome';
 import type { Actor } from '../../shared/actor';
 import type { ReadReceiptFrame } from './contracts';
+import { MessageOverloadError } from '../../shared/overload';
+import { CommonStatus } from '../../shared/status';
 export const createHttpHandlers = (
 	application: typeof import('./application') & typeof import('./search-application'),
 	publishReadReceipt: (frame: ReadReceiptFrame) => Promise<void> = async () => {}
 ) => ({
+	recallMessage: async (req: Request, res: Response): Promise<void> => {
+		respond(res, await application.recallMessage(req.user as Actor, req.body || {}));
+	},
+	forwardMessage: async (req: Request, res: Response): Promise<void> => {
+		try { respond(res, await application.forwardMessage(req.user as Actor, req.body || {})); }
+		catch (error) {
+			if (error instanceof MessageOverloadError) {
+				res.setHeader('Retry-After', String(Math.ceil(error.retryAfterMs / 1000)));
+				res.status(429).json({ code: 8001, message: error.message, data: { retryAfterMs: error.retryAfterMs } });
+			} else respond(res, { code: CommonStatus.SERVER_ERR, data: null });
+		}
+	},
 	getChatList: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.getChatList(req.user as Actor));
 	},

@@ -26,6 +26,7 @@ import { clearSessionStorage, tokenStorage, userStorage } from '@/utils/storage'
 import { safeParse } from '@/utils/safe-parse';
 import ReconnectingWebSocket from '@/utils/websocket';
 import Request from '@/utils/request';
+import { notificationsEnabled, toggleMessageNotifications, showMessageNotification, type MessageNotice } from '@/utils/message-notifications';
 
 const navigationIcons = { 'icon-message': <MessageOutlined />, 'icon-24px': <ContactsOutlined />, 'icon-wenjian': <FolderOutlined />, 'icon-tuichudenglu': <LogoutOutlined /> };
 
@@ -36,6 +37,7 @@ const Container = () => {
 	// H11: userStorage.getItem() 已返回对象，无需 JSON.parse
 	const user = userStorage.getItem();
 	const username = user.username;
+	const [notificationsOn, setNotificationsOn] = useState(notificationsEnabled);
 	const [currentIcon, setCurrentIcon] = useState<string>('icon-message');
 	useEffect(() => {
 		setCurrentIcon(location.pathname === '/files' ? 'icon-wenjian' : location.pathname === '/address-book' ? 'icon-24px' : 'icon-message');
@@ -54,6 +56,16 @@ const Container = () => {
 	const [room, setRoom] = useState<string>('');
 	const [curMode, setCurMode] = useState<string>('');
 	const [callReceiverList, setCallReceiverList] = useState<ICallReceiverInfo[]>([]);
+	useEffect(() => {
+		const open = (event: Event) => {
+			const room = (event as CustomEvent<string>).detail;
+			if (typeof room !== 'string' || !room) return;
+			sessionStorage.setItem('pomelo-open-room', room);
+			navigate('/chat');
+		};
+		window.addEventListener('pomelo-open-conversation', open);
+		return () => window.removeEventListener('pomelo-open-conversation', open);
+	}, [navigate]);
 
 	const handleForgetModal = (visible: boolean) => setForgetModal(visible);
 	const handleInfoModal = (visible: boolean) => setInfoModal(visible);
@@ -94,6 +106,9 @@ const Container = () => {
 				</div>
 			</div>
 			<div className={styles.btnContainer}>
+				<Button size="small" onClick={() => {
+					void toggleMessageNotifications().then(setNotificationsOn).catch(error => showMessage('warning', error.message));
+				}}>{notificationsOn ? '关闭消息提醒' : '开启消息提醒'}</Button>
 				<Button
 					size="small"
 					onClick={() => {
@@ -133,6 +148,7 @@ const Container = () => {
 					addressBookRef.current?.refreshGroupChatList();
 					break;
 				case 'chatList':
+					if ('notice' in message && message.notice) showMessageNotification(message.notice as MessageNotice);
 					chatRef.current?.scheduleChatListRefresh();
 					break;
 				case 'call_state':

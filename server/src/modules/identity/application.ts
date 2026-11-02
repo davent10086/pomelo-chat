@@ -44,6 +44,7 @@ export const createIdentityApplication = (dependencies: {
 	) => Promise<void>;
 }) => {
 	const BCRYPT_SALT_ROUNDS = 10;
+	const accountHash = (phone: string) => crypto.createHash('sha256').update(phone).digest('hex');
 	const JWT_EXPIRES_IN = '7d';
 	interface UserRow {
 		id: number;
@@ -291,5 +292,22 @@ export const createIdentityApplication = (dependencies: {
 		}
 		return failure(CommonStatus.UPDATE_ERR);
 	};
-	return { login, logout, register, forgetPassword, updateInfo };
+	const recoverPassword = async (input: Record<string, unknown>): Promise<Outcome> => {
+		const { phone, password } = input;
+		if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone) ||
+			typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password) > 72) return failure(CommonStatus.PARAM_ERR);
+		try {
+			if (!await consumeRateLimit(`auth:recovery:${accountHash(phone)}`, 5, 300, 'reject')) return failure(AssistantStatus.RATE_LIMIT_ERR);
+			const [user] = await repository.findPhoneOwner<UserRow[]>([phone]);
+			if (!user) return failure(AuthStatus.USER_OR_PASS_ERR);
+			const hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+			const changed = await repository.updateUserPassword<WriteResult>([hash, user.id]);
+			if (changed.affectedRows !== 1) return failure(CommonStatus.UPDATE_ERR);
+			await better_chat.del(`token:${user.username}`);
+			await notifySessionChanged(user.username);
+			await releaseUserCall(user.username);
+			return success();
+		} catch { return failure(CommonStatus.SERVER_ERR); }
+	};
+	return { login, logout, register, forgetPassword, updateInfo, recoverPassword };
 };

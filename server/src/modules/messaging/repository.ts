@@ -1,4 +1,19 @@
 import { Query } from '../../infrastructure/database-query';
+import type { HistoryMessageRow } from './contracts';
+
+export const findForwardSource = (id: number) => Query<Array<{ id: number; room: string; type: 'private' | 'group'; content: string; media_type: string; recalled_at?: Date }>>(
+	'SELECT id, room, type, content, media_type, recalled_at FROM message WHERE id = ? LIMIT 1', [id]);
+
+export const lockRecallSource = (id: number, executor: SqlQuery) => executor<Array<{ sender_id: number; room: string; type: 'private' | 'group'; recalled_at?: Date; eligible: number }>>(
+	'SELECT sender_id, room, type, recalled_at, (created_at >= DATE_SUB(NOW(), INTERVAL 120 SECOND)) AS eligible FROM message WHERE id = ? FOR UPDATE', [id]);
+export const retractMessage = async (id: number, executor: SqlQuery) => {
+	await executor("UPDATE message SET content = '该消息已撤回', media_type = 'text', file_size = 0, file_name = NULL, recalled_at = NOW() WHERE id = ?", [id]);
+	await executor('DELETE FROM message_attachment WHERE message_id = ?', [id]);
+	await executor('INSERT IGNORE INTO message_recall_outbox (message_id) VALUES (?)', [id]);
+};
+export const pendingRecalls = () => Query<Array<HistoryMessageRow & { type: 'private' | 'group' }>>(
+	'SELECT m.*, u.avatar FROM message_recall_outbox o JOIN message m ON m.id = o.message_id LEFT JOIN user u ON u.id = m.sender_id ORDER BY o.message_id LIMIT 100');
+export const completeRecall = (id: number) => Query('DELETE FROM message_recall_outbox WHERE message_id = ?', [id]);
 import type { SqlQuery } from '../../shared/actor';
 import { boundedInteger } from '../../shared/validation';
 const maxOutboxAttempts = boundedInteger('MESSAGE_OUTBOX_MAX_ATTEMPTS', 30, 1, 1000);

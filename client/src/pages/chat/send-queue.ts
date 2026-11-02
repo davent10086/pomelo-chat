@@ -11,6 +11,20 @@ import {
 	type PendingMessage
 } from '@/utils/pending-messages';
 import { tokenStorage, userStorage } from '@/utils/storage';
+import { apiBaseURL } from '@/config';
+
+const restoredRooms = new Set<string>();
+function rememberQueueOwner(userId: number, room: string, owner: string) {
+	const key = `pomelo-chat.queue-owner.v1.${encodeURIComponent(apiBaseURL)}.${userId}.${encodeURIComponent(room)}`;
+	try {
+		// A reload replaces this tab's document. Newly opened tabs must retain separate leases,
+		// including tabs whose initial sessionStorage was copied from their opener.
+		const reloaded = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
+		const previous = reloaded && !restoredRooms.has(key) ? sessionStorage.getItem(key) || undefined : undefined;
+		restoredRooms.add(key); sessionStorage.setItem(key, owner);
+		return previous;
+	} catch { return undefined; }
+}
 
 interface QueueOptions {
 	userId: number;
@@ -23,6 +37,7 @@ interface QueueOptions {
 }
 export class SendQueue {
 	private owner = crypto.randomUUID();
+	private abandonedOwner?: string;
 	private stopped = false;
 	private busy = false;
 	private manualRequest?: string;
@@ -34,6 +49,7 @@ export class SendQueue {
 	private poll: ReturnType<typeof setInterval>;
 	private controller = new AbortController();
 	constructor(private options: QueueOptions) {
+		this.abandonedOwner = rememberQueueOwner(options.userId, options.room, this.owner);
 		this.poll = setInterval(() => void this.recover(), 5000);
 	}
 	private active() {
@@ -192,7 +208,7 @@ export class SendQueue {
 			return;
 		let claimed: PendingMessage | undefined;
 		try {
-			claimed = this.fallback.get(id) || (await claimPendingMessage(row.key, this.owner, manual));
+			claimed = this.fallback.get(id) || (await claimPendingMessage(row.key, this.owner, manual, this.abandonedOwner));
 		} catch {
 			claimed = this.fallback.get(id);
 		}

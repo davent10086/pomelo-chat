@@ -10,6 +10,7 @@ import { IMessageItem } from '@/components/MessageShow/type';
 
 import { mergeMessages } from '@/utils/message-merge';
 import { buildHeightOffsets, findHeightIndex } from '@/utils/virtual-layout';
+import { readConversationPreferences, subscribeConversationPreferences } from '@/utils/conversation-preferences';
 
 // M6: 动态高度虚拟滚动 —— 估算高度 + 实际测量
 const ESTIMATE_ITEM_HEIGHT = 60; // 初始估算高度
@@ -47,13 +48,20 @@ const ChatContainer = (props: IChatContainerProps) => {
 	const isAtBottomRef = useRef<boolean>(true);
 
 	const [layoutVersion, setLayoutVersion] = useState(0);
+	const [preferenceVersion, setPreferenceVersion] = useState(0);
+	useEffect(() => subscribeConversationPreferences(() => setPreferenceVersion(value => value + 1)), []);
 
 	// M6: 测量高度缓存
 	const measuredHeights = useRef<Map<string, number>>(new Map());
 
 	const allMessages = useMemo(() => {
-		return props.messages || mergeMessages(historyMsg || [], newMsg || []);
-	}, [props.messages, historyMsg, newMsg]);
+		void preferenceVersion;
+		const hidden = new Map<string, Set<number>>();
+		return (props.messages || mergeMessages(historyMsg || [], newMsg || [])).filter(message => {
+			if (!hidden.has(message.room)) hidden.set(message.room, new Set(readConversationPreferences(message.room).hiddenMessageIds || []));
+			return !message.id || !hidden.get(message.room)!.has(message.id);
+		});
+	}, [props.messages, historyMsg, newMsg, preferenceVersion]);
 	const messageKeys = useMemo(() => allMessages.map(getMessageKey), [allMessages]);
 	const offsets = useMemo(() => {
 		// The ref is updated by ResizeObserver; its version invalidates this index.
@@ -276,6 +284,9 @@ const ChatContainer = (props: IChatContainerProps) => {
 				style={Number(message.id) === focusMessageId ? { outline: '2px solid #f0a94a' } : undefined}
 			>
 				<MessageShow
+					onRecall={props.onRecall}
+					onQuote={props.onQuote}
+					onForward={props.onForward}
 					showTime={showTime}
 					message={message}
 					onRetry={onRetry}

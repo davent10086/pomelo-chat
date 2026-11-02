@@ -4,6 +4,10 @@ import type { Actor } from '../../shared/actor';
 export const createHttpHandlers = (
 	application: ReturnType<typeof import('./application').createIdentityApplication>
 ) => ({
+	recoverPassword: async (req: Request, res: Response): Promise<void> => {
+		res.setHeader('Cache-Control', 'no-store');
+		respond(res, await application.recoverPassword(req.body || {}));
+	},
 	login: async (req: Request, res: Response): Promise<void> => {
 		respond(res, await application.login(req.body || {}));
 	},

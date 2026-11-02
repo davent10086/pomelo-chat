@@ -52,6 +52,10 @@ pnpm test:integration --timeout 180000
 
 浏览器失败保留 trace 和截图；性能基线额外输出 `latency.json`。报告和日志保留，临时附件删除。覆盖率只代表单元运行实际加载的源码，不代表全仓或集成覆盖率；暂不设统一百分比门槛。
 
+消息操作与通知回归：`pnpm test:e2e --filter messaging-management` 覆盖真实后端的引用草稿、转发权限与幂等、本地隐藏、置顶、免打扰、撤回和手机号直接重置密码。通知测试仅在操作系统 Notification API 边界使用替身，业务 HTTP/WebSocket 不拦截；系统实际弹窗还需检查系统通知权限。断线恢复与多标签页场景为 `pnpm test:e2e --filter chat-recovery-search`。
+
+`pnpm test:integration --filter network-faults` 自动构建并启动隔离后端，经本机 TCP 代理双向延迟每个数据块 60ms，丢弃服务端响应后断开连接，以相同消息 ID 重试，再重启后端核对数据库历史。代理不伪造 HTTP 或 WebSocket 响应。该用例验证真实网络栈上的故障恢复，不代表已完成公网、跨运营商、移动网络或 NAT/TURN 的验证。
+
 以下专项不属于默认 `test:ci`，报告显式列出排除范围：
 
 - `pnpm test:rtc`：真实 LiveKit，配置 `LIVEKIT_HTTP_URL_TEST`、`LIVEKIT_URL_TEST`、`LIVEKIT_API_KEY_TEST`、`LIVEKIT_API_SECRET_TEST`；本机开发默认 7880/devkey/secret。服务必须使用 `room.auto_create=false`。默认集成/E2E 对 LiveKit 建房、删房使用替身，不能证明真实媒体回收。

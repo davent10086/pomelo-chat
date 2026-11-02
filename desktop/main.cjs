@@ -12,6 +12,7 @@ if (devUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(devUrl.h
   throw new Error('Desktop development URL must be a loopback HTTP address');
 }
 const origin = development ? devUrl.origin : APP_ORIGIN;
+if (process.platform === 'win32') app.setAppUserModelId('io.pomelo.chat');
 protocol.registerSchemesAsPrivileged([{ scheme: 'pomelo', privileges: {
   standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true
 } }]);
@@ -141,6 +142,11 @@ ipcMain.handle('desktop:auth', (event, auth) => {
   snapshot = { ...snapshot, auth, chat: changed ? null : snapshot.chat };
   if (changed) resetAssistant();
   broadcast();
+});
+ipcMain.handle('desktop:focus-main', event => {
+  requireRole(event, 'main');
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show(); mainWindow.focus();
 });
 ipcMain.handle('desktop:invalidate', (event, token) => {
   requireEither(event);

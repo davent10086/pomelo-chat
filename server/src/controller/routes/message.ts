@@ -12,6 +12,8 @@ export default () => {
 	router.post('/resolve', authenticateToken, message.resolveMessages);
 	router.get('/history', authenticateToken, message.getHistory);
 	router.post('/read', authenticateToken, message.markRead);
+	router.post('/forward', authenticateToken, message.forwardMessage);
+	router.post('/recall', authenticateToken, message.recallMessage);
 	router.ws('/connect_chat', connectChat);
 	return router;
 };

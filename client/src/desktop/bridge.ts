@@ -5,6 +5,7 @@ export interface DesktopChat { room: string; type: 'private' | 'group'; receiver
 export interface DesktopSnapshot { revision: number; auth: DesktopAuth | null; chat: DesktopChat | null }
 export interface AssistantBounds { origin: string; width: number; height: number; x: number; y: number }
 export interface DesktopBridge {
+	focusMain(): Promise<void>;
 	getRuntime(): { serverURL: string; packaged: boolean };
 	setServer(value: string): Promise<void>;
 	rememberAuth(auth: DesktopAuth | null): Promise<void>;

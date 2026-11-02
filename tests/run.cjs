@@ -154,7 +154,7 @@ const main = async (input = process.argv.slice(2)) => {
           await isolated(batch.join(','), layer, ['integration', 'performance'].includes(layer), async environment => {
             environment.env.TEST_LAYER = layer;
             environment.env.NODE_OPTIONS = `--require "${bootstrap.replaceAll('\\', '/')}"`;
-            if (layer === 'integration' && batch.some(file => file.includes('production-smoke')) && !builtServer) {
+            if (layer === 'integration' && batch.some(file => file.includes('production-smoke') || file.includes('network-faults')) && !builtServer) {
               const result = await pnpm(['--filter', 'pomelo-chat-server', 'build'], environment, 'server-build');
               builtServer = result.status === 'passed';
               if (!builtServer) throw new Error('Compiled server smoke requires a successful build');

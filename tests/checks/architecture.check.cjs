@@ -12,6 +12,7 @@ const ownership = {
 		'conversation_read',
 		'message_statistics',
 		'message_outbox',
+		'message_recall_outbox',
 		'message_attachment'
 	],
 	files: ['file_metadata'],

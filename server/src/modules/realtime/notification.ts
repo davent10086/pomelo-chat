@@ -39,10 +39,10 @@ const sendLocalBatch = async (
 /** One bounded Redis publication per recipient batch, including offline recipients
  * whose notification socket may live on another instance. */
 export const notifyChatListUsers = async (
-	usernames: string[], checkActive: () => void
+	usernames: string[], checkActive: () => void, notice?: { id: number; room: string; senderId: number; createdAt: number }
 ): Promise<void> => {
 	const unique = [...new Set(usernames)];
-	const data = { name: 'chatList' };
+	const data = { name: 'chatList', ...(notice ? { notice } : {}) };
 	for (let offset = 0; offset < unique.length; offset += 256) {
 		const batch = unique.slice(offset, offset + 256);
 		checkActive();

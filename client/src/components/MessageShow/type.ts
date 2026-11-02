@@ -5,6 +5,9 @@ import { MessageType } from '@/components/ChatTool/type';
  */
 // 给右侧显示消息项组件传递的参数类型
 export interface IMessageShowProps {
+	onRecall?: (message: IMessageItem) => void;
+	onQuote?: (message: IMessageItem) => void;
+	onForward?: (message: IMessageItem) => void;
 	onCancelRetry?: (message: IMessageItem) => void;
 	onRetry?: (message: IMessageItem) => void;
 	showTime: boolean;
@@ -12,6 +15,7 @@ export interface IMessageShowProps {
 }
 // 右侧显示消息项的类型 —— 在client\src\pages\Chat\index.tsx中也被引用
 export interface IMessageItem {
+	recalled?: boolean;
 	file_name?: string | null;
 	fileName?: string;
 	id?: number;

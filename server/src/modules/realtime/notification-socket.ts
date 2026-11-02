@@ -69,6 +69,7 @@ export const initUserNotification = async (ws: WebSocket, req: Request): Promise
 			return;
 		}
 		registerNotificationSocket(curUsername, ws, cleanupPresence);
+		ws.send(JSON.stringify({ name: 'notification_ready' }));
 		void notifyObservers().catch(err => console.error('[auth] notification:', err));
 
 		ws.on('close', () => {

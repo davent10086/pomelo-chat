@@ -100,14 +100,14 @@ export const savePendingMessage = (row: PendingMessage) =>
 			done(true);
 		};
 	});
-export const claimPendingMessage = (key: string, owner: string, manual = false) =>
+export const claimPendingMessage = (key: string, owner: string, manual = false, abandonedOwner?: string) =>
 	transaction<PendingMessage | undefined>((store, done) => {
 		const request = store.get(key);
 		request.onsuccess = () => {
 			const row = request.result as PendingMessage | undefined;
 			if (
 				!row ||
-				(row.leaseUntil && row.leaseUntil > Date.now()) ||
+				(row.leaseUntil && row.leaseUntil > Date.now() && (!abandonedOwner || row.owner !== abandonedOwner)) ||
 				(!manual &&
 					(row.stopped || (row.retryAt || 0) > Date.now() || Date.now() - row.createdAt > 86400000))
 			) {

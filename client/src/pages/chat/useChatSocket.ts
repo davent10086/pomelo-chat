@@ -185,7 +185,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 							userId?: number | string;
 							roomSeq?: number;
 							peerReadSeq?: number;
-							message?: string;
+							message?: string | IMessageItem;
 							code?: string;
 							retryAfterMs?: number;
 							retryable?: boolean;
@@ -196,6 +196,12 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 					return;
 				}
 				if (message && typeof message === 'object' && 'name' in message) {
+					if (message.name === 'message_updated' && typeof message.message === 'object' && message.message?.room === connectParams.room) {
+						const updated = { ...message.message, status: 'sent' as const };
+						setHistoryMsg(previous => mergeMessages(previous, [updated]));
+						setNewMessage(previous => mergeMessages(previous, [updated]));
+						return;
+					}
 					if (message.name === 'read_receipt') {
 						if (
 							message.room === connectParams.room &&
@@ -276,7 +282,7 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 						if (message.client_msg_id)
 							void queue.current?.reject(
 								message.client_msg_id,
-								message.message || '消息发送失败，请核对后重试',
+								typeof message.message === 'string' ? message.message : '消息发送失败，请核对后重试',
 								message.code === 'MESSAGE_OVERLOADED' && message.retryable
 									? message.retryAfterMs
 									: undefined
@@ -301,6 +307,9 @@ export const useChatSocket = ({ onError }: UseChatSocketOptions) => {
 			ws.onClose = () => {
 				if (epoch === generation.current) {
 					setSynchronized(false);
+					// Mutable message state is reloaded after an offline interval.
+					setHistoryMsg([]);
+					setNewMessage(previous => previous.filter(item => item.status !== 'sent'));
 					queue.current?.disconnected();
 				}
 			};

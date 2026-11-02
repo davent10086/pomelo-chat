@@ -77,6 +77,7 @@ export interface GroupMemberRow {
 }
 
 export interface HistoryMessageRow {
+	recalled_at?: Date | string | null;
 	file_name?: string | null;
 	id: number;
 	client_msg_id: string | null;
@@ -127,6 +128,7 @@ export interface InsertMessage {
 }
 
 export interface OutboundMessage {
+	recalled?: boolean;
 	file_name?: string | null;
 	id?: number;
 	client_msg_id?: string | null;
@@ -144,7 +146,7 @@ export interface OutboundMessage {
 export interface FanoutPayload {
 	instanceId: string;
 	room: string;
-	message: OutboundMessage | ReadReceiptFrame;
+	message: OutboundMessage | ReadReceiptFrame | MessageUpdatedFrame;
 	persistedAt?: number;
 }
 
@@ -160,4 +162,10 @@ export interface ReadReceiptFrame {
 	room: string;
 	userId: UserId;
 	roomSeq: number;
+}
+
+export interface MessageUpdatedFrame {
+	name: 'message_updated';
+	room: string;
+	message: OutboundMessage;
 }

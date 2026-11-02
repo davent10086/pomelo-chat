@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('pomeloDesktop', {
   rememberAuth: auth => ipcRenderer.invoke('desktop:remember', auth),
   downloadFile: (storagePath, fileName) => ipcRenderer.invoke('desktop:download', storagePath, fileName),
   windowControl: action => ipcRenderer.invoke('desktop:window', action),
+  focusMain: () => ipcRenderer.invoke('desktop:focus-main'),
   getSnapshot: () => ipcRenderer.invoke('desktop:snapshot'),
   publishAuth: auth => ipcRenderer.invoke('desktop:auth', auth),
   invalidateAuth: token => ipcRenderer.invoke('desktop:invalidate', token),

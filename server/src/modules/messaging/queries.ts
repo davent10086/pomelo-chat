@@ -14,6 +14,7 @@ import {
 export const formatHistoryMessages = (rows: HistoryMessageRow[]) =>
 	rows.map(item => ({
 		id: item.id,
+		...(item.recalled_at ? { recalled: true } : {}),
 		client_msg_id: item.client_msg_id,
 		room_seq: Number(item.room_seq || item.id),
 		sender_id: item.sender_id,

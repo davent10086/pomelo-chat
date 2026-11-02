@@ -13,7 +13,7 @@ import {
 } from './delivery-observation';
 import { forEachConcurrent } from '../../shared/parallel';
 import { startMessageOutbox, stopMessageOutbox, enableMessageOutbox } from '../messaging/public';
-import { formatHistoryMessages } from '../messaging/public';
+import { formatHistoryMessages, startRecallDelivery, stopRecallDelivery } from '../messaging/public';
 import type {
 	FanoutPayload,
 	OutboundMessage,
@@ -22,7 +22,7 @@ import type {
 	UserId,
 	OutboxDeliveryContext
 } from '../messaging/contracts';
-import type { ReadReceiptFrame } from '../messaging/contracts';
+import type { ReadReceiptFrame, MessageUpdatedFrame } from '../messaging/contracts';
 export const ChatRooms: Record<
 	string,
 	Record<string, { ws: WebSocket; userId: UserId; type: ChatType }>
@@ -43,7 +43,7 @@ export const sendFrame = (ws: WebSocket, frame: unknown): void => {
 
 export const sendLocalRoom = async (
 	room: string,
-	message: OutboundMessage | ReadReceiptFrame,
+	message: OutboundMessage | ReadReceiptFrame | MessageUpdatedFrame,
 	persistedAt?: number,
 	checkActive: () => void = () => undefined
 ): Promise<void> => {
@@ -68,7 +68,7 @@ export const sendLocalRoom = async (
 				checkActive();
 				if (sessions ? !sessions.has(ws) : !(await validateSessionSocket(ws))) return;
 				checkActive();
-				if ('name' in message && type !== 'private') return;
+				if ('name' in message && message.name === 'read_receipt' && type !== 'private') return;
 				if (members ? !members.has(String(userId)) : !(await authorizeChatRoom(userId, room, type))) {
 					if (ChatRooms[room]?.[key] === subscription) {
 						delete ChatRooms[room][key];
@@ -110,7 +110,7 @@ export const sendLocalRoom = async (
 
 const publishRoomMessage = async (
 	room: string,
-	message: OutboundMessage | ReadReceiptFrame,
+	message: OutboundMessage | ReadReceiptFrame | MessageUpdatedFrame,
 	persistedAt?: number
 ): Promise<boolean> =>
 	publishFanout(MESSAGE_FANOUT_CHANNEL, { instanceId: INSTANCE_ID, room, message, persistedAt });
@@ -157,6 +157,15 @@ export const startMessageDelivery = async () => {
 		await fanoutPublisher.connect();
 	await subscribeRoomFanout();
 	startDeliveryObservation();
+	startRecallDelivery(async row => {
+		const frame: MessageUpdatedFrame = { name: 'message_updated', room: row.room, message: formatHistoryMessages([row])[0] };
+		await publishRoomMessage(row.room, frame);
+		await sendLocalRoom(row.room, frame);
+		if (row.type === 'group') {
+			const members = await readModel.listGroupDeliveryRecipients<Array<{ username: string }>>([row.receiver_id, row.sender_id]);
+			await notifyChatListUsers(members.map(member => member.username), () => undefined);
+		} else await NotificationUser({ receiver_id: row.receiver_id, name: 'chatList' }, () => undefined);
+	});
 	startMessageOutbox(async (id, context: OutboxDeliveryContext) => {
 		const rows = await readModel.loadMessageForDelivery<
 			HistoryMessageRow[] & Array<{ type: ChatType }>
@@ -165,6 +174,7 @@ export const startMessageDelivery = async () => {
 		const row = rows[0];
 		const outbound = formatHistoryMessages(rows)[0];
 		const persistedAt = new Date(row.created_at).getTime();
+		const notice = { id, room: row.room, senderId: Number(row.sender_id), createdAt: persistedAt };
 		await context.assertLease();
 		if (!(await publishRoomMessage(row.room, outbound, persistedAt))) throw new Error('Fanout sequence rejected; message remains pending');
 		await context.assertLease();
@@ -175,10 +185,10 @@ export const startMessageDelivery = async () => {
 				row.receiver_id,
 				row.sender_id
 			]);
-			await notifyChatListUsers(members.map(member => member.username), context.checkActive);
+			await notifyChatListUsers(members.map(member => member.username), context.checkActive, notice);
 		} else
 			await NotificationUser(
-				{ receiver_id: row.receiver_id, name: 'chatList' },
+				{ receiver_id: row.receiver_id, name: 'chatList', notice },
 				context.checkActive
 			);
 	});
@@ -186,6 +196,7 @@ export const startMessageDelivery = async () => {
 	enableMessageOutbox();
 };
 export const stopMessageDelivery = async () => {
+	await stopRecallDelivery();
 	await stopMessageOutbox();
 	stopDeliveryObservation();
 	better_chat.off('end', onRedisEnd);

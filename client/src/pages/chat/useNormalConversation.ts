@@ -26,6 +26,9 @@ export function useNormalConversation(
 	);
 	const { openConversation, leaveConversation } = session;
 	useEffect(() => {
+		if (!session.synchronized) { resetHistory(); setSearchOpen(false); }
+	}, [session.synchronized, resetHistory]);
+	useEffect(() => {
 		setSearchOpen(false);
 		if (room) openConversation({ room, type, sender_id: String(userId) });
 		return leaveConversation;
@@ -79,7 +82,7 @@ export function useNormalConversation(
 		[view, session.newMessage, room, userId, peerReadSeq]
 	);
 	const displayMessages = useMemo(
-		() => withReadState(view?.messages || messages, room, userId, peerReadSeq),
+		() => withReadState(view ? mergeMessages(view.messages, messages.filter(message => message.recalled && view.messages.some(item => item.id === message.id))) : messages, room, userId, peerReadSeq),
 		[view, messages, room, userId, peerReadSeq]
 	);
 	const leave = useCallback(() => {
